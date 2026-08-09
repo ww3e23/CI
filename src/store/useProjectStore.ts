@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import type {
   BuildingRule,
   ChecklistCategory,
@@ -21,6 +21,11 @@ import {
 } from '../services/projectSync'
 import { uploadDataUrl } from '../services/storageUpload'
 import { firebaseModeLabel } from '../lib/firebase'
+import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
+
+if (typeof window !== 'undefined') {
+  purgeBloatedInspectionStorage()
+}
 
 type BundleMap = Record<string, ProjectState>
 
@@ -644,7 +649,72 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
     }),
     {
       name: 'site-inspection-v5',
-      version: 5,
+      version: 6,
+      // 大圖 base64 不寫入 localStorage，避免配額爆掉（QuotaExceededError）
+      partialize: (state) => ({
+        ...lightenProjectState(state),
+        bundles: Object.fromEntries(
+          Object.entries(state.bundles).map(([id, bundle]) => [
+            id,
+            lightenProjectState(bundle),
+          ]),
+        ),
+        activeProjectId: state.activeProjectId,
+      }),
+      migrate: (persisted) => {
+        const s = persisted as (ProjectState & BundleState) | null
+        if (!s || typeof s !== 'object') return s as never
+        return {
+          ...s,
+          ...lightenProjectState(s),
+          bundles: Object.fromEntries(
+            Object.entries(s.bundles ?? {}).map(([id, bundle]) => [
+              id,
+              lightenProjectState(bundle),
+            ]),
+          ),
+          activeProjectId: s.activeProjectId ?? null,
+        } as never
+      },
+      storage: createJSONStorage(() => ({
+        getItem: (name) => localStorage.getItem(name),
+        setItem: (name, value) => {
+          try {
+            localStorage.setItem(name, value)
+          } catch (err) {
+            console.warn('[persist] quota exceeded, stripping media and retrying', err)
+            try {
+              purgeBloatedInspectionStorage()
+              const parsed = JSON.parse(value) as {
+                state?: ProjectState & BundleState
+                version?: number
+              }
+              if (parsed.state) {
+                parsed.state = {
+                  ...lightenProjectState(parsed.state),
+                  bundles: Object.fromEntries(
+                    Object.entries(parsed.state.bundles ?? {}).map(([id, bundle]) => [
+                      id,
+                      lightenProjectState(bundle),
+                    ]),
+                  ),
+                  activeProjectId: parsed.state.activeProjectId,
+                }
+                localStorage.setItem(name, JSON.stringify(parsed))
+                return
+              }
+            } catch {
+              /* fall through */
+            }
+            try {
+              localStorage.removeItem(name)
+            } catch {
+              /* ignore */
+            }
+          }
+        },
+        removeItem: (name) => localStorage.removeItem(name),
+      })),
     },
   ),
 )

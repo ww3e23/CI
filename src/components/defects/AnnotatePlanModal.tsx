@@ -41,10 +41,15 @@ export function AnnotatePlanModal({
       imgRef.current = img
       const canvas = canvasRef.current
       if (!canvas) return
-      const maxW = Math.min(window.innerWidth - 24, 720)
-      const scale = maxW / img.width
-      canvas.width = Math.round(img.width * scale)
-      canvas.height = Math.round(img.height * scale)
+      // 畫布維持高解析度（最長邊最多 2048），畫面再用 CSS 縮放，避免標註時糊掉
+      const maxEdge = 2048
+      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height))
+      canvas.width = Math.max(1, Math.round(img.width * scale))
+      canvas.height = Math.max(1, Math.round(img.height * scale))
+      // 顯示寬度不超過視窗，但內部像素保持高解析
+      const displayW = Math.min(window.innerWidth - 24, canvas.width)
+      canvas.style.width = `${displayW}px`
+      canvas.style.height = `${Math.round((displayW / canvas.width) * canvas.height)}px`
       setReady(true)
       redraw([])
     }
@@ -97,7 +102,7 @@ export function AnnotatePlanModal({
       const a = s.points[0]
       const b = s.points[s.points.length - 1]
       const angle = Math.atan2(b.y - a.y, b.x - a.x)
-      const head = 14
+      const head = Math.max(14, s.width * 4)
       ctx.beginPath()
       ctx.moveTo(a.x, a.y)
       ctx.lineTo(b.x, b.y)
@@ -250,10 +255,12 @@ export function AnnotatePlanModal({
           onPointerDown={(e) => {
             e.preventDefault()
             e.currentTarget.setPointerCapture(e.pointerId)
+            const canvas = e.currentTarget
+            const strokeScale = Math.max(1, canvas.width / 720)
             drawing.current = {
               tool,
               color,
-              width: tool === 'pen' ? 3.5 : 3,
+              width: (tool === 'pen' ? 3.5 : 3) * strokeScale,
               points: [pos(e)],
             }
           }}

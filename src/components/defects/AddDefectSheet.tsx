@@ -3,6 +3,7 @@ import { Lock } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { cloudReady } from '../../services/cloudSync'
+import { fileToCompressedDataUrl } from '../../lib/imageCompress'
 import { Modal } from '../ui/Modal'
 import { TitleHint } from '../ui/TitleHint'
 import { AnnotatePlanModal } from './AnnotatePlanModal'
@@ -61,18 +62,21 @@ export function AddDefectSheet({
 
   async function onPick(file: File | undefined, kind: 'plan' | 'photo') {
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const url = String(reader.result || '')
-      if (!url) return
+    try {
+      // 先壓縮再進表單／本機，避免 localStorage 配額爆掉與標註過糊
+      const url = await fileToCompressedDataUrl(file, {
+        maxEdge: kind === 'plan' ? 2048 : 1600,
+        quality: kind === 'plan' ? 0.9 : 0.84,
+      })
       if (kind === 'plan') {
         setPlanOriginal(url)
         setPlanPhoto(url)
       } else {
         setPhotos((prev) => [...prev, url].slice(0, 6))
       }
+    } catch {
+      setError('讀取圖片失敗，請換一張再試')
     }
-    reader.readAsDataURL(file)
   }
 
   async function handleSave() {
