@@ -36,10 +36,27 @@ export default function App() {
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
 
-  // 開 App／還原工作階段時，從雲端把棟別／缺失拉回來
+  // 開 App／還原工作階段時，從雲端把棟別／缺失拉回來；並補傳尚未上雲的照片
   useEffect(() => {
-    if (!currentUserId || !currentProjectId || !isFirebaseConfigured()) return
-    void useProjectStore.getState().hydrateFromCloud(currentProjectId)
+    if (!currentUserId || !currentProjectId) return
+    if (isFirebaseConfigured()) {
+      void useProjectStore.getState().hydrateFromCloud(currentProjectId)
+    } else {
+      void useProjectStore.getState().restorePendingMediaToMemory()
+    }
+
+    const flush = () => {
+      void useProjectStore.getState().flushPendingMediaUploads()
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'visible') flush()
+    }
+    window.addEventListener('online', flush)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.removeEventListener('online', flush)
+      document.removeEventListener('visibilitychange', onVis)
+    }
   }, [currentUserId, currentProjectId])
 
   if (hash.startsWith('#/admin')) {

@@ -314,26 +314,58 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
   }
 }
 
-/** 合併本機與雲端：以「較完整／較新」為準，避免登出後空資料蓋掉雲端 */
+function preferMediaUrl(a?: string, b?: string): string | undefined {
+  if (a?.startsWith('http')) return a
+  if (b?.startsWith('http')) return b
+  if (a?.startsWith('data:')) return a
+  if (b?.startsWith('data:')) return b
+  return a || b
+}
+
+function mergeDefectPhotos(local: Defect, remote: Defect): Defect {
+  const remotePhotos = remote.photoDataUrls ?? []
+  const localPhotos = local.photoDataUrls ?? []
+  const maxLen = Math.max(remotePhotos.length, localPhotos.length)
+  const photoDataUrls: string[] = []
+  for (let i = 0; i < maxLen; i += 1) {
+    const picked = preferMediaUrl(remotePhotos[i], localPhotos[i])
+    if (picked) photoDataUrls.push(picked)
+  }
+  // 若一邊完全沒圖、另一邊有，直接用有圖的那份
+  if (photoDataUrls.length === 0) {
+    photoDataUrls.push(...(localPhotos.length ? localPhotos : remotePhotos))
+  }
+
+  const newer = remote.updatedAt >= local.updatedAt ? remote : local
+  const older = newer === remote ? local : remote
+  return {
+    ...older,
+    ...newer,
+    planPhotoDataUrl: preferMediaUrl(remote.planPhotoDataUrl, local.planPhotoDataUrl),
+    photoDataUrls,
+    // 本機仍在上傳時不要被雲端 pending 狀態蓋掉成已同步無圖
+    syncState:
+      local.syncState === 'syncing' || local.syncState === 'pending' || local.syncState === 'failed'
+        ? local.syncState
+        : newer.syncState,
+  }
+}
+
+/** 合併本機與雲端：結構取較完整者，缺失逐筆合併並保留已有照片 */
 export function mergeProjectStates(local: ProjectState, remote: PulledProject): ProjectState {
   const localScore =
     local.buildings.filter((b) => b.active).length * 100 +
-    local.defects.length * 10 +
     local.categories.filter((c) => c.active).length
   const remoteScore =
     remote.buildings.filter((b) => b.active).length * 100 +
-    remote.defects.length * 10 +
     remote.categories.filter((c) => c.active).length
 
-  // 雲端明顯較完整 → 用雲端
-  if (remoteScore > localScore) return remote
-  // 本機明顯較完整 → 用本機
-  if (localScore > remoteScore) return local
-
-  // 同分：合併集合（同 id 雲端優先若有 updatedAt，否則保留本機欄位較多者）
   const buildingMap = new Map<string, BuildingRule>()
-  for (const b of local.buildings) buildingMap.set(b.id, b)
-  for (const b of remote.buildings) buildingMap.set(b.id, b)
+  const preferRemoteBuildings = remoteScore >= localScore
+  const firstBuildings = preferRemoteBuildings ? remote.buildings : local.buildings
+  const secondBuildings = preferRemoteBuildings ? local.buildings : remote.buildings
+  for (const b of firstBuildings) buildingMap.set(b.id, b)
+  for (const b of secondBuildings) if (!buildingMap.has(b.id)) buildingMap.set(b.id, b)
 
   const catMap = new Map<string, ChecklistCategory>()
   for (const c of local.categories) catMap.set(c.id, c)
@@ -347,7 +379,7 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
   for (const d of local.defects) defectMap.set(d.id, d)
   for (const d of remote.defects) {
     const prev = defectMap.get(d.id)
-    if (!prev || (d.updatedAt && d.updatedAt >= prev.updatedAt)) defectMap.set(d.id, d)
+    defectMap.set(d.id, prev ? mergeDefectPhotos(prev, d) : d)
   }
 
   const buildings = [...buildingMap.values()].sort((a, b) => a.sortOrder - b.sortOrder)

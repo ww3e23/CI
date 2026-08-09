@@ -22,6 +22,11 @@ import {
 import { uploadDefectImages } from '../services/storageUpload'
 import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
+import {
+  clearPendingDefectMedia,
+  listPendingDefectMedia,
+  savePendingDefectMedia,
+} from '../lib/pendingMediaDb'
 
 if (typeof window !== 'undefined') {
   purgeBloatedInspectionStorage()
@@ -44,11 +49,17 @@ interface ProjectActions {
     photoDataUrls?: string[]
   }) => Promise<Defect | null>
   updateDefectStatus: (defectId: string, status: DefectStatus) => void
+  /** 刪除缺失（軟刪：改為作廢，並同步雲端） */
+  deleteDefect: (defectId: string) => Promise<{ ok: boolean; error?: string }>
   markUnitChecked: (unitId: string, checked: number) => void
   resetDemoData: () => void
   pushStructureToCloud: () => Promise<{ ok: boolean; mode: string }>
   /** 從雲端拉取並與本機合併（登入／切專案／開 App） */
   hydrateFromCloud: (projectId: string) => Promise<{ ok: boolean; error?: string }>
+  /** 把 IndexedDB 佇列中的照片掛回記憶體（離線也能看圖） */
+  restorePendingMediaToMemory: () => Promise<number>
+  /** 補傳 IndexedDB 佇列中尚未上雲的照片 */
+  flushPendingMediaUploads: () => Promise<{ ok: boolean; uploaded: number }>
   /** 立刻把作用中專案存本機並推上雲端 */
   flushSyncNow: () => Promise<{ ok: boolean }>
   loadProjectBundle: (projectId: string) => void
@@ -134,6 +145,25 @@ function rebuildUnits(buildings: BuildingRule[], prevUnits: ProjectState['units'
     const old = prevMap.get(u.id)
     return old ? { ...u, nextDefectNumber: old.nextDefectNumber } : u
   })
+}
+
+function preferMediaUrl(a?: string, b?: string): string | undefined {
+  if (a?.startsWith('http')) return a
+  if (b?.startsWith('http')) return b
+  if (a?.startsWith('data:')) return a
+  if (b?.startsWith('data:')) return b
+  return a || b
+}
+
+function mergePhotoLists(a: string[] = [], b: string[] = []): string[] {
+  const maxLen = Math.max(a.length, b.length)
+  const out: string[] = []
+  for (let i = 0; i < maxLen; i += 1) {
+    const picked = preferMediaUrl(a[i], b[i])
+    if (picked) out.push(picked)
+  }
+  if (out.length === 0) return a.length ? a : b
+  return out
 }
 
 function snapshotProject(state: ProjectState): ProjectState {
@@ -250,47 +280,93 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         // 先寫本機就回傳，雲端上傳改背景做，避免使用者卡在儲存畫面
         afterProjectChange(get, set, { syncCloud: false })
 
-        if (cloudReady()) {
-          const projectId = get().activeProjectId
+        const projectId = get().activeProjectId
+        const hasLocalMedia =
+          Boolean(planPhotoDataUrl?.startsWith('data:')) ||
+          photoDataUrls.some((p) => p.startsWith('data:'))
+
+        // 大圖必須先穩存 IndexedDB，再關表單；否則重開 App 會因 localStorage 剝掉 data URL 而丟圖
+        if (projectId && hasLocalMedia) {
+          try {
+            await savePendingDefectMedia({
+              defectId: defect.id,
+              projectId,
+              planPhotoDataUrl: planPhotoDataUrl?.startsWith('data:')
+                ? planPhotoDataUrl
+                : undefined,
+              photoDataUrls: photoDataUrls.filter((p) => p.startsWith('data:')),
+              updatedAt: new Date().toISOString(),
+            })
+          } catch (err) {
+            console.warn('[pendingMedia] save failed', err)
+          }
+        }
+
+        if (cloudReady() && projectId) {
           set({
             defects: get().defects.map((d) =>
               d.id === defect.id ? { ...d, syncState: 'syncing' } : d,
             ),
           })
-          void (async () => {
-            try {
-              if (!projectId) throw new Error('缺少專案 ID')
-              const { planUrl, photoUrls } = await uploadDefectImages({
-                projectId,
-                defectId: defect.id,
-                planPhotoDataUrl,
-                photoDataUrls,
-              })
-              const syncedDefect: Defect = {
-                ...defect,
-                planPhotoDataUrl: planUrl ?? planPhotoDataUrl,
-                photoDataUrls: photoUrls,
-                syncState: 'synced',
-                updatedAt: new Date().toISOString(),
-              }
-              await syncDefect(projectId, syncedDefect)
-              set({
-                defects: get().defects.map((d) => (d.id === defect.id ? syncedDefect : d)),
-              })
-              afterProjectChange(get, set, { syncCloud: false })
-              // 輕量補進度／戶別編號到雲端（不整包重傳）
-              scheduleCloudSync(get)
-            } catch {
+          void get()
+            .flushPendingMediaUploads()
+            .catch(() => {
               set({
                 defects: get().defects.map((d) =>
                   d.id === defect.id ? { ...d, syncState: 'failed' } : d,
                 ),
               })
-            }
-          })()
+            })
         }
 
         return get().defects.find((d) => d.id === defect.id) ?? defect
+      },
+
+      deleteDefect: async (defectId) => {
+        const state = get()
+        const defect = state.defects.find((d) => d.id === defectId)
+        if (!defect) return { ok: false, error: '找不到此缺失' }
+        if (defect.status === 'voided') return { ok: true }
+
+        const next: Defect = {
+          ...defect,
+          status: 'voided',
+          updatedAt: new Date().toISOString(),
+        }
+        set({
+          defects: state.defects.map((d) => (d.id === defectId ? next : d)),
+          activities: [
+            {
+              id: createId('act'),
+              at: new Date().toLocaleString('zh-TW', {
+                month: 'numeric',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+              buildingName: defect.buildingName,
+              floor: defect.floor,
+              unitCode: defect.unitCode,
+              summary: `刪除缺失 #${defect.defectNumber}`,
+              actorName: '現場查驗',
+            },
+            ...state.activities,
+          ].slice(0, 40),
+        })
+        afterProjectChange(get, set, { syncCloud: false })
+        void clearPendingDefectMedia(defectId)
+
+        const projectId = get().activeProjectId
+        if (projectId && cloudReady()) {
+          try {
+            await syncDefect(projectId, next)
+            scheduleCloudSync(get)
+          } catch (err) {
+            console.warn('[deleteDefect] sync failed', err)
+            return { ok: true, error: '已本機刪除，雲端同步失敗' }
+          }
+        }
+        return { ok: true }
       },
 
       updateDefectStatus: (defectId, status) => {
@@ -483,11 +559,19 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
 
       hydrateFromCloud: async (projectId) => {
         if (!cloudReady() || !projectId) {
+          // 即使離線也先把佇列照片掛回畫面
+          await get().restorePendingMediaToMemory()
           return { ok: false, error: '尚未設定 Firebase' }
         }
         try {
+          // 先還原佇列照片，避免雲端合併後短暫無圖／被空照片蓋掉
+          await get().restorePendingMediaToMemory()
+
           const remote = await pullProjectState(projectId)
-          if (!remote) return { ok: true } // 雲端尚無資料，保留本機
+          if (!remote) {
+            void get().flushPendingMediaUploads()
+            return { ok: true }
+          }
 
           const local =
             get().activeProjectId === projectId
@@ -504,6 +588,9 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             set({ ...structuredClone(merged), activeProjectId: projectId })
           }
 
+          // 合併後再掛一次佇列，確保 data URL 不被雲端空欄位蓋掉
+          await get().restorePendingMediaToMemory()
+
           // 本機有、雲端缺的部分補推回去
           if (
             local.buildings.length > remote.buildings.length ||
@@ -512,10 +599,143 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             scheduleCloudSync(get)
           }
 
+          void get().flushPendingMediaUploads()
           return { ok: true }
         } catch (err) {
           console.warn('[hydrateFromCloud] failed', err)
+          await get().restorePendingMediaToMemory()
           return { ok: false, error: '從雲端同步失敗' }
+        }
+      },
+
+      restorePendingMediaToMemory: async () => {
+        const projectId = get().activeProjectId
+        if (!projectId) return 0
+        try {
+          const pending = await listPendingDefectMedia()
+          const mine = pending.filter((p) => p.projectId === projectId)
+          if (mine.length === 0) return 0
+
+          let restored = 0
+          const nextDefects = get().defects.map((defect) => {
+            const entry = mine.find((p) => p.defectId === defect.id)
+            if (!entry || defect.status === 'voided') return defect
+
+            const planPhotoDataUrl = preferMediaUrl(
+              defect.planPhotoDataUrl,
+              entry.planPhotoDataUrl,
+            )
+            const photoDataUrls = mergePhotoLists(
+              defect.photoDataUrls,
+              entry.photoDataUrls,
+            )
+            const changed =
+              planPhotoDataUrl !== defect.planPhotoDataUrl ||
+              photoDataUrls.join('|') !== (defect.photoDataUrls ?? []).join('|')
+            if (!changed) return defect
+            restored += 1
+            return {
+              ...defect,
+              planPhotoDataUrl,
+              photoDataUrls,
+              syncState:
+                defect.syncState === 'synced' &&
+                (planPhotoDataUrl?.startsWith('data:') ||
+                  photoDataUrls.some((p) => p.startsWith('data:')))
+                  ? 'pending'
+                  : defect.syncState,
+            }
+          })
+
+          if (restored > 0) {
+            set({ defects: nextDefects })
+            afterProjectChange(get, set, { syncCloud: false })
+          }
+          return restored
+        } catch (err) {
+          console.warn('[restorePendingMediaToMemory] failed', err)
+          return 0
+        }
+      },
+
+      flushPendingMediaUploads: async () => {
+        const projectId = get().activeProjectId
+        if (!projectId) return { ok: false, uploaded: 0 }
+
+        // 無論是否連線，先把照片掛回畫面
+        await get().restorePendingMediaToMemory()
+        if (!cloudReady() || !navigator.onLine) return { ok: false, uploaded: 0 }
+
+        let uploaded = 0
+        try {
+          const pending = await listPendingDefectMedia()
+          const mine = pending.filter((p) => p.projectId === projectId)
+          for (const entry of mine) {
+            const defect = get().defects.find((d) => d.id === entry.defectId)
+            if (!defect || defect.status === 'voided') {
+              await clearPendingDefectMedia(entry.defectId)
+              continue
+            }
+
+            const withLocal: Defect = {
+              ...defect,
+              planPhotoDataUrl: preferMediaUrl(
+                defect.planPhotoDataUrl,
+                entry.planPhotoDataUrl,
+              ),
+              photoDataUrls: mergePhotoLists(
+                defect.photoDataUrls,
+                entry.photoDataUrls,
+              ),
+              syncState: 'syncing',
+            }
+            set({
+              defects: get().defects.map((d) => (d.id === defect.id ? withLocal : d)),
+            })
+
+            const needsUpload =
+              Boolean(withLocal.planPhotoDataUrl?.startsWith('data:')) ||
+              withLocal.photoDataUrls.some((p) => p.startsWith('data:'))
+            if (!needsUpload) {
+              await clearPendingDefectMedia(entry.defectId)
+              continue
+            }
+
+            try {
+              const { planUrl, photoUrls } = await uploadDefectImages({
+                projectId,
+                defectId: entry.defectId,
+                planPhotoDataUrl: withLocal.planPhotoDataUrl,
+                photoDataUrls: withLocal.photoDataUrls,
+              })
+              const synced: Defect = {
+                ...withLocal,
+                planPhotoDataUrl: planUrl ?? withLocal.planPhotoDataUrl,
+                photoDataUrls: photoUrls.length ? photoUrls : withLocal.photoDataUrls,
+                syncState: 'synced',
+                updatedAt: new Date().toISOString(),
+              }
+              await syncDefect(projectId, synced)
+              set({
+                defects: get().defects.map((d) => (d.id === synced.id ? synced : d)),
+              })
+              afterProjectChange(get, set, { syncCloud: false })
+              await clearPendingDefectMedia(entry.defectId)
+              uploaded += 1
+            } catch (err) {
+              console.warn('[flushPendingMediaUploads] one failed', entry.defectId, err)
+              set({
+                defects: get().defects.map((d) =>
+                  d.id === entry.defectId ? { ...d, syncState: 'failed' } : d,
+                ),
+              })
+            }
+          }
+          if (uploaded > 0) scheduleCloudSync(get)
+          return { ok: true, uploaded }
+        } catch (err) {
+          console.warn('[flushPendingMediaUploads] failed', err)
+          return { ok: false, uploaded }
         }
       },
 
