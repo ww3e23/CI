@@ -9,7 +9,7 @@ export function LoginPage() {
   const [error, setError] = useState('')
 
   return (
-    <div className="app-shell" style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
+    <div className="app-shell login-shell" style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ textAlign: 'center', marginBottom: 22 }}>
           <div

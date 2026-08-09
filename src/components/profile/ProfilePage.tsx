@@ -208,6 +208,13 @@ export function ProfilePage() {
         </section>
       )}
 
+      <section className="glass" style={{ padding: 14, marginBottom: 14 }}>
+        <div style={{ fontWeight: 800, marginBottom: 4 }}>安裝到手機</div>
+        <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12, lineHeight: 1.45 }}>
+          Android 請用 Chrome 開啟本站，點下方橫幅「安裝」，或選單 ⋮ →「安裝應用程式／加到主畫面」。
+        </p>
+      </section>
+
       {(role === 'admin' || user.systemAdmin) && (
         <a
           href="#/admin"
