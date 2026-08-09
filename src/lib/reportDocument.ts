@@ -7,6 +7,8 @@ type ReportInput = {
   projectCode?: string
   location?: string
   state: ProjectState
+  /** embed：給 App 內 iframe；window：獨立預覽頁 */
+  mode?: 'embed' | 'window'
 }
 
 function statusTone(status: Defect['status']): string {
@@ -40,7 +42,7 @@ function cellColor(status: string): string {
 }
 
 export function buildInspectionReportHtml(input: ReportInput): string {
-  const { state, projectName, projectCode, location } = input
+  const { state, projectName, projectCode, location, mode = 'window' } = input
   const matrix = buildMatrix(state)
   const counts = defectsByStatus(state.defects)
   const openDefects = state.defects
@@ -249,10 +251,14 @@ export function buildInspectionReportHtml(input: ReportInput): string {
   </style>
 </head>
 <body>
-  <div class="toolbar">
+  ${
+    mode === 'window'
+      ? `<div class="toolbar">
     <button class="btn-ghost" onclick="window.close()">關閉</button>
     <button class="btn-primary" onclick="window.print()">列印／匯出 PDF</button>
-  </div>
+  </div>`
+      : ''
+  }
   <div class="page">
     <section class="cover">
       <div class="eyebrow">SITE INSPECTION REPORT</div>
@@ -316,11 +322,27 @@ export function buildInspectionReportHtml(input: ReportInput): string {
 }
 
 export function openInspectionReport(input: ReportInput): Window | null {
-  const html = buildInspectionReportHtml(input)
+  const html = buildInspectionReportHtml({ ...input, mode: 'window' })
   const win = window.open('', '_blank', 'noopener,noreferrer')
   if (!win) return null
   win.document.open()
   win.document.write(html)
   win.document.close()
   return win
+}
+
+/** 下載完整 HTML 報告（手機也可存檔） */
+export function downloadInspectionReport(input: ReportInput, filename?: string) {
+  const html = buildInspectionReportHtml({ ...input, mode: 'window' })
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const stamp = new Date().toISOString().slice(0, 10)
+  a.href = url
+  a.download = filename || `${input.projectName}-查驗報告-${stamp}.html`
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
