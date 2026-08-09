@@ -1,0 +1,12 @@
+[
+  {
+    "origin": [
+      "https://ww3e23.github.io",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173"
+    ],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Cache-Control"],
+    "maxAgeSeconds": 3600
+  }
+]
