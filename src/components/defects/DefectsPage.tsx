@@ -75,30 +75,36 @@ export function DefectsPage() {
         </button>
       </header>
 
-      <div className="chip-row" style={{ marginBottom: 8 }}>
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            className={`chip ${quickStatus === t.key ? `on ${t.cls ?? ''}` : ''}`}
-            onClick={() => setQuickStatus(t.key)}
+      <div className="filter-select-row">
+        <label className="filter-select">
+          <span className="filter-select-label">狀態</span>
+          <select
+            value={quickStatus}
+            onChange={(e) => setQuickStatus(e.target.value as QuickStatus)}
+            aria-label="依狀態篩選"
           >
-            {t.label} {t.count}
-          </button>
-        ))}
-      </div>
+            {tabs.map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.label}（{t.count}）
+              </option>
+            ))}
+          </select>
+        </label>
 
-      <div className="chip-row" style={{ marginBottom: 10, flexWrap: 'nowrap', overflowX: 'auto' }}>
-        {categoryTabs.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            className={`chip ${quickCategory === c.id ? 'on' : ''}`}
-            onClick={() => setQuickCategory(c.id)}
+        <label className="filter-select">
+          <span className="filter-select-label">查驗大項</span>
+          <select
+            value={quickCategory}
+            onChange={(e) => setQuickCategory(e.target.value)}
+            aria-label="依查驗大項篩選"
           >
-            {c.name} {c.count}
-          </button>
-        ))}
+            {categoryTabs.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}（{c.count}）
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {(activeChips.length > 0 || filtered.length !== defects.filter((d) => d.status !== 'voided').length) && (
