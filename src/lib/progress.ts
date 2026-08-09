@@ -154,9 +154,9 @@ export function defectsByStatus(defects: Defect[]) {
   const open = defects.filter((d) => d.status !== 'voided')
   return {
     all: open.length,
-    pending_repair: open.filter((d) => d.status === 'pending_repair' || d.status === 'returned')
-      .length,
+    pending_repair: open.filter((d) => d.status === 'pending_repair').length,
     pending_reinspection: open.filter((d) => d.status === 'pending_reinspection').length,
+    returned: open.filter((d) => d.status === 'returned').length,
     completed: open.filter((d) => d.status === 'completed').length,
   }
 }

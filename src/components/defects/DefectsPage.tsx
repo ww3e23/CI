@@ -38,12 +38,9 @@ export function DefectsPage() {
     { key: 'all', label: '全部', count: counts.all },
     { key: 'pending_repair', label: '待改善', count: counts.pending_repair, cls: 'amber' },
     { key: 'pending_reinspection', label: '待複驗', count: counts.pending_reinspection, cls: 'slate' },
-    { key: 'returned', label: '退回', count: counts.pending_repair, cls: 'terra' },
+    { key: 'returned', label: '退回', count: counts.returned, cls: 'terra' },
     { key: 'completed', label: '已完成', count: counts.completed },
   ]
-
-  // 退回數量單獨算
-  tabs[3].count = defects.filter((d) => d.status === 'returned').length
 
   return (
     <div className="rise">
