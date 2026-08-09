@@ -158,7 +158,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       resetDemoData: () => set({ ...seedState }),
     }),
     {
-      name: 'site-inspection-v1',
+      name: 'site-inspection-v2',
     },
   ),
 )

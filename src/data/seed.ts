@@ -7,7 +7,7 @@ function makeBuilding(
   name: string,
   unitCodes: string[],
   sortOrder: number,
-  floors = expandFloorRange('B3F', 'R2F'),
+  floors = expandFloorRange('B3F', 'R2F'), // B3–B1、1–7、R1–R2
   naFloors = ['B3F', 'B2F', 'B1F', 'R1F', 'R2F'],
 ): BuildingRule {
   const naKeys: string[] = []
