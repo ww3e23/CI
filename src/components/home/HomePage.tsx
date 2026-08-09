@@ -1,11 +1,31 @@
-import { useMemo, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { useMemo, useState, type ComponentType } from 'react'
+import {
+  AppWindow,
+  ChevronDown,
+  DoorOpen,
+  Grid3x3,
+  Layers,
+  Paintbrush,
+  PanelTop,
+  Square,
+  type LucideProps,
+} from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentProject } from '../../store/useAuthStore'
 import { unitProgress } from '../../lib/progress'
 import { UnitSwitcher } from '../UnitSwitcher'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import type { ChecklistCategory } from '../../types'
+
+const CATEGORY_ICONS: Record<string, ComponentType<LucideProps>> = {
+  門: DoorOpen,
+  窗: AppWindow,
+  天花板: PanelTop,
+  粉刷牆面: Paintbrush,
+  地壁磚: Grid3x3,
+  地磚: Grid3x3,
+  木地板: Layers,
+}
 
 export function HomePage({
   onOpenCategory,
@@ -81,6 +101,8 @@ export function HomePage({
       </header>
 
       <div className="hero-stack">
+        <div className="hero-layer hero-layer-b" aria-hidden />
+        <div className="hero-layer hero-layer-a" aria-hidden />
         <section className="glass-green hero-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
             <div>
@@ -183,23 +205,12 @@ function CategoryCard({
   defectCount: number
   onClick: () => void
 }) {
+  const Icon = CATEGORY_ICONS[cat.name] ?? Square
   return (
     <button type="button" className="glass cat-card" onClick={onClick}>
       <span className={`badge ${defectCount > 0 ? 'warn' : 'zero'}`}>{defectCount}</span>
-      <div
-        style={{
-          width: 38,
-          height: 38,
-          borderRadius: 12,
-          background: cat.color,
-          color: '#fff',
-          display: 'grid',
-          placeItems: 'center',
-          fontWeight: 800,
-          marginBottom: 10,
-        }}
-      >
-        {cat.iconChar}
+      <div className="cat-icon" aria-hidden>
+        <Icon size={20} strokeWidth={1.8} />
       </div>
       <div className="serif" style={{ fontSize: 18, fontWeight: 700 }}>{cat.name}</div>
       <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>

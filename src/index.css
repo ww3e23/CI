@@ -113,21 +113,70 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 
 .hero-stack {
   position: relative;
-  margin: 8px 0 18px;
+  margin: 8px 0 22px;
+  /* 給後方疊層留位移空間 */
+  padding-right: 14px;
+  padding-bottom: 14px;
 }
 
-/* 單卡：不用背後假疊層，避免透明重疊鬼影 */
+.hero-layer {
+  position: absolute;
+  left: 0;
+  right: 14px;
+  top: 0;
+  bottom: 14px;
+  border-radius: 28px;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.hero-layer-a {
+  z-index: 0;
+  transform: translate(10px, 10px) rotate(1.8deg);
+  background: rgba(47, 93, 76, 0.28);
+}
+
+.hero-layer-b {
+  z-index: 0;
+  transform: translate(16px, 14px) rotate(2.8deg);
+  background: rgba(47, 93, 76, 0.16);
+}
+
 .hero-stack .hero-card {
   position: relative;
   z-index: 1;
   padding: 18px 16px 16px;
   border-radius: 28px;
-  /* 提高不透明度，內容不被背景色塊透穿 */
   background: linear-gradient(155deg, #3a6f5c 0%, #2f5d4c 55%, #264b3e 100%);
   border: 1px solid rgba(255, 255, 255, 0.28);
   box-shadow: var(--shadow-soft);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+.cat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 10px;
+  color: var(--green-deep);
+  background: rgba(47, 93, 76, 0.1);
+  border: 1px solid rgba(47, 93, 76, 0.12);
+}
+
+.status-chip-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+  padding-bottom: 2px;
+}
+
+.status-chip-row .chip {
+  flex: 0 0 auto;
 }
 
 .section-row {
@@ -523,6 +572,67 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   padding: 20px 16px;
 }
 
+.modal-layer.modal-bottom {
+  align-items: flex-end;
+  padding: 0;
+}
+
+.modal-dialog.sheet-bottom {
+  width: min(430px, 100%);
+  max-height: min(88dvh, 760px);
+  border-radius: 28px 28px 0 0;
+  margin: 0 auto;
+  padding: 10px 16px calc(18px + var(--safe-bottom));
+  animation: sheetSlideUp 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sheet-handle {
+  display: block;
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(34, 41, 31, 0.15);
+  margin: 4px auto 14px;
+}
+
+@keyframes sheetSlideUp {
+  from { transform: translateY(24px); opacity: 0.7; }
+  to { transform: none; opacity: 1; }
+}
+
+.upload-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.upload-actions .upload-box,
+.upload-actions .upload-box-btn {
+  min-height: 72px;
+  height: 100%;
+}
+
+.upload-box-btn {
+  border: 1.5px dashed rgba(47, 93, 76, 0.3);
+  border-radius: 16px;
+  min-height: 72px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.4);
+  color: var(--green-deep);
+  font-weight: 700;
+  font-size: 13px;
+  text-align: center;
+  padding: 12px;
+  width: 100%;
+}
+
+.upload-box-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .modal-backdrop,
 .sheet-backdrop {
   position: absolute;
@@ -549,13 +659,12 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   animation: modalPop 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* 舊底部 sheet 把手：獨立彈窗不再使用 */
-.sheet-handle {
-  display: none;
-}
-
 .modal-dialog.modal-wide {
   width: min(480px, 100%);
+}
+
+.modal-dialog:not(.sheet-bottom) > .sheet-handle {
+  display: none;
 }
 
 .stepper {
@@ -817,12 +926,18 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 46px;
-  padding: 0 16px;
-  border-radius: 999px;
+  width: 100%;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
   font-weight: 700;
+  font-size: 14px;
   color: var(--ink-soft);
   text-align: left;
+  flex: 0 0 auto;
+  align-self: start;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
@@ -834,7 +949,13 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 .admin-nav.on {
   background: var(--green-deep);
   color: #fff;
-  box-shadow: 0 8px 18px -10px rgba(38, 75, 62, 0.55);
+  box-shadow: none;
+}
+
+.admin-nav svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
 }
 
 .admin-sidebar-foot {

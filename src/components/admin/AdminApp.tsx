@@ -61,7 +61,15 @@ export function AdminApp() {
           </div>
         </div>
 
-        <nav style={{ display: 'grid', gap: 6, flex: 1 }}>
+        <nav
+          style={{
+            display: 'grid',
+            gap: 6,
+            flex: 1,
+            alignContent: 'start',
+            gridAutoRows: 'min-content',
+          }}
+        >
           {nav.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -69,7 +77,8 @@ export function AdminApp() {
               className={`admin-nav ${tab === key ? 'on' : ''}`}
               onClick={() => setTab(key)}
             >
-              <Icon size={18} /> {label}
+              <Icon size={18} strokeWidth={2} />
+              <span>{label}</span>
             </button>
           ))}
         </nav>

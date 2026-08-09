@@ -175,36 +175,37 @@ export function AddDefectSheet({
 
         <div className="field">
           <label>圖面位置照片（與現況照片分開）</label>
-          <label className="upload-box" style={{ cursor: 'pointer' }}>
-            {planPhoto ? '已選取圖面，點擊可更換' : '上傳／拍攝圖面位置'}
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              hidden
-              onChange={(e) => onPick(e.target.files?.[0], 'plan')}
-            />
-          </label>
+          <div className="upload-actions">
+            <label className="upload-box" style={{ cursor: 'pointer' }}>
+              {planPhoto ? '已選取圖面，點擊可更換' : '上傳／拍攝圖面位置'}
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                hidden
+                onChange={(e) => onPick(e.target.files?.[0], 'plan')}
+              />
+            </label>
+            <button
+              type="button"
+              className="upload-box-btn"
+              disabled={!planOriginal && !planPhoto}
+              onClick={() => {
+                if (!planOriginal && !planPhoto) {
+                  setError('請先上傳圖面，再進行標註')
+                  return
+                }
+                setAnnotateOpen(true)
+              }}
+            >
+              {planPhoto && planOriginal && planPhoto !== planOriginal
+                ? '重新標註位置'
+                : '標註位置（全螢幕）'}
+            </button>
+          </div>
           {planPhoto && (
             <img className="photo-thumb" src={planPhoto} alt="圖面位置" style={{ marginTop: 8 }} />
           )}
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ marginTop: 8, width: '100%' }}
-            disabled={!planOriginal && !planPhoto}
-            onClick={() => {
-              if (!planOriginal && !planPhoto) {
-                setError('請先上傳圖面，再進行標註')
-                return
-              }
-              setAnnotateOpen(true)
-            }}
-          >
-            {planPhoto && planOriginal && planPhoto !== planOriginal
-              ? '重新標註位置'
-              : '標註位置（全螢幕）'}
-          </button>
         </div>
 
         <div className="field">

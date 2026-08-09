@@ -3,7 +3,6 @@ import { ChevronRight, ListFilter, X } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { defectsByStatus, statusLabel } from '../../lib/progress'
 import type { Defect, DefectStatus } from '../../types'
-import { GlassSelect } from '../ui/GlassSelect'
 import {
   AdvancedFilterSheet,
   emptyFilters,
@@ -21,30 +20,14 @@ export function DefectsPage() {
   const items = useProjectStore((s) => s.checklistItems)
 
   const [quickStatus, setQuickStatus] = useState<QuickStatus>('all')
-  const [quickCategory, setQuickCategory] = useState<string>('all')
   const [filters, setFilters] = useState<DefectFilters>(emptyFilters())
   const [sheetOpen, setSheetOpen] = useState(false)
   const [selectedDefect, setSelectedDefect] = useState<Defect | null>(null)
 
   const filtered = useMemo(
-    () => applyFilters(defects, filters, quickStatus, quickCategory),
-    [defects, filters, quickStatus, quickCategory],
+    () => applyFilters(defects, filters, quickStatus),
+    [defects, filters, quickStatus],
   )
-
-  const categoryTabs = useMemo(() => {
-    const open = defects.filter((d) => d.status !== 'voided')
-    return [
-      { id: 'all', name: '全部大項', count: open.length },
-      ...categories
-        .filter((c) => c.active)
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((c) => ({
-          id: c.id,
-          name: c.name,
-          count: open.filter((d) => d.categoryId === c.id).length,
-        })),
-    ]
-  }, [defects, categories])
 
   const counts = defectsByStatus(defects)
 
@@ -78,28 +61,20 @@ export function DefectsPage() {
         </button>
       </header>
 
-      <div className="filter-select-row">
-        <GlassSelect
-          label="狀態"
-          aria-label="依狀態篩選"
-          value={quickStatus}
-          onChange={(v) => setQuickStatus(v as QuickStatus)}
-          options={tabs.map((t) => ({
-            value: t.key,
-            label: `${t.label}（${t.count}）`,
-          }))}
-        />
-
-        <GlassSelect
-          label="查驗大項"
-          aria-label="依查驗大項篩選"
-          value={quickCategory}
-          onChange={setQuickCategory}
-          options={categoryTabs.map((c) => ({
-            value: c.id,
-            label: `${c.name}（${c.count}）`,
-          }))}
-        />
+      <div className="status-chip-row" role="tablist" aria-label="狀態快捷篩選">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={quickStatus === t.key}
+            className={`chip ${t.cls ?? ''} ${quickStatus === t.key ? 'on' : ''}`}
+            onClick={() => setQuickStatus(t.key)}
+          >
+            {t.label}
+            <span className="nums" style={{ opacity: 0.85 }}>（{t.count}）</span>
+          </button>
+        ))}
       </div>
 
       {(activeChips.length > 0 || filtered.length !== defects.filter((d) => d.status !== 'voided').length) && (
@@ -195,13 +170,11 @@ function applyFilters(
   defects: Defect[],
   f: DefectFilters,
   quick: QuickStatus,
-  quickCategory: string,
 ): Defect[] {
   return defects.filter((d) => {
     if (d.status === 'voided') return false
 
     if (quick !== 'all' && d.status !== quick) return false
-    if (quickCategory !== 'all' && d.categoryId !== quickCategory) return false
 
     if (f.buildingIds.length && !f.buildingIds.includes(d.buildingId)) return false
     if (f.floors.length && !f.floors.includes(d.floor)) return false

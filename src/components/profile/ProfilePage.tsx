@@ -106,8 +106,13 @@ export function ProfilePage() {
 
       <div className="section-row">
         <h2>所屬專案與權限</h2>
-        <button type="button" className="link" onClick={() => setProjectOpen(true)}>
-          切換專案
+        <button
+          type="button"
+          className="chip"
+          style={{ minHeight: 34 }}
+          onClick={() => setProjectOpen(true)}
+        >
+          切換專案 <ChevronDown size={14} />
         </button>
       </div>
 
@@ -121,23 +126,8 @@ export function ProfilePage() {
             {project.code} · {project.location}
             {role ? ` · ${ROLE_LABEL[role]}` : ''}
           </div>
-          <button
-            type="button"
-            className="btn"
-            style={{
-              marginTop: 12,
-              width: '100%',
-              minHeight: 42,
-              background: 'rgba(255,255,255,0.22)',
-              color: '#fff',
-              fontWeight: 800,
-            }}
-            onClick={() => setProjectOpen(true)}
-          >
-            切換專案 <ChevronDown size={16} />
-          </button>
-          <div style={{ fontSize: 11, marginTop: 8, opacity: 0.88 }}>
-            調整棟別／樓層／戶別結構前，請先確認已切到正確專案。
+          <div style={{ fontSize: 11, marginTop: 10, opacity: 0.88 }}>
+            調整棟別／樓層／戶別結構前，請先確認已切到正確專案。點下方卡片即可切換。
           </div>
         </section>
       )}
@@ -184,37 +174,39 @@ export function ProfilePage() {
         })}
       </div>
 
-      <section className="glass" style={{ padding: 14, marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {cloud ? <Cloud size={20} color="var(--green-deep)" /> : <CloudOff size={20} color="var(--stone)" />}
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 800 }}>
-              {cloud ? 'Firebase 已設定' : '示範模式（本機資料）'}
+      {(role === 'admin' || user.systemAdmin) && (
+        <section className="glass" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {cloud ? <Cloud size={20} color="var(--green-deep)" /> : <CloudOff size={20} color="var(--stone)" />}
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800 }}>
+                {cloud ? 'Firebase 已設定' : '示範模式（本機資料）'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, marginTop: 2 }}>
+                {cloud
+                  ? '管理者可見：缺失與照片同步狀態'
+                  : '管理者可見：尚未接上 Firebase'}
+              </div>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, marginTop: 2 }}>
-              {cloud
-                ? '缺失與照片會上 Firebase；各專案可另綁 Google 雲端硬碟資料夾'
-                : '可先完整操作；接上 Firebase 後再上雲'}
-            </div>
+            <span className="chip" style={{ minHeight: 32 }}>{mode}</span>
           </div>
-          <span className="chip" style={{ minHeight: 32 }}>{mode}</span>
-        </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          style={{ width: '100%', marginTop: 12 }}
-          disabled={!cloud || busy}
-          onClick={async () => {
-            setBusy(true)
-            const r = await pushStructureToCloud()
-            setBusy(false)
-            setMsg(r.ok ? '結構已同步至雲端' : '同步失敗或尚未設定 Firebase')
-          }}
-        >
-          <RefreshCw size={16} /> 同步棟樓戶結構到雲端
-        </button>
-        {msg && <div className="sync-hint">{msg}</div>}
-      </section>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%', marginTop: 12 }}
+            disabled={!cloud || busy}
+            onClick={async () => {
+              setBusy(true)
+              const r = await pushStructureToCloud()
+              setBusy(false)
+              setMsg(r.ok ? '結構已同步至雲端' : '同步失敗或尚未設定 Firebase')
+            }}
+          >
+            <RefreshCw size={16} /> 同步棟樓戶結構到雲端
+          </button>
+          {msg && <div className="sync-hint">{msg}</div>}
+        </section>
+      )}
 
       {(role === 'admin' || user.systemAdmin) && (
         <a

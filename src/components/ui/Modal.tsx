@@ -6,16 +6,19 @@ type Props = {
   onClose: () => void
   'aria-label'?: string
   className?: string
+  /** center = 獨立置中彈窗；bottom = 底部 Sheet（篩選等） */
+  variant?: 'center' | 'bottom'
 }
 
 /**
- * 獨立置中彈窗：掛到 document.body，不受頁面 transform／捲動影響。
+ * 掛到 document.body，不受頁面 transform／捲動影響。
  */
 export function Modal({
   children,
   onClose,
   'aria-label': ariaLabel,
   className,
+  variant = 'center',
 }: Props) {
   useEffect(() => {
     const prev = document.body.style.overflow
@@ -30,15 +33,18 @@ export function Modal({
     }
   }, [onClose])
 
+  const bottom = variant === 'bottom'
+
   return createPortal(
-    <div className="modal-layer">
+    <div className={`modal-layer ${bottom ? 'modal-bottom' : ''}`.trim()}>
       <div className="modal-backdrop" onClick={onClose} />
       <div
-        className={`modal-dialog ${className ?? ''}`.trim()}
+        className={`modal-dialog ${bottom ? 'sheet-bottom' : ''} ${className ?? ''}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
       >
+        {bottom && <div className="sheet-handle" />}
         {children}
       </div>
     </div>,
