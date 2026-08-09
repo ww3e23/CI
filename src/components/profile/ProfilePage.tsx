@@ -105,7 +105,7 @@ export function ProfilePage() {
       </section>
 
       <div className="section-row">
-        <h2>所屬專案與權限</h2>
+        <h2>{user.systemAdmin ? '全部專案' : '所屬專案與權限'}</h2>
         <button
           type="button"
           className="chip"
@@ -133,7 +133,9 @@ export function ProfilePage() {
       )}
 
       <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12 }}>
-        權限由各專案管理者於後台指派，無法自行變更。點專案卡片可直接切換。
+        {user.systemAdmin
+          ? '系統管理者可進入任一專案查看與設定。點專案卡片即可切換。'
+          : '權限由各專案管理者於後台指派，無法自行變更。點專案卡片可直接切換。'}
       </p>
       <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
         {myProjects.map((p) => {

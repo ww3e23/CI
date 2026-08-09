@@ -26,6 +26,7 @@ export function ProjectsPage() {
   const upsertProject = useAuthStore((s) => s.upsertProject)
   const deleteProject = useAuthStore((s) => s.deleteProject)
   const setMemberRole = useAuthStore((s) => s.setMemberRole)
+  const switchProject = useAuthStore((s) => s.switchProject)
   const currentProjectId = useAuthStore((s) => s.currentProjectId)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -158,7 +159,32 @@ export function ProjectsPage() {
 
       {selected && (
         <section className="admin-panel" style={{ marginTop: 18, padding: 18 }}>
-          <h2 className="serif" style={{ margin: '0 0 8px' }}>{selected.name} · 設定</h2>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              gap: 12,
+              marginBottom: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            <h2 className="serif" style={{ margin: 0 }}>{selected.name} · 設定</h2>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ minHeight: 40 }}
+              onClick={() => {
+                switchProject(selected.id)
+                window.location.hash = '#/'
+              }}
+            >
+              進入現場查看
+            </button>
+          </div>
+          <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--ink-soft)' }}>
+            系統管理者可進入任一專案查看現場進度與缺失。
+          </p>
 
           <details style={{ marginBottom: 16 }}>
             <summary style={{ cursor: 'pointer', fontWeight: 800, color: 'var(--ink-soft)', fontSize: 13 }}>

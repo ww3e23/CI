@@ -72,6 +72,42 @@ export default function App() {
   }
 
   if (!currentProjectId) {
+    if (isSystemAdmin && projects.length > 0) {
+      return (
+        <div className="app-shell login-shell" style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
+          <div className="glass" style={{ width: '100%', maxWidth: 420, padding: 22 }}>
+            <h1 className="serif" style={{ margin: '0 0 8px', fontSize: 24 }}>選擇要查看的專案</h1>
+            <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', lineHeight: 1.5, fontSize: 14 }}>
+              系統管理者可進入任一專案查看。
+            </p>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {projects.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ justifyContent: 'flex-start', textAlign: 'left' }}
+                  onClick={() => useAuthStore.getState().switchProject(p.id)}
+                >
+                  <span style={{ fontWeight: 800 }}>{p.name}</span>
+                  <span style={{ color: 'var(--ink-soft)', marginLeft: 8, fontSize: 12 }}>
+                    {p.code}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <a
+              href="#/admin"
+              className="btn btn-primary"
+              style={{ marginTop: 16, textDecoration: 'none', display: 'inline-flex' }}
+            >
+              回後台
+            </a>
+          </div>
+          <InstallBanner />
+        </div>
+      )
+    }
     return (
       <div className="app-shell login-shell" style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
         <div className="glass" style={{ width: '100%', maxWidth: 420, padding: 22 }}>
