@@ -6,22 +6,17 @@ import {
   useCurrentProject,
   useCurrentRole,
   useCurrentUser,
-  userCanAccessProject,
 } from '../../store/useAuthStore'
 import { firebaseModeLabel, isFirebaseConfigured } from '../../lib/firebase'
 import { SettingsPage } from '../settings/SettingsPage'
 import { ProjectSwitcher } from '../home/ProjectSwitcher'
-import { ROLE_LABEL, ROLE_TONE } from '../../types/auth'
+import { ROLE_LABEL } from '../../types/auth'
 import { TitleHint } from '../ui/TitleHint'
 
 export function ProfilePage() {
   const user = useCurrentUser()
   const role = useCurrentRole()
   const project = useCurrentProject()
-  const members = useAuthStore((s) => s.members)
-  const projects = useAuthStore((s) => s.projects)
-  const users = useAuthStore((s) => s.users)
-  const switchProject = useAuthStore((s) => s.switchProject)
   const refreshDirectory = useAuthStore((s) => s.refreshDirectory)
   const updateDisplayName = useAuthStore((s) => s.updateDisplayName)
   const logout = useAuthStore((s) => s.logout)
@@ -34,8 +29,6 @@ export function ProfilePage() {
   const [projectOpen, setProjectOpen] = useState(false)
   const cloud = isFirebaseConfigured()
   const mode = firebaseModeLabel()
-
-  const myProjects = projects.filter((p) => userCanAccessProject(user, p.id, members, users))
 
   if (!user) return null
 
@@ -113,11 +106,11 @@ export function ProfilePage() {
           as="h2"
           hint={
             user.systemAdmin
-              ? '系統管理者可進入任一專案查看與設定。調整棟別／樓層／戶別前請先確認目前專案；點卡片即可切換。'
-              : '權限由各專案管理者於後台指派，無法自行變更。調整結構前請先確認目前專案；點卡片即可切換。'
+              ? '系統管理者可進入任一專案。要換專案請按右側「切換專案」。'
+              : '權限由後台指派。要換專案請按右側「切換專案」。'
           }
         >
-          {user.systemAdmin ? '全部專案' : '所屬專案與權限'}
+          目前專案
         </TitleHint>
         <button
           type="button"
@@ -129,9 +122,9 @@ export function ProfilePage() {
         </button>
       </div>
 
-      {project && (
-        <section className="glass-green" style={{ padding: 14, marginBottom: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.9 }}>目前專案</div>
+      {project ? (
+        <section className="glass-green" style={{ padding: 14, marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.9 }}>進行中</div>
           <div className="serif" style={{ fontSize: 20, fontWeight: 700, marginTop: 4 }}>
             {project.name}
           </div>
@@ -140,12 +133,24 @@ export function ProfilePage() {
             {role ? ` · ${ROLE_LABEL[role]}` : ''}
           </div>
         </section>
+      ) : (
+        <section className="glass" style={{ padding: 14, marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, color: 'var(--ink-soft)' }}>尚未選擇專案</div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%', marginTop: 10 }}
+            onClick={() => setProjectOpen(true)}
+          >
+            選擇專案
+          </button>
+        </section>
       )}
       {cloud && (
         <button
           type="button"
           className="btn btn-ghost"
-          style={{ width: '100%', marginBottom: 10, minHeight: 40 }}
+          style={{ width: '100%', marginBottom: 14, minHeight: 40 }}
           onClick={() => {
             void (async () => {
               setBusy(true)
@@ -159,44 +164,6 @@ export function ProfilePage() {
           <RefreshCw size={14} /> {busy ? '同步中…' : '重新同步專案（手機／電腦共用）'}
         </button>
       )}
-      <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
-        {myProjects.map((p) => {
-          const r =
-            user.systemAdmin
-              ? 'admin'
-              : members.find((m) => m.userId === user.id && m.projectId === p.id)?.role
-          if (!r) return null
-          const isCurrent = project?.id === p.id
-          return (
-            <button
-              key={p.id}
-              type="button"
-              className={isCurrent ? 'glass-green' : 'glass'}
-              style={{
-                padding: 12,
-                display: 'flex',
-                justifyContent: 'space-between',
-                gap: 8,
-                alignItems: 'center',
-                textAlign: 'left',
-                borderRadius: 20,
-              }}
-              onClick={() => switchProject(p.id)}
-            >
-              <div>
-                <div style={{ fontWeight: 800 }}>
-                  {p.name}
-                  {isCurrent ? ' · 目前' : ''}
-                </div>
-                <div style={{ fontSize: 12, opacity: isCurrent ? 0.9 : 1, color: isCurrent ? undefined : 'var(--ink-soft)', fontWeight: 600 }}>
-                  {p.code}
-                </div>
-              </div>
-              <span className={`role-tag ${ROLE_TONE[r]}`}>{ROLE_LABEL[r]}</span>
-            </button>
-          )
-        })}
-      </div>
 
       {(role === 'admin' || user.systemAdmin) && (
         <section className="glass" style={{ padding: 14, marginBottom: 14 }}>

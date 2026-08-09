@@ -29,6 +29,7 @@ const LONG_MS = 420
 
 /**
  * 標題長按顯示說明：氣泡貼在標題旁並隨捲動重算，點外側／Esc 關閉。
+ * 會一直顯示到使用者主動關閉，不會一放開就消失。
  */
 export function TitleHint({ hint, children, as = 'div', className, style }: Props) {
   const Tag = as
@@ -36,6 +37,7 @@ export function TitleHint({ hint, children, as = 'div', className, style }: Prop
   const anchorRef = useRef<HTMLElement | null>(null)
   const bubbleRef = useRef<HTMLDivElement | null>(null)
   const timerRef = useRef<number | null>(null)
+  const openedByPressRef = useRef(false)
   const [open, setOpen] = useState(false)
   const [pop, setPop] = useState<Pop | null>(null)
 
@@ -66,21 +68,20 @@ export function TitleHint({ hint, children, as = 'div', className, style }: Prop
     setPop({ top, left, width: maxW, placement })
   }
 
-  const openHint = () => {
-    if (open) {
-      setOpen(false)
-      return
-    }
+  const showHint = () => {
     measure()
     setOpen(true)
   }
 
   const onPointerDown = (e: ReactPointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
+    // 已開啟時點標題本身不關閉（避免長按放開後的殘餘手勢立刻關掉）
     clearTimer()
+    openedByPressRef.current = false
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null
-      openHint()
+      openedByPressRef.current = true
+      showHint()
     }, LONG_MS)
   }
 
@@ -92,7 +93,7 @@ export function TitleHint({ hint, children, as = 'div', className, style }: Prop
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
-    const onPointer = (e: PointerEvent) => {
+    const onOutside = (e: Event) => {
       const t = e.target as Node
       if (anchorRef.current?.contains(t)) return
       if (bubbleRef.current?.contains(t)) return
@@ -101,15 +102,18 @@ export function TitleHint({ hint, children, as = 'div', className, style }: Prop
     const onScrollOrResize = () => measure()
 
     document.addEventListener('keydown', onKey)
+    // 等長按手指放開後再監聽外側點擊，避免同一手勢把氣泡立刻關掉
     const id = window.setTimeout(() => {
-      document.addEventListener('pointerdown', onPointer, true)
-    }, 0)
+      document.addEventListener('pointerdown', onOutside, true)
+      document.addEventListener('touchstart', onOutside, true)
+    }, 450)
     window.addEventListener('scroll', onScrollOrResize, true)
     window.addEventListener('resize', onScrollOrResize)
     return () => {
       window.clearTimeout(id)
       document.removeEventListener('keydown', onKey)
-      document.removeEventListener('pointerdown', onPointer, true)
+      document.removeEventListener('pointerdown', onOutside, true)
+      document.removeEventListener('touchstart', onOutside, true)
       window.removeEventListener('scroll', onScrollOrResize, true)
       window.removeEventListener('resize', onScrollOrResize)
     }
@@ -128,10 +132,10 @@ export function TitleHint({ hint, children, as = 'div', className, style }: Prop
         onPointerLeave={endPress}
         onPointerCancel={endPress}
         onContextMenu={(e) => {
-          if (hint) {
-            e.preventDefault()
-            openHint()
-          }
+          if (!hint) return
+          e.preventDefault()
+          // 系統長按選單：只負責開啟，不要 toggle 關掉剛開的氣泡
+          showHint()
         }}
         aria-describedby={open ? tipId : undefined}
       >
@@ -154,6 +158,13 @@ export function TitleHint({ hint, children, as = 'div', className, style }: Prop
             }}
           >
             <div className="title-hint-bubble-body">{hint}</div>
+            <button
+              type="button"
+              className="title-hint-dismiss"
+              onClick={() => setOpen(false)}
+            >
+              知道了
+            </button>
           </div>,
           document.body,
         )}

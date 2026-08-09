@@ -1552,6 +1552,22 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   font-weight: 600;
 }
 
+.title-hint-dismiss {
+  display: block;
+  margin-top: 10px;
+  width: 100%;
+  min-height: 36px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--green-deep);
+  background: rgba(47, 93, 76, 0.1);
+}
+
+.title-hint-dismiss:active {
+  opacity: 0.75;
+}
+
 @keyframes titleHintPop {
   from {
     opacity: 0;
