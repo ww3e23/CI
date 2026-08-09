@@ -170,7 +170,7 @@ export function AccountsPage() {
               <input
                 value={editing.password}
                 onChange={(e) => setEditing({ ...editing, password: e.target.value })}
-                placeholder="至少 6 碼"
+                placeholder="至少 4 碼"
                 autoComplete="new-password"
               />
               <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>

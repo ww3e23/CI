@@ -6,6 +6,7 @@ import {
   updateProfile,
 } from 'firebase/auth'
 import { getFirebaseWebConfig, isFirebaseConfigured } from '../lib/firebase'
+import { toFirebasePassword } from '../lib/password'
 
 const SECONDARY_APP = 'ci-auth-provision'
 
@@ -51,14 +52,11 @@ export async function provisionFirebaseAuthUser(input: {
   }
 
   const email = input.email.trim().toLowerCase()
-  const password = input.password
+  const password = toFirebasePassword(input.password)
   const displayName = input.displayName.trim()
 
-  if (!email || !password) {
+  if (!email || !input.password.trim()) {
     return { ok: false, created: false, error: '帳號與密碼不可空白' }
-  }
-  if (password.length < 6) {
-    return { ok: false, created: false, error: 'Firebase 密碼至少需 6 碼' }
   }
 
   const app = getSecondaryApp()
@@ -86,7 +84,7 @@ export async function provisionFirebaseAuthUser(input: {
       return { ok: true, created: false, alreadyExists: true }
     }
     if (code === 'auth/weak-password') {
-      return { ok: false, created: false, error: '密碼強度不足（至少 6 碼）' }
+      return { ok: false, created: false, error: '密碼強度不足，請換一組密碼' }
     }
     if (code === 'auth/invalid-email') {
       return { ok: false, created: false, error: 'Email 格式不正確' }
