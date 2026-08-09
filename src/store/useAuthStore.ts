@@ -283,6 +283,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       upsertProject: (project) => {
         const projects = [...get().projects]
         const idx = projects.findIndex((p) => p.id === project.id)
+        const isNew = idx < 0
         if (idx >= 0) projects[idx] = project
         else {
           projects.push(project)
@@ -291,6 +292,13 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         set({ projects })
         if (isFirebaseConfigured()) {
           void syncProjectMeta(project)
+        }
+        // 系統管理者建立專案後若尚未選專案，自動進入以便查看
+        if (isNew) {
+          const me = get().users.find((u) => u.id === get().currentUserId)
+          if (me?.systemAdmin && !get().currentProjectId) {
+            get().switchProject(project.id)
+          }
         }
       },
 

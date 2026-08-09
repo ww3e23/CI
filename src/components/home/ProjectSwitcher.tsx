@@ -12,8 +12,8 @@ export function ProjectSwitcher({ onClose }: { onClose: () => void }) {
   const user = users.find((u) => u.id === userId)
 
   const accessible = projects.filter((p) => {
-    if (p.status !== 'active') return false
     if (user?.systemAdmin) return true
+    if (p.status !== 'active') return false
     return members.some((m) => m.userId === userId && m.projectId === p.id)
   })
 
@@ -26,7 +26,9 @@ export function ProjectSwitcher({ onClose }: { onClose: () => void }) {
     <Modal onClose={onClose} aria-label="切換專案">
         <h3 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>切換專案</h3>
         <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13 }}>
-          你目前有 {accessible.length} 個專案的存取權限
+          {user?.systemAdmin
+            ? `系統管理者可查看全部 ${accessible.length} 個專案`
+            : `你目前有 ${accessible.length} 個專案的存取權限`}
         </p>
 
         <div style={{ display: 'grid', gap: 10 }}>
@@ -56,6 +58,7 @@ export function ProjectSwitcher({ onClose }: { onClose: () => void }) {
                   <div className="serif" style={{ fontWeight: 700, fontSize: 17 }}>{p.name}</div>
                   <div style={{ fontSize: 12, opacity: selected ? 0.9 : 1, color: selected ? undefined : 'var(--ink-soft)', marginTop: 4, fontWeight: 600 }}>
                     {p.location} · {p.code}
+                    {p.status !== 'active' ? ' · 封存' : ''}
                   </div>
                 </div>
                 {role && (

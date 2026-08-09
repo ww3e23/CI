@@ -114,7 +114,7 @@ export function AdminApp() {
               color: 'var(--ink-soft)',
             }}
           >
-            ← 回現場 App
+            ← 回現場 App（可查看全部專案）
           </a>
         </div>
       </aside>
