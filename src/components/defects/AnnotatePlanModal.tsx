@@ -24,9 +24,14 @@ export function AnnotatePlanModal({
   const [tool, setTool] = useState<Tool>('pen')
   const [color, setColor] = useState('#AE4C3B')
   const [strokes, setStrokes] = useState<Stroke[]>([])
-  const [, setRedo] = useState<Stroke[]>([])
+  const [redoStack, setRedoStack] = useState<Stroke[]>([])
   const drawing = useRef<Stroke | null>(null)
+  const strokesRef = useRef<Stroke[]>([])
   const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    strokesRef.current = strokes
+  }, [strokes])
 
   useEffect(() => {
     const img = new Image()
@@ -56,11 +61,13 @@ export function AnnotatePlanModal({
     if (!ctx) return
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    for (const s of list) drawStroke(ctx, s)
+    for (const s of list) {
+      if (s?.points?.length) drawStroke(ctx, s)
+    }
   }
 
   function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke) {
-    if (s.points.length === 0) return
+    if (!s?.points?.length) return
     ctx.strokeStyle = s.color
     ctx.fillStyle = s.color
     ctx.lineWidth = s.width
@@ -79,7 +86,7 @@ export function AnnotatePlanModal({
       const b = s.points[s.points.length - 1]
       const r = Math.hypot(b.x - a.x, b.y - a.y)
       ctx.beginPath()
-      ctx.arc(a.x, a.y, r, 0, Math.PI * 2)
+      ctx.arc(a.x, a.y, Math.max(r, 2), 0, Math.PI * 2)
       ctx.stroke()
       return
     }
@@ -104,7 +111,24 @@ export function AnnotatePlanModal({
 
   function pos(e: ReactPointerEvent<HTMLCanvasElement>) {
     const rect = e.currentTarget.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    const scaleX = e.currentTarget.width / rect.width
+    const scaleY = e.currentTarget.height / rect.height
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    }
+  }
+
+  function finishStroke() {
+    // 先取出 stroke 再清空 ref，避免 setState 延遲執行時 drawing.current 已是 null
+    const stroke = drawing.current
+    drawing.current = null
+    if (!stroke?.points?.length) return
+    const next = [...strokesRef.current, stroke]
+    strokesRef.current = next
+    setStrokes(next)
+    setRedoStack([])
+    redraw(next)
   }
 
   return (
@@ -166,8 +190,10 @@ export function AnnotatePlanModal({
             setStrokes((s) => {
               if (!s.length) return s
               const last = s[s.length - 1]
-              setRedo((r) => [...r, last])
-              return s.slice(0, -1)
+              setRedoStack((r) => [...r, last])
+              const next = s.slice(0, -1)
+              strokesRef.current = next
+              return next
             })
           }}
           aria-label="復原"
@@ -177,11 +203,16 @@ export function AnnotatePlanModal({
         <button
           type="button"
           className="icon-btn"
+          disabled={redoStack.length === 0}
           onClick={() => {
-            setRedo((r) => {
+            setRedoStack((r) => {
               if (!r.length) return r
               const last = r[r.length - 1]
-              setStrokes((s) => [...s, last])
+              setStrokes((s) => {
+                const next = [...s, last]
+                strokesRef.current = next
+                return next
+              })
               return r.slice(0, -1)
             })
           }}
@@ -193,8 +224,9 @@ export function AnnotatePlanModal({
           type="button"
           className="icon-btn"
           onClick={() => {
+            strokesRef.current = []
             setStrokes([])
-            setRedo([])
+            setRedoStack([])
           }}
           aria-label="清除"
         >
@@ -207,6 +239,7 @@ export function AnnotatePlanModal({
           ref={canvasRef}
           className="annotate-canvas"
           onPointerDown={(e) => {
+            e.preventDefault()
             e.currentTarget.setPointerCapture(e.pointerId)
             drawing.current = {
               tool,
@@ -216,19 +249,16 @@ export function AnnotatePlanModal({
             }
           }}
           onPointerMove={(e) => {
-            if (!drawing.current) return
-            drawing.current.points.push(pos(e))
-            redraw([...strokes, drawing.current])
+            const cur = drawing.current
+            if (!cur?.points) return
+            cur.points.push(pos(e))
+            redraw([...strokesRef.current, cur])
           }}
-          onPointerUp={() => {
-            if (!drawing.current) return
-            setStrokes((s) => [...s, drawing.current!])
-            setRedo([])
-            drawing.current = null
-          }}
+          onPointerUp={finishStroke}
+          onPointerCancel={finishStroke}
         />
       </div>
-      <p className="annotate-hint">可雙指縮放畫面外瀏覽器；在圖上拖曳即可標註，完成後按「完成標註」。</p>
+      <p className="annotate-hint">拖曳標註後放開即可；按「完成標註」套用回缺失表單。</p>
     </div>
   )
 }

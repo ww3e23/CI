@@ -131,19 +131,19 @@ export function HomePage({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginTop: 14 }}>
-            <div className="status-pill">
-              <span className="n nums" style={{ color: '#F0D2A8' }}>{stats.repair}</span>
+            <div className="status-pill status-pill-amber">
+              <span className="n nums">{stats.repair}</span>
               <span className="l">待改善</span>
             </div>
-            <div className="status-pill">
-              <span className="n nums" style={{ color: '#B7D3E8' }}>{stats.reinspect}</span>
+            <div className="status-pill status-pill-slate">
+              <span className="n nums">{stats.reinspect}</span>
               <span className="l">待複驗</span>
             </div>
-            <div className="status-pill">
-              <span className="n nums" style={{ color: '#E8B4AB' }}>{stats.returned}</span>
+            <div className="status-pill status-pill-terra">
+              <span className="n nums">{stats.returned}</span>
               <span className="l">退回</span>
             </div>
-            <div className="status-pill">
+            <div className="status-pill status-pill-done">
               <span className="n nums">{stats.done}</span>
               <span className="l">已完成</span>
             </div>

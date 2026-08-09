@@ -2,22 +2,33 @@ import { useState } from 'react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { countActiveUnits, newBuildingDraft, summarizeBuilding } from '../../lib/units'
 import { BuildingEditor } from './BuildingEditor'
-import type { BuildingRule } from '../../types'
+import { TemplateEditor } from './TemplateEditor'
+import { createId } from '../../lib/id'
+import type { BuildingRule, ChecklistCategory } from '../../types'
 
 export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const buildings = useProjectStore((s) => s.buildings)
   const categories = useProjectStore((s) => s.categories)
+  const checklistItems = useProjectStore((s) => s.checklistItems)
   const units = useProjectStore((s) => s.units)
   const upsertBuilding = useProjectStore((s) => s.upsertBuilding)
   const removeBuilding = useProjectStore((s) => s.removeBuilding)
+  const upsertCategory = useProjectStore((s) => s.upsertCategory)
+  const removeCategory = useProjectStore((s) => s.removeCategory)
   const resetDemoData = useProjectStore((s) => s.resetDemoData)
 
   const [editing, setEditing] = useState<BuildingRule | null>(null)
+  const [editingCat, setEditingCat] = useState<ChecklistCategory | null>(null)
+  const [isNewCat, setIsNewCat] = useState(false)
+
   const activeBuildings = [...buildings]
     .filter((b) => b.active)
     .sort((a, b) => a.sortOrder - b.sortOrder)
 
   const totalActiveUnits = units.filter((u) => u.active).length
+  const activeCats = categories
+    .filter((c) => c.active)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
 
   return (
     <div className={embedded ? undefined : 'rise'}>
@@ -95,40 +106,89 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
 
       <div className="section-row">
         <h2>查驗範本</h2>
+        <button
+          type="button"
+          className="link"
+          onClick={() => {
+            setIsNewCat(true)
+            setEditingCat({
+              id: createId('cat'),
+              name: '',
+              iconChar: '項',
+              color: '#2F5D4C',
+              itemCount: 0,
+              sortOrder: categories.length,
+              active: true,
+            })
+          }}
+        >
+          + 新增大項
+        </button>
       </div>
 
+      <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12 }}>
+        編輯細項後會套用到所有戶別；已有缺失的項目刪除時會改為停用並保留紀錄。
+      </p>
+
       <div style={{ display: 'grid', gap: 8 }}>
-        {categories
-          .filter((c) => c.active)
-          .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map((cat) => (
-            <article
-              key={cat.id}
-              className="glass"
-              style={{ padding: 12, display: 'flex', alignItems: 'center', gap: 12 }}
+        {activeCats.map((cat) => (
+          <article
+            key={cat.id}
+            className="glass"
+            style={{ padding: 12, display: 'flex', alignItems: 'center', gap: 12 }}
+          >
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                background: cat.color,
+                color: '#fff',
+                display: 'grid',
+                placeItems: 'center',
+                fontWeight: 800,
+              }}
             >
-              <div
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 12,
-                  background: cat.color,
-                  color: '#fff',
-                  display: 'grid',
-                  placeItems: 'center',
-                  fontWeight: 800,
-                }}
-              >
-                {cat.iconChar}
+              {cat.iconChar}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800 }}>{cat.name}</div>
+              <div style={{ color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
+                {cat.itemCount} 細項
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 800 }}>{cat.name}</div>
-                <div style={{ color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-                  {cat.itemCount} 細項
-                </div>
-              </div>
-            </article>
-          ))}
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ minHeight: 40 }}
+              onClick={() => {
+                setIsNewCat(false)
+                setEditingCat(cat)
+              }}
+            >
+              編輯
+            </button>
+          </article>
+        ))}
+
+        <button
+          type="button"
+          className="btn-dashed"
+          onClick={() => {
+            setIsNewCat(true)
+            setEditingCat({
+              id: createId('cat'),
+              name: '',
+              iconChar: '項',
+              color: '#2F5D4C',
+              itemCount: 0,
+              sortOrder: categories.length,
+              active: true,
+            })
+          }}
+        >
+          + 新增大項
+        </button>
       </div>
 
       {editing && (
@@ -146,6 +206,35 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
                   setEditing(null)
                 }
               : undefined
+          }
+        />
+      )}
+
+      {editingCat && (
+        <TemplateEditor
+          initial={editingCat}
+          initialItems={checklistItems
+            .filter((i) => i.categoryId === editingCat.id && i.active)
+            .sort((a, b) => a.sortOrder - b.sortOrder)}
+          onCancel={() => {
+            setEditingCat(null)
+            setIsNewCat(false)
+          }}
+          onSave={(cat, items) => {
+            upsertCategory(cat, items)
+            setEditingCat(null)
+            setIsNewCat(false)
+          }}
+          onDelete={
+            isNewCat
+              ? undefined
+              : () => {
+                  if (!confirm('確定刪除／停用此大項？若已有缺失紀錄將改為停用並保留歷史。')) return
+                  const r = removeCategory(editingCat.id)
+                  if (r.reason) alert(r.reason)
+                  setEditingCat(null)
+                  setIsNewCat(false)
+                }
           }
         />
       )}

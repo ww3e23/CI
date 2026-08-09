@@ -1,6 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { BuildingRule, Defect, DefectStatus, ProjectState, SyncState } from '../types'
+import type {
+  BuildingRule,
+  ChecklistCategory,
+  ChecklistItem,
+  Defect,
+  DefectStatus,
+  ProjectState,
+  SyncState,
+} from '../types'
 import { createProjectBundles, seedState } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
@@ -30,6 +38,10 @@ interface ProjectActions {
   loadProjectBundle: (projectId: string) => void
   saveProjectBundle: (projectId: string) => void
   ensureProjectBundle: (projectId: string, name: string) => void
+  upsertCategory: (category: ChecklistCategory, items: ChecklistItem[]) => void
+  removeCategory: (categoryId: string) => { ok: boolean; reason?: string }
+  upsertChecklistItem: (item: ChecklistItem) => void
+  removeChecklistItem: (itemId: string) => { ok: boolean; reason?: string }
 }
 
 interface BundleState {
@@ -259,6 +271,111 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         } catch {
           return { ok: false, mode }
         }
+      },
+
+      upsertCategory: (category, items) => {
+        const state = get()
+        const cats = [...state.categories]
+        const idx = cats.findIndex((c) => c.id === category.id)
+        const nextItems = [
+          ...state.checklistItems.filter((i) => i.categoryId !== category.id),
+          ...items.map((it, i) => ({
+            ...it,
+            categoryId: category.id,
+            sortOrder: i,
+            active: it.active !== false,
+          })),
+        ]
+        const synced: ChecklistCategory = {
+          ...category,
+          itemCount: nextItems.filter((i) => i.categoryId === category.id && i.active).length,
+          active: true,
+        }
+        if (idx >= 0) cats[idx] = synced
+        else cats.push({ ...synced, sortOrder: cats.length })
+
+        // 連動：已存在缺失的 categoryName 跟著改
+        const defects = state.defects.map((d) =>
+          d.categoryId === category.id ? { ...d, categoryName: synced.name } : d,
+        )
+
+        set({ categories: cats, checklistItems: nextItems, defects })
+      },
+
+      removeCategory: (categoryId) => {
+        const state = get()
+        const hasDefects = state.defects.some(
+          (d) => d.categoryId === categoryId && d.status !== 'voided',
+        )
+        if (hasDefects) {
+          // 有歷史缺失：只能停用，保留紀錄
+          set({
+            categories: state.categories.map((c) =>
+              c.id === categoryId ? { ...c, active: false } : c,
+            ),
+            checklistItems: state.checklistItems.map((i) =>
+              i.categoryId === categoryId ? { ...i, active: false } : i,
+            ),
+          })
+          return { ok: true, reason: '已有缺失紀錄，已改為停用（無法物理刪除）' }
+        }
+        set({
+          categories: state.categories.filter((c) => c.id !== categoryId),
+          checklistItems: state.checklistItems.filter((i) => i.categoryId !== categoryId),
+        })
+        return { ok: true }
+      },
+
+      upsertChecklistItem: (item) => {
+        const state = get()
+        const list = [...state.checklistItems]
+        const idx = list.findIndex((i) => i.id === item.id)
+        if (idx >= 0) list[idx] = item
+        else list.push(item)
+        const categories = state.categories.map((c) =>
+          c.id === item.categoryId
+            ? {
+                ...c,
+                itemCount: list.filter((i) => i.categoryId === c.id && i.active).length,
+              }
+            : c,
+        )
+        set({ checklistItems: list, categories })
+      },
+
+      removeChecklistItem: (itemId) => {
+        const state = get()
+        const item = state.checklistItems.find((i) => i.id === itemId)
+        if (!item) return { ok: false, reason: '找不到細項' }
+        const hasDefects = state.defects.some(
+          (d) => d.checklistItemId === itemId && d.status !== 'voided',
+        )
+        if (hasDefects) {
+          const list = state.checklistItems.map((i) =>
+            i.id === itemId ? { ...i, active: false } : i,
+          )
+          const categories = state.categories.map((c) =>
+            c.id === item.categoryId
+              ? {
+                  ...c,
+                  itemCount: list.filter((i) => i.categoryId === c.id && i.active).length,
+                }
+              : c,
+          )
+          set({ checklistItems: list, categories })
+          return { ok: true, reason: '細項已有缺失，已改為停用' }
+        }
+        const list = state.checklistItems.filter((i) => i.id !== itemId)
+        const categories = state.categories.map((c) =>
+          c.id === item.categoryId
+            ? {
+                ...c,
+                itemCount: list.filter((i) => i.categoryId === c.id && i.active).length,
+              }
+            : c,
+        )
+        set({ checklistItems: list, categories })
+        return { ok: true }
       },
     }),
     {
