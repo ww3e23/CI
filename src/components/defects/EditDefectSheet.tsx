@@ -1,0 +1,257 @@
+import { useState } from 'react'
+import { useProjectStore } from '../../store/useProjectStore'
+import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
+import { fileToCompressedDataUrl } from '../../lib/imageCompress'
+import type { Defect } from '../../types'
+import { Modal } from '../ui/Modal'
+import { AnnotatePlanModal } from './AnnotatePlanModal'
+
+export function EditDefectSheet({
+  defect,
+  onClose,
+}: {
+  defect: Defect
+  onClose: () => void
+}) {
+  const categories = useProjectStore((s) => s.categories)
+  const areas = useProjectStore((s) => s.areas)
+  const updateDefect = useProjectStore((s) => s.updateDefect)
+  const role = useCurrentRole()
+  const user = useCurrentUser()
+  const canEdit = role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
+
+  const activeCats = categories.filter((c) => c.active)
+  const [catId, setCatId] = useState(defect.categoryId)
+  const cat = activeCats.find((c) => c.id === catId) ?? activeCats[0]
+  const [area, setArea] = useState(defect.area)
+  const [description, setDescription] = useState(defect.description)
+  const [planPhoto, setPlanPhoto] = useState<string | undefined>(defect.planPhotoDataUrl)
+  const [planOriginal, setPlanOriginal] = useState<string | undefined>(defect.planPhotoDataUrl)
+  const [photos, setPhotos] = useState<string[]>([...(defect.photoDataUrls ?? [])])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [annotateOpen, setAnnotateOpen] = useState(false)
+
+  async function onPick(file: File | undefined, kind: 'plan' | 'photo') {
+    if (!file) return
+    try {
+      const url = await fileToCompressedDataUrl(file, {
+        maxEdge: kind === 'plan' ? 2048 : 1600,
+        quality: kind === 'plan' ? 0.9 : 0.84,
+      })
+      if (kind === 'plan') {
+        setPlanOriginal(url)
+        setPlanPhoto(url)
+      } else {
+        setPhotos((prev) => [...prev, url].slice(0, 6))
+      }
+    } catch {
+      setError('讀取圖片失敗，請換一張再試')
+    }
+  }
+
+  async function handleSave() {
+    if (!canEdit) {
+      setError('目前角色為僅查看，無法修改缺失')
+      return
+    }
+    if (!cat) {
+      setError('請選擇查驗大項')
+      return
+    }
+    const text = description.trim()
+    if (!text) {
+      setError('請填寫缺失說明')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    const result = await updateDefect(defect.id, {
+      categoryId: cat.id,
+      categoryName: cat.name,
+      area,
+      description: text,
+      planPhotoDataUrl: planPhoto ?? null,
+      photoDataUrls: photos,
+    })
+    setSaving(false)
+    if (!result.ok) {
+      setError(result.error || '儲存失敗')
+      return
+    }
+    onClose()
+  }
+
+  return (
+    <>
+      <Modal onClose={onClose} aria-label="修改缺失">
+        <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>
+          修改缺失 #{defect.defectNumber}
+        </h3>
+        <p style={{ margin: '8px 0 12px', color: 'var(--ink-soft)', fontSize: 13 }}>
+          {defect.buildingName}・{defect.floor}・{defect.unitCode}戶
+        </p>
+
+        {!canEdit && (
+          <div style={{ color: 'var(--terracotta)', fontWeight: 700, fontSize: 13, marginBottom: 10 }}>
+            目前為僅查看權限，無法修改。
+          </div>
+        )}
+
+        <div className="field">
+          <label>查驗大項</label>
+          <div className="chip-row">
+            {activeCats.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className={`chip ${cat?.id === c.id ? 'on' : ''}`}
+                onClick={() => setCatId(c.id)}
+                disabled={!canEdit}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field">
+          <label>缺失區域</label>
+          <div className="chip-row" style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
+            {areas.map((a) => (
+              <button
+                key={a}
+                type="button"
+                className={`chip ${area === a ? 'on' : ''}`}
+                onClick={() => setArea(a)}
+                disabled={!canEdit}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field">
+          <label>圖面位置照片</label>
+          <div className="upload-actions">
+            <label className="upload-box" style={{ cursor: canEdit ? 'pointer' : 'default' }}>
+              {planPhoto ? '已有圖面，點擊可更換' : '上傳／拍攝圖面位置'}
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                hidden
+                disabled={!canEdit}
+                onChange={(e) => void onPick(e.target.files?.[0], 'plan')}
+              />
+            </label>
+            <button
+              type="button"
+              className="upload-box-btn"
+              disabled={!canEdit || (!planOriginal && !planPhoto)}
+              onClick={() => setAnnotateOpen(true)}
+            >
+              標註位置
+            </button>
+            {planPhoto && canEdit && (
+              <button
+                type="button"
+                className="upload-box-btn"
+                onClick={() => {
+                  setPlanPhoto(undefined)
+                  setPlanOriginal(undefined)
+                }}
+              >
+                清除圖面
+              </button>
+            )}
+          </div>
+          {planPhoto && (
+            <img className="photo-thumb" src={planPhoto} alt="圖面位置" style={{ marginTop: 8 }} />
+          )}
+        </div>
+
+        <div className="field">
+          <label>缺失現況照片</label>
+          <div className="photo-row">
+            {photos.map((p, i) => (
+              <button
+                key={`${i}-${p.slice(0, 24)}`}
+                type="button"
+                onClick={() => {
+                  if (!canEdit) return
+                  setPhotos((prev) => prev.filter((_, idx) => idx !== i))
+                }}
+                style={{ padding: 0, border: 0, background: 'transparent', position: 'relative' }}
+                title={canEdit ? '點擊移除' : undefined}
+              >
+                <img className="photo-thumb" src={p} alt={`現況 ${i + 1}`} />
+              </button>
+            ))}
+            {canEdit && photos.length < 6 && (
+              <label className="upload-box" style={{ width: 72, height: 72, cursor: 'pointer', padding: 0 }}>
+                +
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  hidden
+                  onChange={(e) => void onPick(e.target.files?.[0], 'photo')}
+                />
+              </label>
+            )}
+          </div>
+          {canEdit && photos.length > 0 && (
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-soft)' }}>
+              點擊照片可移除
+            </p>
+          )}
+        </div>
+
+        <div className="field">
+          <label>缺失說明</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            disabled={!canEdit}
+            placeholder="例如：門鎖卡住，需施力才能開啟"
+          />
+        </div>
+
+        {error && (
+          <div style={{ color: 'var(--terracotta)', fontWeight: 700, fontSize: 13, marginBottom: 8 }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ flex: 1 }}
+            disabled={saving || !canEdit}
+            onClick={() => void handleSave()}
+          >
+            {saving ? '儲存中…' : '儲存修改'}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            取消
+          </button>
+        </div>
+      </Modal>
+
+      {annotateOpen && (planOriginal || planPhoto) && (
+        <AnnotatePlanModal
+          imageUrl={planOriginal || planPhoto!}
+          onCancel={() => setAnnotateOpen(false)}
+          onSave={(url) => {
+            setPlanPhoto(url)
+            setAnnotateOpen(false)
+          }}
+        />
+      )}
+    </>
+  )
+}

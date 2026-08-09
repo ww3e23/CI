@@ -168,7 +168,7 @@ export function statusLabel(status: Defect['status']): string {
     case 'pending_reinspection':
       return '待複驗'
     case 'completed':
-      return '已完成'
+      return '已改善'
     case 'returned':
       return '退回改善'
     case 'voided':

@@ -187,7 +187,7 @@ export function HomePage({
             </div>
             <div className="status-pill status-pill-done">
               <span className="n nums">{stats.done}</span>
-              <span className="l">已完成</span>
+              <span className="l">已改善</span>
             </div>
           </div>
         </section>

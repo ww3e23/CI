@@ -1,11 +1,19 @@
 import { useState } from 'react'
-import { Download, ImageDown, Trash2 } from 'lucide-react'
-import type { Defect } from '../../types'
+import { Download, ImageDown, Pencil, Trash2 } from 'lucide-react'
+import type { Defect, DefectStatus } from '../../types'
 import { statusLabel } from '../../lib/progress'
 import { downloadImage, downloadImages } from '../../lib/download'
 import { Modal } from '../ui/Modal'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { useProjectStore } from '../../store/useProjectStore'
+import { EditDefectSheet } from './EditDefectSheet'
+
+const STATUS_OPTIONS: { key: DefectStatus; label: string; cls: string }[] = [
+  { key: 'pending_repair', label: '待改善', cls: 'amber' },
+  { key: 'pending_reinspection', label: '待複驗', cls: 'slate' },
+  { key: 'returned', label: '退回', cls: 'terra' },
+  { key: 'completed', label: '已改善', cls: 'muted' },
+]
 
 export function DefectDetailModal({
   defect,
@@ -17,11 +25,13 @@ export function DefectDetailModal({
   const role = useCurrentRole()
   const user = useCurrentUser()
   const deleteDefect = useProjectStore((s) => s.deleteDefect)
+  const updateDefectStatus = useProjectStore((s) => s.updateDefectStatus)
   const live = useProjectStore((s) => s.defects.find((d) => d.id === defect.id) ?? defect)
   const [deleting, setDeleting] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const canDelete =
+  const canManage =
     role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
 
   const photos = [
@@ -46,6 +56,8 @@ export function DefectDetailModal({
     Boolean(live.planPhotoDataUrl?.startsWith('data:')) ||
     (live.photoDataUrls ?? []).some((p) => p.startsWith('data:'))
 
+  const improved = live.status === 'completed'
+
   async function handleDelete() {
     if (
       !confirm(
@@ -62,16 +74,25 @@ export function DefectDetailModal({
       setError(result.error || '刪除失敗')
       return
     }
-    if (result.error) {
-      // 本機已刪、雲端暫失敗：仍關閉詳情
-      console.warn(result.error)
-    }
+    if (result.error) console.warn(result.error)
     onClose()
+  }
+
+  if (editing) {
+    return (
+      <EditDefectSheet
+        defect={live}
+        onClose={() => setEditing(false)}
+      />
+    )
   }
 
   return (
     <Modal onClose={onClose} aria-label="缺失詳情">
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
+      <div
+        className={improved ? 'defect-detail-improved' : undefined}
+        style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}
+      >
         <div>
           <div className="eyebrow">DEFECT #{live.defectNumber}</div>
           <h2 className="serif" style={{ margin: '4px 0 0', fontSize: 22 }}>
@@ -95,6 +116,24 @@ export function DefectDetailModal({
         </div>
       </div>
 
+      {canManage && (
+        <div className="field" style={{ marginTop: 14 }}>
+          <label>變更狀態</label>
+          <div className="chip-row" role="group" aria-label="變更缺失狀態">
+            {STATUS_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                className={`chip ${opt.cls} ${live.status === opt.key ? 'on' : ''}`}
+                onClick={() => updateDefectStatus(live.id, opt.key)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {error && (
         <p style={{ margin: '10px 0 0', color: 'var(--terracotta)', fontWeight: 700, fontSize: 13 }}>
           {error}
@@ -102,15 +141,24 @@ export function DefectDetailModal({
       )}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+        {canManage && (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setEditing(true)}
+          >
+            <Pencil size={16} /> 修改
+          </button>
+        )}
         <button
           type="button"
-          className="btn btn-primary"
+          className="btn btn-ghost"
           disabled={photos.length === 0}
           onClick={() => void downloadImages(photos)}
         >
-          <ImageDown size={16} /> 下載全部照片
+          <ImageDown size={16} /> 下載照片
         </button>
-        {canDelete && (
+        {canManage && (
           <button
             type="button"
             className="btn btn-ghost"
@@ -126,7 +174,7 @@ export function DefectDetailModal({
         </button>
       </div>
 
-      <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+      <div style={{ display: 'grid', gap: 12, marginTop: 16 }} className={improved ? 'defect-detail-improved' : undefined}>
         {photos.length === 0 && (
           <div className="glass" style={{ padding: 16, color: 'var(--ink-soft)', textAlign: 'center' }}>
             此筆缺失沒有附圖

@@ -286,7 +286,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
         <div class="stat"><div class="n">${matrix.overallPercent}%</div><div class="l">整體進度</div></div>
         <div class="stat"><div class="n">${counts.pending_repair}</div><div class="l">待改善</div></div>
         <div class="stat"><div class="n">${counts.pending_reinspection}</div><div class="l">待複驗</div></div>
-        <div class="stat"><div class="n">${counts.completed}</div><div class="l">已完成缺失</div></div>
+        <div class="stat"><div class="n">${counts.completed}</div><div class="l">已改善缺失</div></div>
       </div>
     </section>
 

@@ -22,6 +22,7 @@ import {
 import { uploadDefectImages } from '../services/storageUpload'
 import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
+import { statusLabel } from '../lib/progress'
 import {
   clearPendingDefectMedia,
   listPendingDefectMedia,
@@ -49,6 +50,19 @@ interface ProjectActions {
     photoDataUrls?: string[]
   }) => Promise<Defect | null>
   updateDefectStatus: (defectId: string, status: DefectStatus) => void
+  /** 修改缺失內容（區域／說明／大項／照片） */
+  updateDefect: (
+    defectId: string,
+    patch: {
+      categoryId?: string
+      categoryName?: string
+      checklistItemId?: string | null
+      area?: string
+      description?: string
+      planPhotoDataUrl?: string | null
+      photoDataUrls?: string[]
+    },
+  ) => Promise<{ ok: boolean; error?: string }>
   /** 刪除缺失（軟刪：改為作廢，並同步雲端） */
   deleteDefect: (defectId: string) => Promise<{ ok: boolean; error?: string }>
   markUnitChecked: (unitId: string, checked: number) => void
@@ -372,7 +386,8 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
       updateDefectStatus: (defectId, status) => {
         const state = get()
         const defect = state.defects.find((d) => d.id === defectId)
-        if (!defect) return
+        if (!defect || defect.status === 'voided') return
+        if (defect.status === status) return
         set({
           defects: state.defects.map((d) =>
             d.id === defectId ? { ...d, status, updatedAt: new Date().toISOString() } : d,
@@ -389,19 +404,124 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               buildingName: defect.buildingName,
               floor: defect.floor,
               unitCode: defect.unitCode,
-              summary: `狀態更新 → ${status}`,
+              summary: `狀態更新 → ${statusLabel(status)}`,
               actorName: '現場查驗',
             },
             ...state.activities,
           ].slice(0, 40),
         })
         afterProjectChange(get, set)
-        // 狀態變更也立刻推該筆缺失
         const projectId = get().activeProjectId
         if (projectId && cloudReady()) {
           const next = get().defects.find((d) => d.id === defectId)
           if (next) void syncDefect(projectId, next)
         }
+      },
+
+      updateDefect: async (defectId, patch) => {
+        const state = get()
+        const defect = state.defects.find((d) => d.id === defectId)
+        if (!defect) return { ok: false, error: '找不到此缺失' }
+        if (defect.status === 'voided') return { ok: false, error: '已刪除的缺失無法修改' }
+
+        const nextPlan =
+          patch.planPhotoDataUrl === null
+            ? undefined
+            : patch.planPhotoDataUrl !== undefined
+              ? patch.planPhotoDataUrl
+              : defect.planPhotoDataUrl
+        const nextPhotos =
+          patch.photoDataUrls !== undefined ? patch.photoDataUrls : defect.photoDataUrls
+
+        const next: Defect = {
+          ...defect,
+          categoryId: patch.categoryId ?? defect.categoryId,
+          categoryName: patch.categoryName ?? defect.categoryName,
+          checklistItemId:
+            patch.checklistItemId === null
+              ? undefined
+              : patch.checklistItemId !== undefined
+                ? patch.checklistItemId
+                : defect.checklistItemId,
+          area: patch.area?.trim() || defect.area,
+          description: patch.description?.trim() || defect.description,
+          planPhotoDataUrl: nextPlan,
+          photoDataUrls: nextPhotos,
+          updatedAt: new Date().toISOString(),
+          syncState: cloudReady() ? 'pending' : defect.syncState,
+        }
+
+        set({
+          defects: state.defects.map((d) => (d.id === defectId ? next : d)),
+          activities: [
+            {
+              id: createId('act'),
+              at: new Date().toLocaleString('zh-TW', {
+                month: 'numeric',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+              buildingName: defect.buildingName,
+              floor: defect.floor,
+              unitCode: defect.unitCode,
+              summary: `修改缺失 #${defect.defectNumber}`,
+              actorName: '現場查驗',
+            },
+            ...state.activities,
+          ].slice(0, 40),
+        })
+        afterProjectChange(get, set, { syncCloud: false })
+
+        const projectId = get().activeProjectId
+        const hasLocalMedia =
+          Boolean(next.planPhotoDataUrl?.startsWith('data:')) ||
+          next.photoDataUrls.some((p) => p.startsWith('data:'))
+
+        if (projectId && hasLocalMedia) {
+          try {
+            await savePendingDefectMedia({
+              defectId: next.id,
+              projectId,
+              planPhotoDataUrl: next.planPhotoDataUrl?.startsWith('data:')
+                ? next.planPhotoDataUrl
+                : undefined,
+              photoDataUrls: next.photoDataUrls.filter((p) => p.startsWith('data:')),
+              updatedAt: next.updatedAt,
+            })
+          } catch (err) {
+            console.warn('[updateDefect] pending media save failed', err)
+          }
+        }
+
+        if (projectId && cloudReady()) {
+          set({
+            defects: get().defects.map((d) =>
+              d.id === next.id ? { ...d, syncState: 'syncing' } : d,
+            ),
+          })
+          if (hasLocalMedia) {
+            void get().flushPendingMediaUploads()
+          } else {
+            try {
+              const synced = {
+                ...(get().defects.find((d) => d.id === next.id) ?? next),
+                syncState: 'synced' as const,
+              }
+              await syncDefect(projectId, synced)
+              set({
+                defects: get().defects.map((d) => (d.id === synced.id ? synced : d)),
+              })
+              afterProjectChange(get, set, { syncCloud: false })
+              scheduleCloudSync(get)
+            } catch (err) {
+              console.warn('[updateDefect] sync failed', err)
+              return { ok: true, error: '已本機更新，雲端同步失敗' }
+            }
+          }
+        }
+
+        return { ok: true }
       },
 
       markUnitChecked: (unitId, checked) => {

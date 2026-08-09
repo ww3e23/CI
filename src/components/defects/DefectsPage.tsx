@@ -41,7 +41,7 @@ export function DefectsPage() {
     { key: 'pending_repair', label: '待改善', count: counts.pending_repair, cls: 'amber' },
     { key: 'pending_reinspection', label: '待複驗', count: counts.pending_reinspection, cls: 'slate' },
     { key: 'returned', label: '退回', count: counts.returned, cls: 'terra' },
-    { key: 'completed', label: '已完成', count: counts.completed },
+    { key: 'completed', label: '已改善', count: counts.completed, cls: 'muted' },
   ]
 
   return (
@@ -114,36 +114,39 @@ export function DefectsPage() {
       )}
 
       <div style={{ display: 'grid', gap: 10 }}>
-        {filtered.map((d) => (
-          <button
-            key={d.id}
-            type="button"
-            className="glass"
-            style={{
-              padding: 12,
-              display: 'flex',
-              gap: 10,
-              alignItems: 'center',
-              width: '100%',
-              textAlign: 'left',
-            }}
-            onClick={() => setSelectedDefect(d)}
-          >
-            <div style={{ display: 'grid', gap: 4 }}>
-              <Thumb label="位置" src={d.planPhotoDataUrl} />
-              <Thumb label="現況" src={d.photoDataUrls[0]} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 14 }}>
-                #{d.defectNumber} {d.area}｜{d.description}
+        {filtered.map((d) => {
+          const improved = d.status === 'completed'
+          return (
+            <button
+              key={d.id}
+              type="button"
+              className={`glass defect-row ${improved ? 'defect-row-improved' : ''}`}
+              style={{
+                padding: 12,
+                display: 'flex',
+                gap: 10,
+                alignItems: 'center',
+                width: '100%',
+                textAlign: 'left',
+              }}
+              onClick={() => setSelectedDefect(d)}
+            >
+              <div style={{ display: 'grid', gap: 4 }}>
+                <Thumb label="位置" src={d.planPhotoDataUrl} />
+                <Thumb label="現況" src={d.photoDataUrls[0]} />
               </div>
-              <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-                {d.categoryName} · {d.buildingName} {d.floor} {d.unitCode}戶 · {statusLabel(d.status)}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 14 }}>
+                  #{d.defectNumber} {d.area}｜{d.description}
+                </div>
+                <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
+                  {d.categoryName} · {d.buildingName} {d.floor} {d.unitCode}戶 · {statusLabel(d.status)}
+                </div>
               </div>
-            </div>
-            <ChevronRight size={18} color="var(--stone)" />
-          </button>
-        ))}
+              <ChevronRight size={18} color="var(--stone)" />
+            </button>
+          )
+        })}
         {filtered.length === 0 && (
           <div className="glass" style={{ padding: 20, textAlign: 'center', color: 'var(--ink-soft)' }}>
             沒有符合條件的缺失
@@ -171,7 +174,7 @@ function applyFilters(
   f: DefectFilters,
   quick: QuickStatus,
 ): Defect[] {
-  return defects.filter((d) => {
+  const list = defects.filter((d) => {
     if (d.status === 'voided') return false
 
     if (quick !== 'all' && d.status !== quick) return false
@@ -211,6 +214,14 @@ function applyFilters(
     }
 
     return true
+  })
+
+  // 未改善的排前面；已改善沉到最下面，同組內較新的在上
+  return list.sort((a, b) => {
+    const aDone = a.status === 'completed' ? 1 : 0
+    const bDone = b.status === 'completed' ? 1 : 0
+    if (aDone !== bDone) return aDone - bDone
+    return b.updatedAt.localeCompare(a.updatedAt)
   })
 }
 

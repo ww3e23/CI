@@ -96,7 +96,7 @@ export function AdvancedFilterSheet({
     { key: 'pending_repair', label: '待改善', cls: 'amber' },
     { key: 'pending_reinspection', label: '待複驗', cls: 'slate' },
     { key: 'returned', label: '退回', cls: 'terra' },
-    { key: 'completed', label: '已完成', cls: '' },
+    { key: 'completed', label: '已改善', cls: 'muted' },
   ]
 
   return (

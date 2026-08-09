@@ -10,7 +10,7 @@ const statusClass: Record<DefectStatus, string> = {
   pending_repair: 'amber',
   pending_reinspection: 'slate',
   returned: 'terra',
-  completed: '',
+  completed: 'muted',
   voided: '',
 }
 
