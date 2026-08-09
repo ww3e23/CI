@@ -16,6 +16,7 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const upsertCategory = useProjectStore((s) => s.upsertCategory)
   const removeCategory = useProjectStore((s) => s.removeCategory)
   const resetDemoData = useProjectStore((s) => s.resetDemoData)
+  const applyDefaultChecklist = useProjectStore((s) => s.applyDefaultChecklist)
 
   const [editing, setEditing] = useState<BuildingRule | null>(null)
   const [editingCat, setEditingCat] = useState<ChecklistCategory | null>(null)
@@ -116,29 +117,61 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
 
       <div className="section-row">
         <h2>查驗範本</h2>
-        <button
-          type="button"
-          className="link"
-          onClick={() => {
-            setIsNewCat(true)
-            setEditingCat({
-              id: createId('cat'),
-              name: '',
-              iconChar: '項',
-              color: '#2F5D4C',
-              itemCount: 0,
-              sortOrder: categories.length,
-              active: true,
-            })
-          }}
-        >
-          + 新增大項
-        </button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="link"
+            onClick={() => {
+              if (activeCats.length === 0) {
+                applyDefaultChecklist('fill-if-empty')
+                return
+              }
+              if (
+                confirm(
+                  '要以預設查驗範本覆蓋目前大項嗎？\n（門／窗／天花板／粉刷牆面／地壁磚／木地板）',
+                )
+              ) {
+                applyDefaultChecklist('replace')
+              }
+            }}
+          >
+            套用預設範本
+          </button>
+          <button
+            type="button"
+            className="link"
+            onClick={() => {
+              setIsNewCat(true)
+              setEditingCat({
+                id: createId('cat'),
+                name: '',
+                iconChar: '項',
+                color: '#2F5D4C',
+                itemCount: 0,
+                sortOrder: categories.length,
+                active: true,
+              })
+            }}
+          >
+            + 新增大項
+          </button>
+        </div>
       </div>
 
       <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12 }}>
-        編輯細項後會套用到所有戶別；已有缺失的項目刪除時會改為停用並保留紀錄。
+        新專案已預載標準查驗範本。編輯細項後會套用到所有戶別；已有缺失的項目刪除時會改為停用並保留紀錄。
       </p>
+
+      {activeCats.length === 0 && (
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ width: '100%', marginBottom: 12 }}
+          onClick={() => applyDefaultChecklist('fill-if-empty')}
+        >
+          載入預設查驗範本
+        </button>
+      )}
 
       <div style={{ display: 'grid', gap: 8 }}>
         {activeCats.map((cat) => (

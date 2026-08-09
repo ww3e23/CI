@@ -1,4 +1,4 @@
-import { useMemo, useState, type ComponentType } from 'react'
+import { useEffect, useMemo, useState, type ComponentType } from 'react'
 import {
   AppWindow,
   ChevronDown,
@@ -44,6 +44,13 @@ export function HomePage({
   const unit = units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active)
   const state = useProjectStore.getState()
   const progress = unit ? unitProgress(unit, state) : null
+
+  // 舊專案若沒有範本，自動套用預設查驗清單
+  useEffect(() => {
+    if (!categories.some((c) => c.active)) {
+      useProjectStore.getState().applyDefaultChecklist('fill-if-empty')
+    }
+  }, [categories])
 
   const unitDefects = useMemo(
     () => defects.filter((d) => d.unitId === unit?.id && d.status !== 'voided'),

@@ -9,6 +9,7 @@ import type {
   ProjectState,
   SyncState,
 } from '../types'
+import { buildDefaultChecklist } from '../data/defaultChecklist'
 import { createEmptyProjectState, createProjectBundles } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
@@ -42,6 +43,7 @@ interface ProjectActions {
   removeProjectBundle: (projectId: string) => void
   /** 讀取指定專案歷程（作用中專案用即時資料，其餘讀 bundle） */
   getProjectActivities: (projectId: string) => ProjectState['activities']
+  applyDefaultChecklist: (mode?: 'fill-if-empty' | 'replace') => { ok: boolean; reason?: string }
   upsertCategory: (category: ChecklistCategory, items: ChecklistItem[]) => void
   removeCategory: (categoryId: string) => { ok: boolean; reason?: string }
   upsertChecklistItem: (item: ChecklistItem) => void
@@ -286,7 +288,14 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
       },
 
       loadProjectBundle: (projectId) => {
-        const bundle = get().bundles[projectId] ?? createEmptyProjectState(projectId)
+        let bundle = get().bundles[projectId] ?? createEmptyProjectState(projectId)
+        if (!bundle.categories.some((c) => c.active)) {
+          const { categories, checklistItems } = buildDefaultChecklist()
+          bundle = { ...bundle, categories, checklistItems }
+          set({
+            bundles: { ...get().bundles, [projectId]: structuredClone(bundle) },
+          })
+        }
         set({ ...structuredClone(bundle), activeProjectId: projectId })
       },
 
@@ -301,7 +310,21 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
       },
 
       ensureProjectBundle: (projectId, name) => {
-        if (get().bundles[projectId]) return
+        const existing = get().bundles[projectId]
+        if (existing) {
+          // 舊空白專案自動補上預設查驗範本
+          if (!existing.categories.some((c) => c.active)) {
+            const { categories, checklistItems } = buildDefaultChecklist()
+            const filled = { ...existing, categories, checklistItems, projectName: existing.projectName || name }
+            set({
+              bundles: { ...get().bundles, [projectId]: filled },
+            })
+            if (get().activeProjectId === projectId) {
+              set({ categories, checklistItems })
+            }
+          }
+          return
+        }
         set({
           bundles: {
             ...get().bundles,
@@ -339,6 +362,27 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         const state = get()
         if (state.activeProjectId === projectId) return state.activities
         return state.bundles[projectId]?.activities ?? []
+      },
+
+      applyDefaultChecklist: (mode = 'fill-if-empty') => {
+        const state = get()
+        const hasActive = state.categories.some((c) => c.active)
+        if (mode === 'fill-if-empty' && hasActive) {
+          return { ok: false, reason: '已有查驗範本，未覆蓋' }
+        }
+        const { categories, checklistItems } = buildDefaultChecklist()
+        if (mode === 'replace') {
+          // 保留已停用舊項（若有缺失關聯），再疊上預設
+          const keptCats = state.categories.filter((c) => !c.active)
+          const keptItems = state.checklistItems.filter((i) => !i.active)
+          set({
+            categories: [...categories, ...keptCats],
+            checklistItems: [...checklistItems, ...keptItems],
+          })
+        } else {
+          set({ categories, checklistItems })
+        }
+        return { ok: true }
       },
 
       pushStructureToCloud: async () => {
