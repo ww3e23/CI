@@ -21,8 +21,9 @@ export function AccountsPage() {
   const projects = useAuthStore((s) => s.projects)
   const members = useAuthStore((s) => s.members)
   const upsertUser = useAuthStore((s) => s.upsertUser)
-  const setUserActive = useAuthStore((s) => s.setUserActive)
+  const deleteUser = useAuthStore((s) => s.deleteUser)
   const setMemberRole = useAuthStore((s) => s.setMemberRole)
+  const currentUserId = useAuthStore((s) => s.currentUserId)
   const cloud = isFirebaseConfigured()
 
   const [editing, setEditing] = useState<UserAccount | null>(null)
@@ -42,8 +43,8 @@ export function AccountsPage() {
         <div>
           <h1 className="serif" style={{ margin: 0, fontSize: 28 }}>帳號管理</h1>
           <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)', fontSize: 14 }}>
-            共 {rows.length} 個帳號 · 可直接設帳號密碼（不必 email）
-            {cloud ? ' · 儲存時同步 Firebase' : ' · 尚未接 Firebase（僅本機）'}
+            共 {rows.length} 個帳號 · 儲存前請先加入專案
+            {cloud ? ' · 會同步 Firebase 登入與雲端目錄' : ' · 尚未接 Firebase（僅本機）'}
           </p>
         </div>
         <button
@@ -112,16 +113,29 @@ export function AccountsPage() {
                       <button
                         type="button"
                         className="icon-btn"
+                        disabled={u.id === currentUserId}
                         onClick={() => {
-                          if (
-                            confirm(
-                              '確定停用／刪除登入權限？此帳號建立過的缺失與歷程會保留，僅無法再登入。',
-                            )
-                          ) {
-                            setUserActive(u.id, false)
-                          }
+                          void (async () => {
+                            if (
+                              !confirm(
+                                `確定刪除帳號「${u.displayName}」（${accountDisplay(u.email)}）？\n將從名單與 Firebase 登入移除，無法復原。`,
+                              )
+                            ) {
+                              return
+                            }
+                            const result = await deleteUser(u.id)
+                            if (!result.ok) {
+                              alert(result.error || '刪除失敗')
+                              return
+                            }
+                            if (editing?.id === u.id) {
+                              setEditing(null)
+                              setIsNew(false)
+                            }
+                          })()
                         }}
-                        aria-label="停用"
+                        aria-label="刪除帳號"
+                        title={u.id === currentUserId ? '無法刪除自己' : '刪除帳號'}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -188,9 +202,14 @@ export function AccountsPage() {
               </p>
             </div>
 
-            <div style={{ fontWeight: 800, marginBottom: 4, fontSize: 14 }}>專案與權限指派</div>
+            <div style={{ fontWeight: 800, marginBottom: 4, fontSize: 14 }}>專案與權限指派（必填）</div>
+            <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
+              一般帳號至少要加入一個專案，儲存後才能登入現場 App。
+            </p>
             {projects.length === 0 ? (
-              <p style={{ color: 'var(--ink-soft)', fontSize: 13 }}>尚無專案，請先到專案管理新增。</p>
+              <p style={{ color: 'var(--terracotta)', fontSize: 13, fontWeight: 600 }}>
+                尚無專案，請先到「專案管理」新增，再回來建立帳號。
+              </p>
             ) : (
               <div>
                 {projects.map((p) => {
@@ -211,6 +230,13 @@ export function AccountsPage() {
                               {ROLE_SHORT[role]}
                             </button>
                           ))}
+                          <button
+                            type="button"
+                            className="chip join-chip"
+                            onClick={() => setMemberRole(editing.id, p.id, null)}
+                          >
+                            移出
+                          </button>
                         </div>
                       ) : (
                         <button

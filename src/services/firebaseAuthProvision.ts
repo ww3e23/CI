@@ -1,7 +1,9 @@
 import { deleteApp, getApp, initializeApp, type FirebaseApp } from 'firebase/app'
 import {
   createUserWithEmailAndPassword,
+  deleteUser,
   getAuth,
+  signInWithEmailAndPassword,
   signOut,
   updateProfile,
 } from 'firebase/auth'
@@ -97,6 +99,46 @@ export async function provisionFirebaseAuthUser(input: {
       created: false,
       error: '無法寫入 Firebase Authentication，請稍後再試',
     }
+  } finally {
+    try {
+      await deleteApp(app)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** 以帳密登入次要 App 後刪除 Firebase Auth 使用者（不影響管理者工作階段） */
+export async function deleteFirebaseAuthUser(input: {
+  email: string
+  password: string
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!isFirebaseConfigured()) return { ok: true }
+  const email = input.email.trim().toLowerCase()
+  const password = toFirebasePassword(input.password)
+  if (!email || !input.password.trim()) {
+    return { ok: false, error: '缺少帳號密碼，無法刪除 Firebase 登入' }
+  }
+
+  const app = getSecondaryApp()
+  if (!app) return { ok: false, error: '無法初始化 Firebase' }
+  const auth = getAuth(app)
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email, password)
+    await deleteUser(cred.user)
+    return { ok: true }
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code
+    try {
+      await signOut(auth)
+    } catch {
+      /* ignore */
+    }
+    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
+      // 雲端本來就沒有，視為已清除
+      return { ok: true }
+    }
+    return { ok: false, error: '無法刪除 Firebase Authentication 帳號' }
   } finally {
     try {
       await deleteApp(app)
