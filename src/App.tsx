@@ -111,10 +111,18 @@ export default function App() {
     return (
       <div className="app-shell login-shell" style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
         <div className="glass" style={{ width: '100%', maxWidth: 420, padding: 22 }}>
-          <h1 className="serif" style={{ margin: '0 0 8px', fontSize: 24 }}>尚未選擇專案</h1>
+          <h1 className="serif" style={{ margin: '0 0 8px', fontSize: 24 }}>尚未指派專案</h1>
           <p style={{ margin: 0, color: 'var(--ink-soft)', lineHeight: 1.5, fontSize: 14 }}>
-            請聯繫管理者指派專案後再登入。
+            帳號已登入，但還沒有可進入的專案。請請系統管理者在後台「專案管理」將你加入專案。
           </p>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ marginTop: 16 }}
+            onClick={() => void useAuthStore.getState().logout()}
+          >
+            登出
+          </button>
         </div>
         <InstallBanner />
       </div>
