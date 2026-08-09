@@ -65,41 +65,79 @@ function findUserByAccount(users: UserAccount[], account: string): UserAccount[]
   })
 }
 
-/** 雲端目錄合併進本機：保留本機密碼；雲端有、本機無則新增 */
-function mergeDirectory(
-  local: { users: UserAccount[]; members: ProjectMember[]; projects: ProjectMeta[] },
-  remote: { users: UserAccount[]; members: ProjectMember[]; projects: ProjectMeta[] },
-) {
-  const localPwd = new Map(local.users.map((u) => [normalizeLoginId(u.email), u.password]))
-  const localById = new Map(local.users.map((u) => [u.id, u]))
-
+/** 同一 email 可能有多個舊 id；收斂成一個 canonical id，並修正成員指派 */
+function canonicalizeDirectory(input: {
+  users: UserAccount[]
+  members: ProjectMember[]
+  projects: ProjectMeta[]
+}) {
   const usersByEmail = new Map<string, UserAccount>()
-  for (const u of local.users) usersByEmail.set(normalizeLoginId(u.email), u)
-  for (const ru of remote.users) {
-    const key = normalizeLoginId(ru.email)
-    const existing = usersByEmail.get(key) ?? localById.get(ru.id)
+  for (const u of input.users) {
+    const key = normalizeLoginId(u.email)
+    if (!key) continue
+    const prev = usersByEmail.get(key)
+    if (!prev) {
+      usersByEmail.set(key, u)
+      continue
+    }
     usersByEmail.set(key, {
-      ...ru,
-      id: existing?.id ?? ru.id,
-      password: localPwd.get(key) || existing?.password || '',
-      systemAdmin: existing?.systemAdmin || ru.systemAdmin,
+      ...prev,
+      ...u,
+      // 固定用先出現的 id，避免成員 userId 對不上
+      id: prev.id,
+      password: prev.password || u.password,
+      displayName: u.displayName || prev.displayName,
+      active: prev.active !== false && u.active !== false,
+      systemAdmin: Boolean(prev.systemAdmin || u.systemAdmin),
     })
   }
 
+  const idRemap = new Map<string, string>()
+  for (const u of input.users) {
+    const canon = usersByEmail.get(normalizeLoginId(u.email))
+    if (canon) idRemap.set(u.id, canon.id)
+  }
+
   const memberMap = new Map<string, ProjectMember>()
-  for (const m of [...local.members, ...remote.members]) {
-    memberMap.set(`${m.userId}|${m.projectId}`, m)
+  for (const m of input.members) {
+    const userId = idRemap.get(m.userId) ?? m.userId
+    const next = { ...m, userId }
+    memberMap.set(`${next.userId}|${next.projectId}`, next)
   }
+
   const projectMap = new Map<string, ProjectMeta>()
-  for (const p of [...local.projects, ...remote.projects]) {
-    projectMap.set(p.id, p)
-  }
+  for (const p of input.projects) projectMap.set(p.id, p)
 
   return {
     users: [...usersByEmail.values()],
     members: [...memberMap.values()],
     projects: [...projectMap.values()],
   }
+}
+
+/** 雲端目錄合併進本機：保留本機密碼；並修正成員 userId */
+function mergeDirectory(
+  local: { users: UserAccount[]; members: ProjectMember[]; projects: ProjectMeta[] },
+  remote: { users: UserAccount[]; members: ProjectMember[]; projects: ProjectMeta[] },
+) {
+  return canonicalizeDirectory({
+    users: [...local.users, ...remote.users],
+    members: [...local.members, ...remote.members],
+    projects: [...local.projects, ...remote.projects],
+  })
+}
+
+function membershipsForUser(
+  members: ProjectMember[],
+  users: UserAccount[],
+  user: UserAccount,
+): ProjectMember[] {
+  const email = normalizeLoginId(user.email)
+  const ids = new Set(
+    users.filter((u) => normalizeLoginId(u.email) === email).map((u) => u.id),
+  )
+  ids.add(user.id)
+  return members.filter((m) => ids.has(m.userId))
 }
 
 function projectSlice(): Omit<AuthState, never> {
@@ -160,11 +198,10 @@ export const useAuthStore = create<AuthState & AuthActions>()(
           return { ok: false, error: '請輸入帳號與密碼' }
         }
 
-        // 有 Firebase：先驗證 Auth，再拉取雲端帳號目錄（解決「後台新增後別台登不進去」）
+        // 有 Firebase：先驗證 Auth，再拉取雲端帳號目錄
         if (isFirebaseConfigured()) {
           const session = await ensureFirebaseSession(loginId, password)
           if (!session.ok) {
-            // 若本機有帳號且密碼正確，仍允許本機登入（雲端尚未同步時）
             const localMatches = findUserByAccount(get().users, account)
             const localUser =
               localMatches.length === 1
@@ -189,14 +226,29 @@ export const useAuthStore = create<AuthState & AuthActions>()(
                 members: merged.members,
                 projects: merged.projects,
               })
+            } else {
+              // 即使雲端拉取失敗，也先收斂本機重複帳號／成員 id
+              const local = canonicalizeDirectory({
+                users: get().users,
+                members: get().members,
+                projects: get().projects,
+              })
+              set(local)
             }
           }
+        } else {
+          const local = canonicalizeDirectory({
+            users: get().users,
+            members: get().members,
+            projects: get().projects,
+          })
+          set(local)
         }
 
         let matches = findUserByAccount(get().users, account)
         let user = matches.length === 1 ? matches[0] : matches.find((u) => u.active) ?? matches[0]
 
-        // Firebase 已通過，但目錄尚無此帳號：建立本機＋雲端基本資料
+        // Firebase 已通過，但目錄尚無此帳號：建立本機＋雲端基本資料（不覆蓋既有指派）
         if ((!user || !user.active) && isFirebaseConfigured()) {
           const auth = getFirebaseAuth()
           if (auth?.currentUser) {
@@ -208,9 +260,15 @@ export const useAuthStore = create<AuthState & AuthActions>()(
               active: true,
               createdAt: new Date().toISOString(),
             }
-            set({ users: [...get().users, created] })
+            const nextUsers = [...get().users, created]
+            const healed = canonicalizeDirectory({
+              users: nextUsers,
+              members: get().members,
+              projects: get().projects,
+            })
+            set(healed)
             void syncUserAccount(created)
-            user = created
+            user = findUserByAccount(healed.users, account)[0] ?? created
           }
         }
 
@@ -234,10 +292,45 @@ export const useAuthStore = create<AuthState & AuthActions>()(
           })
         }
 
-        const memberships = get().members.filter((m) => m.userId === user!.id)
+        // 再收斂一次，並把「同 email 的舊成員指派」掛回此帳號
+        const healed = canonicalizeDirectory({
+          users: get().users,
+          members: get().members,
+          projects: get().projects,
+        })
+        const healedMembers = membershipsForUser(healed.members, healed.users, user).map((m) => ({
+          ...m,
+          userId: user!.id,
+        }))
+        const memberMap = new Map(healed.members.map((m) => [`${m.userId}|${m.projectId}`, m]))
+        for (const m of healedMembers) memberMap.set(`${m.userId}|${m.projectId}`, m)
+        const nextMembers = [...memberMap.values()]
+        set({ users: healed.users, members: nextMembers, projects: healed.projects })
+
+        const projectIds = new Set(get().projects.map((p) => p.id))
+        const allMemberships = membershipsForUser(nextMembers, healed.users, user)
+        const knownMemberships = allMemberships.filter((m) => projectIds.has(m.projectId))
         const firstProject =
-          memberships[0]?.projectId ??
-          (user.systemAdmin ? get().projects[0]?.id ?? null : null)
+          knownMemberships[0]?.projectId ??
+          allMemberships[0]?.projectId ??
+          (user.systemAdmin
+            ? get().projects.find((p) => p.status === 'active')?.id ?? get().projects[0]?.id ?? null
+            : null)
+
+        // 有指派但專案目錄缺漏時，補上空白專案殼，避免被當成「未指派」
+        if (firstProject && !projectIds.has(firstProject)) {
+          const shell: ProjectMeta = {
+            id: firstProject,
+            name: firstProject,
+            code: '',
+            location: '',
+            status: 'active',
+            createdAt: new Date().toISOString(),
+          }
+          set({ projects: [...get().projects, shell] })
+          useProjectStore.getState().ensureProjectBundle(firstProject, shell.name)
+          void syncProjectMeta(shell)
+        }
 
         set({ currentUserId: user.id, currentProjectId: firstProject })
         if (firstProject) {
