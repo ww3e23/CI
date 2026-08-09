@@ -114,11 +114,15 @@ export function AddDefectSheet({
         setSyncMsg('儲存失敗')
         return
       }
-      if (d.syncState === 'synced') setSyncMsg('已同步至雲端')
-      else if (d.syncState === 'failed') setSyncMsg('同步失敗，資料已留在本機')
-      else setSyncMsg('已儲存')
-      // 稍等讓使用者看到提示
-      window.setTimeout(() => onClose(), 280)
+      // 本機已存完就關閉；照片上傳在背景進行
+      if (d.syncState === 'syncing' || d.syncState === 'pending') {
+        setSyncMsg('已儲存，雲端同步中…')
+      } else if (d.syncState === 'synced') {
+        setSyncMsg('已同步至雲端')
+      } else {
+        setSyncMsg('已儲存')
+      }
+      onClose()
     } catch (e) {
       setSaving(false)
       setError(e instanceof Error ? e.message : '儲存時發生錯誤')

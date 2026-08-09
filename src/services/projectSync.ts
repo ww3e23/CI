@@ -21,7 +21,6 @@ import type {
   SyncState,
 } from '../types'
 import type { ProjectMeta } from '../types/auth'
-import { syncDefect } from './cloudSync'
 
 const SITE_META_PATH = ['meta', 'site'] as const
 
@@ -206,8 +205,7 @@ export async function pushProjectState(
     itemsSnap.docs.filter((d) => !localItemIds.has(d.id)).map((d) => deleteDoc(d.ref)),
   )
 
-  // 缺失（輕量欄位；照片僅保留 http）
-  await Promise.all(state.defects.map((d) => syncDefect(projectId, d)))
+  // 缺失改由新增／更新時單獨同步，這裡不再整包重傳（大幅加速）
 
   // 其餘狀態集中放 meta/site
   await setDoc(

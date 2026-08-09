@@ -1,4 +1,4 @@
-import { getDownloadURL, ref, uploadString } from 'firebase/storage'
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { getFirebaseStorage, isFirebaseConfigured } from '../lib/firebase'
 
 function guessExt(dataUrl: string): string {
@@ -7,7 +7,18 @@ function guessExt(dataUrl: string): string {
   return 'jpg'
 }
 
-/** 將 data URL 上傳到 Firebase Storage，回傳可公開讀取的下載網址（需登入規則另計） */
+function dataUrlToBlob(dataUrl: string): Blob {
+  const comma = dataUrl.indexOf(',')
+  const header = comma >= 0 ? dataUrl.slice(0, comma) : ''
+  const body = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl
+  const mime = /data:(.*?);/.exec(header)?.[1] ?? 'image/jpeg'
+  const binary = atob(body)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}
+
+/** 將 data URL 上傳到 Firebase Storage（Blob + uploadBytes，比 data_url 字串上傳快） */
 export async function uploadDataUrl(params: {
   projectId: string
   defectId: string
@@ -19,7 +30,6 @@ export async function uploadDataUrl(params: {
   const storage = getFirebaseStorage()
   if (!storage) return null
   if (!params.dataUrl.startsWith('data:')) {
-    // 已是遠端 URL，不重複上傳
     return { url: params.dataUrl, path: '' }
   }
 
@@ -30,8 +40,9 @@ export async function uploadDataUrl(params: {
       : `photo-${String(params.index ?? 0).padStart(2, '0')}.${ext}`
   const path = `projects/${params.projectId}/defects/${params.defectId}/${name}`
   const storageRef = ref(storage, path)
-  await uploadString(storageRef, params.dataUrl, 'data_url', {
-    contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+  const blob = dataUrlToBlob(params.dataUrl)
+  await uploadBytes(storageRef, blob, {
+    contentType: blob.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
     customMetadata: {
       projectId: params.projectId,
       defectId: params.defectId,
@@ -40,4 +51,53 @@ export async function uploadDataUrl(params: {
   })
   const url = await getDownloadURL(storageRef)
   return { url, path }
+}
+
+/** 平行上傳多張圖 */
+export async function uploadDefectImages(params: {
+  projectId: string
+  defectId: string
+  planPhotoDataUrl?: string
+  photoDataUrls?: string[]
+}): Promise<{ planUrl?: string; photoUrls: string[] }> {
+  const photos = params.photoDataUrls ?? []
+  const tasks: Promise<{ slot: 'plan' | number; url: string }>[] = []
+
+  if (params.planPhotoDataUrl) {
+    tasks.push(
+      uploadDataUrl({
+        projectId: params.projectId,
+        defectId: params.defectId,
+        kind: 'plan',
+        dataUrl: params.planPhotoDataUrl,
+      }).then((up) => ({
+        slot: 'plan' as const,
+        url: up?.url ?? params.planPhotoDataUrl!,
+      })),
+    )
+  }
+
+  photos.forEach((src, index) => {
+    tasks.push(
+      uploadDataUrl({
+        projectId: params.projectId,
+        defectId: params.defectId,
+        kind: 'photo',
+        index,
+        dataUrl: src,
+      }).then((up) => ({
+        slot: index,
+        url: up?.url ?? src,
+      })),
+    )
+  })
+
+  const results = await Promise.all(tasks)
+  let planUrl: string | undefined
+  const photoUrls = [...photos]
+  for (const r of results) {
+    if (r.slot === 'plan') planUrl = r.url
+    else photoUrls[r.slot] = r.url
+  }
+  return { planUrl, photoUrls }
 }

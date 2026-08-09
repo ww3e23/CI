@@ -19,7 +19,7 @@ import {
   pullProjectState,
   pushProjectState,
 } from '../services/projectSync'
-import { uploadDataUrl } from '../services/storageUpload'
+import { uploadDefectImages } from '../services/storageUpload'
 import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
 
@@ -103,10 +103,11 @@ async function flushCloudSync(get: () => ProjectState & BundleState): Promise<bo
   }
 }
 
-/** 每次變更：立刻寫入 bundle（防滑掉 App 遺失），並 debounce 上雲 */
+/** 每次變更：立刻寫入 bundle（防滑掉 App 遺失）；預設 debounce 上雲 */
 function afterProjectChange(
   get: () => ProjectState & BundleState & ProjectActions,
   set: (partial: Partial<ProjectState & BundleState>) => void,
+  options?: { syncCloud?: boolean },
 ) {
   const projectId = get().activeProjectId
   if (projectId) {
@@ -118,7 +119,7 @@ function afterProjectChange(
       },
     })
   }
-  scheduleCloudSync(get)
+  if (options?.syncCloud !== false) scheduleCloudSync(get)
 }
 
 interface BundleState {
@@ -246,7 +247,8 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             ...state.activities,
           ].slice(0, 40),
         })
-        afterProjectChange(get, set)
+        // 先寫本機就回傳，雲端上傳改背景做，避免使用者卡在儲存畫面
+        afterProjectChange(get, set, { syncCloud: false })
 
         if (cloudReady()) {
           const projectId = get().activeProjectId
@@ -255,56 +257,37 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               d.id === defect.id ? { ...d, syncState: 'syncing' } : d,
             ),
           })
-          try {
-            if (!projectId) throw new Error('缺少專案 ID')
-
-            let planUrl = planPhotoDataUrl
-            if (planUrl?.startsWith('data:')) {
-              const up = await uploadDataUrl({
+          void (async () => {
+            try {
+              if (!projectId) throw new Error('缺少專案 ID')
+              const { planUrl, photoUrls } = await uploadDefectImages({
                 projectId,
                 defectId: defect.id,
-                kind: 'plan',
-                dataUrl: planUrl,
+                planPhotoDataUrl,
+                photoDataUrls,
               })
-              if (up) planUrl = up.url
-            }
-
-            const photoUrls: string[] = []
-            for (let i = 0; i < photoDataUrls.length; i += 1) {
-              const src = photoDataUrls[i]
-              if (src.startsWith('data:')) {
-                const up = await uploadDataUrl({
-                  projectId,
-                  defectId: defect.id,
-                  kind: 'photo',
-                  index: i,
-                  dataUrl: src,
-                })
-                photoUrls.push(up?.url ?? src)
-              } else {
-                photoUrls.push(src)
+              const syncedDefect: Defect = {
+                ...defect,
+                planPhotoDataUrl: planUrl ?? planPhotoDataUrl,
+                photoDataUrls: photoUrls,
+                syncState: 'synced',
+                updatedAt: new Date().toISOString(),
               }
+              await syncDefect(projectId, syncedDefect)
+              set({
+                defects: get().defects.map((d) => (d.id === defect.id ? syncedDefect : d)),
+              })
+              afterProjectChange(get, set, { syncCloud: false })
+              // 輕量補進度／戶別編號到雲端（不整包重傳）
+              scheduleCloudSync(get)
+            } catch {
+              set({
+                defects: get().defects.map((d) =>
+                  d.id === defect.id ? { ...d, syncState: 'failed' } : d,
+                ),
+              })
             }
-
-            const syncedDefect: Defect = {
-              ...defect,
-              planPhotoDataUrl: planUrl,
-              photoDataUrls: photoUrls,
-              syncState: 'synced',
-              updatedAt: new Date().toISOString(),
-            }
-
-            await syncDefect(projectId, syncedDefect)
-            set({
-              defects: get().defects.map((d) => (d.id === defect.id ? syncedDefect : d)),
-            })
-          } catch {
-            set({
-              defects: get().defects.map((d) =>
-                d.id === defect.id ? { ...d, syncState: 'failed' } : d,
-              ),
-            })
-          }
+          })()
         }
 
         return get().defects.find((d) => d.id === defect.id) ?? defect
