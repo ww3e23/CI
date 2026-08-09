@@ -114,45 +114,20 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 .hero-stack {
   position: relative;
   margin: 8px 0 18px;
-  /* 只為下層露出留 10–12px，不要整卡高度的空隙 */
-  padding-bottom: 12px;
 }
 
-.hero-stack .layer {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  top: 10px;
-  bottom: 0;
-  height: auto;
-  border-radius: 28px;
-  pointer-events: none;
-  border: none;
-  box-shadow: none;
-  z-index: 0;
-}
-
-/* 僅 2 層背景：矮、淡、小角度，像主卡後方透出一層 */
-.hero-stack .layer.l2 {
-  transform: rotate(-2deg);
-  background: rgba(255, 255, 255, 0.18);
-  opacity: 0.9;
-}
-
-.hero-stack .layer.l1 {
-  top: 6px;
-  left: 4px;
-  right: 4px;
-  transform: rotate(1.8deg);
-  background: rgba(255, 255, 255, 0.22);
-  opacity: 0.95;
-}
-
+/* 單卡：不用背後假疊層，避免透明重疊鬼影 */
 .hero-stack .hero-card {
   position: relative;
-  z-index: 2;
+  z-index: 1;
   padding: 18px 16px 16px;
   border-radius: 28px;
+  /* 提高不透明度，內容不被背景色塊透穿 */
+  background: linear-gradient(155deg, #3a6f5c 0%, #2f5d4c 55%, #264b3e 100%);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .section-row {

@@ -81,8 +81,6 @@ export function HomePage({
       </header>
 
       <div className="hero-stack">
-        <div className="layer l2" aria-hidden />
-        <div className="layer l1" aria-hidden />
         <section className="glass-green hero-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
             <div>
