@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { useAuthStore } from '../../store/useAuthStore'
+import { accountDisplay } from '../../lib/accountId'
 import { isFirebaseConfigured } from '../../lib/firebase'
 import { createId } from '../../lib/id'
 import { type MemberRole, type UserAccount } from '../../types/auth'
@@ -41,8 +42,8 @@ export function AccountsPage() {
         <div>
           <h1 className="serif" style={{ margin: 0, fontSize: 28 }}>帳號管理</h1>
           <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)', fontSize: 14 }}>
-            共 {rows.length} 個帳號
-            {cloud ? ' · 儲存時會同步登記到 Firebase Authentication' : ' · 尚未接 Firebase（僅本機）'}
+            共 {rows.length} 個帳號 · 可直接設帳號密碼（不必 email）
+            {cloud ? ' · 儲存時同步 Firebase' : ' · 尚未接 Firebase（僅本機）'}
           </p>
         </div>
         <button
@@ -88,7 +89,7 @@ export function AccountsPage() {
                         <strong>{u.displayName}</strong>
                       </div>
                     </td>
-                    <td style={{ color: 'var(--ink-soft)' }}>{u.email}</td>
+                    <td style={{ color: 'var(--ink-soft)' }}>{accountDisplay(u.email)}</td>
                     <td>{count} 個專案</td>
                     <td>
                       <span className={`status-dot ${u.active ? 'on' : ''}`}>
@@ -138,19 +139,22 @@ export function AccountsPage() {
               {isNew ? '新增帳號' : '編輯帳號'}
             </h2>
             <p style={{ margin: '0 0 16px', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.45 }}>
-              {cloud
-                ? '儲存後會嘗試在 Firebase Authentication 建立相同 Email／密碼。'
-                : '目前未接 Firebase，帳號僅存在本機。'}
+              直接填帳號＋密碼即可
+              {cloud ? '；儲存時會同步到 Firebase 登入。' : '（目前未接 Firebase，僅存本機）。'}
             </p>
 
             <div className="field">
-              <label>帳號（email）</label>
+              <label>帳號</label>
               <input
-                value={editing.email}
+                value={isNew ? editing.email : accountDisplay(editing.email)}
                 onChange={(e) => setEditing({ ...editing, email: e.target.value })}
-                placeholder="name@site.tw"
+                placeholder="例如 inspector01"
                 disabled={!isNew && Boolean(editing.email)}
+                autoComplete="off"
               />
+              <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
+                可用純帳號（英數），也可填完整 email。
+              </p>
             </div>
 
             <div className="field">
@@ -180,7 +184,7 @@ export function AccountsPage() {
                 </button>
               </div>
               <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-                請把帳號密碼交給人員使用。若 Firebase 已有此 Email，不會覆寫對方既有密碼。
+                請把帳號密碼交給人員使用。若 Firebase 已有此帳號，不會覆寫既有密碼。
               </p>
             </div>
 
@@ -254,7 +258,9 @@ export function AccountsPage() {
                   }
                   const msg = result.firebaseMessage || '已儲存'
                   setSaveMsg(msg)
-                  alert(`${msg}\n\n帳號：${editing.email.trim()}\n密碼：${editing.password.trim()}`)
+                  alert(
+                    `${msg}\n\n帳號：${accountDisplay(editing.email.trim())}\n密碼：${editing.password.trim()}`,
+                  )
                   setEditing(null)
                   setIsNew(false)
                 })()

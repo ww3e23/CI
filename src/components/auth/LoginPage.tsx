@@ -4,7 +4,7 @@ import { useAuthStore } from '../../store/useAuthStore'
 
 export function LoginPage() {
   const login = useAuthStore((s) => s.login)
-  const [email, setEmail] = useState('')
+  const [account, setAccount] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
@@ -38,7 +38,7 @@ export function LoginPage() {
           onSubmit={(e) => {
             e.preventDefault()
             void (async () => {
-              const r = await login(email, password)
+              const r = await login(account, password)
               if (!r.ok) setError(r.error ?? '登入失敗')
               else setError('')
             })()
@@ -46,15 +46,15 @@ export function LoginPage() {
         >
           <h2 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>帳號登入</h2>
           <p style={{ margin: '0 0 16px', color: 'var(--ink-soft)', fontSize: 13 }}>
-            請使用管理者提供的帳號密碼登入
+            請使用管理者提供的帳號密碼登入（不必是 email）
           </p>
 
           <div className="field">
             <label>帳號</label>
             <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="email@example.com"
+              value={account}
+              onChange={(e) => setAccount(e.target.value)}
+              placeholder="例如 inspector01"
               autoComplete="username"
             />
           </div>
