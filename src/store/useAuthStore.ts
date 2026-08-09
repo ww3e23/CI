@@ -645,6 +645,9 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         if (!auth?.currentUser) {
           return { ok: false, error: '請先登入後再同步' }
         }
+        const permissionHint =
+          'Firestore 規則未允許讀寫。請到 Firebase Console → 專案 ci-inspection → Firestore → 規則，貼上本專案 firestore.rules 後按「發布」，再重新登入並同步。'
+
         // 先把本機目錄推上雲端，再拉回來（電腦建的資料可到手機）
         try {
           const snap = get()
@@ -661,11 +664,18 @@ export const useAuthStore = create<AuthState & AuthActions>()(
           await Promise.all(snap.projects.map((p) => syncProjectMeta(p)))
         } catch (err) {
           console.warn('[refreshDirectory] push failed', err)
+          const msg = err instanceof Error ? err.message : String(err)
+          if (/permission|insufficient/i.test(msg)) {
+            return { ok: false, error: permissionHint }
+          }
         }
 
         const remote = await pullAuthDirectoryWithRetry(4)
         if (!remote) {
-          return { ok: false, error: '無法從雲端同步專案，請確認網路與 Firestore 權限' }
+          return {
+            ok: false,
+            error: `${permissionHint}（若已發布仍失敗，請確認網路與已用 Email 登入 Firebase）`,
+          }
         }
         const merged = mergeDirectory(
           {
