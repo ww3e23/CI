@@ -39,6 +39,9 @@ interface ProjectActions {
   loadProjectBundle: (projectId: string) => void
   saveProjectBundle: (projectId: string) => void
   ensureProjectBundle: (projectId: string, name: string) => void
+  removeProjectBundle: (projectId: string) => void
+  /** 讀取指定專案歷程（作用中專案用即時資料，其餘讀 bundle） */
+  getProjectActivities: (projectId: string) => ProjectState['activities']
   upsertCategory: (category: ChecklistCategory, items: ChecklistItem[]) => void
   removeCategory: (categoryId: string) => { ok: boolean; reason?: string }
   upsertChecklistItem: (item: ChecklistItem) => void
@@ -298,6 +301,39 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             [projectId]: { ...structuredClone(seedState), projectName: name },
           },
         })
+      },
+
+      removeProjectBundle: (projectId) => {
+        const { bundles, activeProjectId } = get()
+        if (!bundles[projectId] && activeProjectId !== projectId) return
+        const next = { ...bundles }
+        delete next[projectId]
+        if (activeProjectId === projectId) {
+          const fallbackId = Object.keys(next)[0] ?? null
+          if (fallbackId) {
+            set({
+              ...structuredClone(next[fallbackId]),
+              bundles: next,
+              activeProjectId: fallbackId,
+            })
+          } else {
+            set({
+              ...structuredClone(seedState),
+              projectName: '未選擇專案',
+              bundles: next,
+              activeProjectId: null,
+              currentUnitId: '',
+            })
+          }
+          return
+        }
+        set({ bundles: next })
+      },
+
+      getProjectActivities: (projectId) => {
+        const state = get()
+        if (state.activeProjectId === projectId) return state.activities
+        return state.bundles[projectId]?.activities ?? []
       },
 
       pushStructureToCloud: async () => {

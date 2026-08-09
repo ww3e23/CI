@@ -10,7 +10,7 @@ import type { MemberRole, ProjectMember, ProjectMeta, UserAccount } from '../typ
 import { seedMembers, seedProjects, seedUsers } from '../data/authSeed'
 import { createId } from '../lib/id'
 import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase'
-import { syncProjectMeta } from '../services/cloudSync'
+import { deleteProjectMeta, syncProjectMeta } from '../services/cloudSync'
 import { useProjectStore } from './useProjectStore'
 
 interface AuthState {
@@ -32,6 +32,7 @@ interface AuthActions {
   setUserActive: (userId: string, active: boolean) => void
   setMemberRole: (userId: string, projectId: string, role: MemberRole | null) => void
   upsertProject: (project: ProjectMeta) => void
+  deleteProject: (projectId: string) => { ok: boolean; error?: string }
   resetAuthDemo: () => void
 }
 
@@ -217,6 +218,48 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         if (isFirebaseConfigured()) {
           void syncProjectMeta(project)
         }
+      },
+
+      deleteProject: (projectId) => {
+        const { projects, currentProjectId, members, lastUnitByProject } = get()
+        const target = projects.find((p) => p.id === projectId)
+        if (!target) return { ok: false, error: '找不到專案' }
+        if (projects.length <= 1) {
+          return { ok: false, error: '至少需保留一個專案，無法刪除' }
+        }
+
+        if (currentProjectId) {
+          useProjectStore.getState().saveProjectBundle(currentProjectId)
+        }
+
+        const nextProjects = projects.filter((p) => p.id !== projectId)
+        const nextMembers = members.filter((m) => m.projectId !== projectId)
+        const nextLast = { ...lastUnitByProject }
+        delete nextLast[projectId]
+
+        let nextCurrent = currentProjectId
+        if (currentProjectId === projectId) {
+          nextCurrent = nextProjects[0]?.id ?? null
+        }
+
+        set({
+          projects: nextProjects,
+          members: nextMembers,
+          lastUnitByProject: nextLast,
+          currentProjectId: nextCurrent,
+        })
+
+        useProjectStore.getState().removeProjectBundle(projectId)
+        if (nextCurrent && nextCurrent !== currentProjectId) {
+          useProjectStore.getState().loadProjectBundle(nextCurrent)
+          const lastUnit = nextLast[nextCurrent]
+          if (lastUnit) useProjectStore.getState().setCurrentUnit(lastUnit)
+        }
+
+        if (isFirebaseConfigured()) {
+          void deleteProjectMeta(projectId)
+        }
+        return { ok: true }
       },
 
       resetAuthDemo: () => set(projectSlice()),

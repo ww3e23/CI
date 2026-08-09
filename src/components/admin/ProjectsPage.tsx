@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import { useAuthStore } from '../../store/useAuthStore'
 import { createId } from '../../lib/id'
 import { driveFolderUrl, parseDriveFolderId } from '../../lib/driveFolder'
@@ -10,6 +11,7 @@ export function ProjectsPage() {
   const members = useAuthStore((s) => s.members)
   const users = useAuthStore((s) => s.users)
   const upsertProject = useAuthStore((s) => s.upsertProject)
+  const deleteProject = useAuthStore((s) => s.deleteProject)
   const setMemberRole = useAuthStore((s) => s.setMemberRole)
   const currentProjectId = useAuthStore((s) => s.currentProjectId)
 
@@ -185,6 +187,53 @@ export function ProjectsPage() {
                   </button>
                 ))}
             </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 22,
+              paddingTop: 16,
+              borderTop: '1px solid rgba(34,41,31,0.1)',
+            }}
+          >
+            <h3 className="serif" style={{ margin: '0 0 6px', fontSize: 18, color: 'var(--terracotta)' }}>
+              危險操作
+            </h3>
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
+              刪除後會移除本專案的查驗資料、成員指派與操作歷程，且無法復原。
+            </p>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{
+                color: 'var(--terracotta)',
+                borderColor: 'rgba(174,76,59,0.35)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+              onClick={() => {
+                const name = selected.name
+                if (
+                  !confirm(
+                    `確定刪除專案「${name}」？\n將一併清除該專案的查驗資料、成員與操作歷程，此操作無法復原。`,
+                  )
+                ) {
+                  return
+                }
+                if (!confirm(`再次確認：真的要刪除「${name}」？`)) return
+                const result = deleteProject(selected.id)
+                if (!result.ok) {
+                  alert(result.error || '刪除失敗')
+                  return
+                }
+                setSelectedId(null)
+                setDriveMsg('')
+              }}
+            >
+              <Trash2 size={16} />
+              刪除此專案
+            </button>
           </div>
         </section>
       )}

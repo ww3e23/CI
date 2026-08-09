@@ -1,19 +1,83 @@
+import { useMemo, useState } from 'react'
+import { useAuthStore } from '../../store/useAuthStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { formatActivity } from '../../lib/progress'
 
 export function AuditPage() {
-  const activities = useProjectStore((s) => s.activities)
+  const projects = useAuthStore((s) => s.projects)
+  const currentProjectId = useAuthStore((s) => s.currentProjectId)
+  const bundles = useProjectStore((s) => s.bundles)
+  const activeProjectId = useProjectStore((s) => s.activeProjectId)
+  const liveActivities = useProjectStore((s) => s.activities)
+
+  const [filterProjectId, setFilterProjectId] = useState<string | null>(
+    () => currentProjectId ?? projects[0]?.id ?? null,
+  )
+
+  const selectedId =
+    filterProjectId && projects.some((p) => p.id === filterProjectId)
+      ? filterProjectId
+      : (currentProjectId ?? projects[0]?.id ?? null)
+
+  const selectedProject = projects.find((p) => p.id === selectedId) ?? null
+
+  const activities = useMemo(() => {
+    if (!selectedId) return []
+    if (selectedId === activeProjectId) return liveActivities
+    return bundles[selectedId]?.activities ?? []
+  }, [selectedId, activeProjectId, liveActivities, bundles])
 
   return (
     <div>
       <header style={{ marginBottom: 18 }}>
         <h1 className="serif" style={{ margin: 0, fontSize: 28 }}>操作歷程</h1>
         <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)' }}>
-          顯示目前專案最近操作（示範資料；正式版會跨專案彙整）
+          依專案查閱現場操作紀錄，不會把所有專案混在一起。
         </p>
       </header>
 
+      <div className="chip-row" style={{ marginBottom: 14 }}>
+        {projects.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className={`chip ${selectedId === p.id ? 'on' : ''}`}
+            onClick={() => setFilterProjectId(p.id)}
+          >
+            {p.name}
+            <span style={{ opacity: 0.75, fontWeight: 600, marginLeft: 4 }}>
+              {(p.id === activeProjectId
+                ? liveActivities
+                : bundles[p.id]?.activities ?? []
+              ).length}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {selectedProject && (
+        <div
+          style={{
+            marginBottom: 10,
+            fontSize: 13,
+            fontWeight: 700,
+            color: 'var(--ink-soft)',
+          }}
+        >
+          {selectedProject.name}
+          <span style={{ fontWeight: 600 }}>
+            {' '}
+            · {selectedProject.code} · 共 {activities.length} 筆
+          </span>
+        </div>
+      )}
+
       <div className="admin-panel" style={{ padding: '4px 18px' }}>
+        {activities.length === 0 && (
+          <div style={{ padding: '22px 0', color: 'var(--ink-soft)', fontWeight: 600 }}>
+            此專案尚無操作紀錄
+          </div>
+        )}
         {activities.map((a) => (
           <div
             key={a.id}
