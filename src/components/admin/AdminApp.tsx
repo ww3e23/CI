@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Building2, Clock3, Users } from 'lucide-react'
-import { useCurrentUser } from '../../store/useAuthStore'
+import { Building2, Clock3, LogOut, Users } from 'lucide-react'
+import { useAuthStore, useCurrentUser } from '../../store/useAuthStore'
 import { AccountsPage } from './AccountsPage'
 import { ProjectsPage } from './ProjectsPage'
 import { AuditPage } from './AuditPage'
@@ -9,6 +9,7 @@ type AdminTab = 'accounts' | 'projects' | 'audit'
 
 export function AdminApp() {
   const user = useCurrentUser()
+  const logout = useAuthStore((s) => s.logout)
   const [tab, setTab] = useState<AdminTab>('accounts')
   const canAccess = Boolean(user?.systemAdmin)
 
@@ -104,18 +105,41 @@ export function AdminApp() {
               <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>系統管理者</div>
             </div>
           </div>
-          <a
-            href="#/"
-            style={{
-              display: 'inline-block',
-              marginTop: 12,
-              fontSize: 12,
-              fontWeight: 700,
-              color: 'var(--ink-soft)',
-            }}
-          >
-            ← 回現場 App（可查看全部專案）
-          </a>
+          <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+            <a
+              href="#/"
+              className="btn btn-ghost"
+              style={{
+                textDecoration: 'none',
+                justifyContent: 'flex-start',
+                minHeight: 40,
+                fontSize: 13,
+              }}
+            >
+              ← 回現場 App
+            </a>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{
+                justifyContent: 'flex-start',
+                minHeight: 40,
+                fontSize: 13,
+                color: 'var(--terracotta)',
+                borderColor: 'rgba(174,76,59,0.28)',
+                gap: 8,
+              }}
+              onClick={() => {
+                void (async () => {
+                  await logout()
+                  window.location.hash = '#/'
+                })()
+              }}
+            >
+              <LogOut size={16} />
+              登出
+            </button>
+          </div>
         </div>
       </aside>
 
