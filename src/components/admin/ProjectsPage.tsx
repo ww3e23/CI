@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Trash2, UserMinus } from 'lucide-react'
 import { useAuthStore } from '../../store/useAuthStore'
 import { createId } from '../../lib/id'
+import { nextProjectCode } from '../../lib/projectCode'
 import { driveFolderUrl, parseDriveFolderId } from '../../lib/driveFolder'
 import {
   ROLE_LABEL,
@@ -29,7 +30,7 @@ export function ProjectsPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const [draft, setDraft] = useState({ name: '', code: '', location: '', driveInput: '' })
+  const [draft, setDraft] = useState({ name: '', location: '', driveInput: '' })
   const [driveInput, setDriveInput] = useState('')
   const [driveMsg, setDriveMsg] = useState('')
   const [memberQuery, setMemberQuery] = useState('')
@@ -110,7 +111,7 @@ export function ProjectsPage() {
           className="btn btn-primary"
           onClick={() => {
             setCreating(true)
-            setDraft({ name: '', code: '', location: '', driveInput: '' })
+            setDraft({ name: '', location: '', driveInput: '' })
           }}
         >
           + 新增專案
@@ -147,7 +148,7 @@ export function ProjectsPage() {
           className="project-card dashed"
           onClick={() => {
             setCreating(true)
-            setDraft({ name: '', code: '', location: '', driveInput: '' })
+            setDraft({ name: '', location: '', driveInput: '' })
           }}
         >
           <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--green-deep)' }}>+</div>
@@ -374,16 +375,24 @@ export function ProjectsPage() {
           <h3 className="serif" style={{ marginTop: 0 }}>新增專案</h3>
           <div className="field">
             <label>專案名稱</label>
-            <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+            <input
+              value={draft.name}
+              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              placeholder="例如 晴川院子"
+              autoFocus
+            />
           </div>
           <div className="field">
-            <label>代號</label>
-            <input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} placeholder="YS-2026-X" />
+            <label>地址／區域（可選）</label>
+            <input
+              value={draft.location}
+              onChange={(e) => setDraft({ ...draft, location: e.target.value })}
+              placeholder="例如 新竹市東區"
+            />
           </div>
-          <div className="field">
-            <label>地址／區域</label>
-            <input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} />
-          </div>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--ink-soft)' }}>
+            代號由系統自動編號（例如 {nextProjectCode(projects.map((p) => p.code))}）
+          </p>
           <div className="field">
             <label>Google 雲端硬碟資料夾（可選）</label>
             <input
@@ -397,8 +406,8 @@ export function ProjectsPage() {
             className="btn btn-primary"
             style={{ width: '100%' }}
             onClick={() => {
-              if (!draft.name.trim() || !draft.code.trim()) {
-                alert('請填寫名稱與代號')
+              if (!draft.name.trim()) {
+                alert('請填寫專案名稱')
                 return
               }
               const folderId = parseDriveFolderId(draft.driveInput)
@@ -409,7 +418,7 @@ export function ProjectsPage() {
               const project: ProjectMeta = {
                 id: createId('proj'),
                 name: draft.name.trim(),
-                code: draft.code.trim(),
+                code: nextProjectCode(projects.map((p) => p.code)),
                 location: draft.location.trim() || '未填寫',
                 status: 'active',
                 createdAt: new Date().toISOString(),
