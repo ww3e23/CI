@@ -6,7 +6,7 @@ import {
   setDoc,
   serverTimestamp,
 } from 'firebase/firestore'
-import { getDb, isFirebaseConfigured } from '../lib/firebase'
+import { getDb, getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase'
 import type { BuildingRule, Defect, ProjectState } from '../types'
 import type { MemberRole, ProjectMember, ProjectMeta, UserAccount } from '../types/auth'
 
@@ -146,6 +146,7 @@ export async function syncProjectMember(member: ProjectMember): Promise<boolean>
       role: member.role,
       joinedAt: member.joinedAt,
       invitedBy: member.invitedBy ?? null,
+      userEmail: member.userEmail ? member.userEmail.toLowerCase() : null,
       updatedAt: serverTimestamp(),
     },
     { merge: true },
@@ -168,6 +169,13 @@ export async function pullAuthDirectory(): Promise<{
 } | null> {
   const db = getDb()
   if (!db || !isFirebaseConfigured()) return null
+
+  const auth = getFirebaseAuth()
+  if (auth) {
+    await auth.authStateReady()
+    if (!auth.currentUser) return null
+  }
+
   try {
     const [usersSnap, membersSnap, projectsSnap] = await Promise.all([
       getDocs(collection(db, 'users')),
@@ -197,6 +205,7 @@ export async function pullAuthDirectory(): Promise<{
         role: (data.role as MemberRole) ?? 'viewer',
         joinedAt: String(data.joinedAt ?? new Date().toISOString()),
         invitedBy: data.invitedBy ? String(data.invitedBy) : undefined,
+        userEmail: data.userEmail ? String(data.userEmail) : undefined,
       }
     })
 
@@ -215,7 +224,22 @@ export async function pullAuthDirectory(): Promise<{
     })
 
     return { users, members, projects }
-  } catch {
+  } catch (err) {
+    console.warn('[pullAuthDirectory] failed', err)
     return null
   }
+}
+
+export async function pullAuthDirectoryWithRetry(times = 3): Promise<{
+  users: UserAccount[]
+  members: ProjectMember[]
+  projects: ProjectMeta[]
+} | null> {
+  let last: Awaited<ReturnType<typeof pullAuthDirectory>> = null
+  for (let i = 0; i < times; i++) {
+    last = await pullAuthDirectory()
+    if (last) return last
+    await new Promise((r) => setTimeout(r, 350 * (i + 1)))
+  }
+  return last
 }
