@@ -11,6 +11,10 @@ npm run dev
 
 瀏覽器開啟提示的位址（預設 `http://localhost:5173`）。
 
+示範登入：
+- 現場：`inspector01@site.tw` / `demo1234`
+- 後台：`admin@site.tw` / `admin1234`，登入後到「我的」→「開啟驗屋後台」，或直接開 `#/admin`
+
 ## Firebase（正式雲端）
 
 1. 到 [Firebase Console](https://console.firebase.google.com/) 建立專案，啟用 Authentication、Firestore、Storage。

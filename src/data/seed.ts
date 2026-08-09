@@ -220,7 +220,7 @@ moreUnits.forEach((u, i) => {
 })
 
 export const seedState: ProjectState = {
-  projectName: '揚昇建設．晴川院子',
+  projectName: '晴川院子',
   buildings,
   units,
   categories,
@@ -259,4 +259,17 @@ export const seedState: ProjectState = {
   currentUnitId: sampleUnit.id,
   recentUnitIds: [sampleUnit.id],
   areas: ['玄關', '客廳', '餐廳', '廚房', '主臥', '臥室1', '主浴', '客浴', '前陽台'],
+}
+
+function cloneProjectState(name: string): ProjectState {
+  return structuredClone({ ...seedState, projectName: name })
+}
+
+/** 各專案現場資料包（示範） */
+export function createProjectBundles(): Record<string, ProjectState> {
+  return {
+    proj_qingchuan: cloneProjectState('晴川院子'),
+    proj_songtao: cloneProjectState('松濤匯'),
+    proj_hean: cloneProjectState('河岸敘'),
+  }
 }

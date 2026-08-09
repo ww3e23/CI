@@ -1,11 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { BuildingRule, Defect, DefectStatus, ProjectState, SyncState } from '../types'
-import { seedState } from '../data/seed'
+import { createProjectBundles, seedState } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
 import { cloudReady, syncDefect, syncProjectStructure } from '../services/cloudSync'
 import { firebaseModeLabel } from '../lib/firebase'
+
+type BundleMap = Record<string, ProjectState>
 
 interface ProjectActions {
   setCurrentUnit: (unitId: string) => void
@@ -25,6 +27,14 @@ interface ProjectActions {
   markUnitChecked: (unitId: string, checked: number) => void
   resetDemoData: () => void
   pushStructureToCloud: () => Promise<{ ok: boolean; mode: string }>
+  loadProjectBundle: (projectId: string) => void
+  saveProjectBundle: (projectId: string) => void
+  ensureProjectBundle: (projectId: string, name: string) => void
+}
+
+interface BundleState {
+  bundles: BundleMap
+  activeProjectId: string | null
 }
 
 function rebuildUnits(buildings: BuildingRule[], prevUnits: ProjectState['units']) {
@@ -36,10 +46,30 @@ function rebuildUnits(buildings: BuildingRule[], prevUnits: ProjectState['units'
   })
 }
 
-export const useProjectStore = create<ProjectState & ProjectActions>()(
+function snapshotProject(state: ProjectState): ProjectState {
+  return {
+    projectName: state.projectName,
+    buildings: state.buildings,
+    units: state.units,
+    categories: state.categories,
+    checklistItems: state.checklistItems,
+    defects: state.defects,
+    unitCheckedCount: state.unitCheckedCount,
+    activities: state.activities,
+    currentUnitId: state.currentUnitId,
+    recentUnitIds: state.recentUnitIds,
+    areas: state.areas,
+  }
+}
+
+const initialBundles = createProjectBundles()
+
+export const useProjectStore = create<ProjectState & BundleState & ProjectActions>()(
   persist(
     (set, get) => ({
       ...seedState,
+      bundles: initialBundles,
+      activeProjectId: 'proj_qingchuan',
 
       setCurrentUnit: (unitId) => {
         const recent = [unitId, ...get().recentUnitIds.filter((id) => id !== unitId)].slice(0, 8)
@@ -186,7 +216,39 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         })
       },
 
-      resetDemoData: () => set({ ...seedState }),
+      resetDemoData: () => {
+        const bundles = createProjectBundles()
+        const id = get().activeProjectId ?? 'proj_qingchuan'
+        set({ ...bundles[id], bundles, activeProjectId: id })
+      },
+
+      loadProjectBundle: (projectId) => {
+        const bundle = get().bundles[projectId] ?? {
+          ...structuredClone(seedState),
+          projectName: projectId,
+        }
+        set({ ...structuredClone(bundle), activeProjectId: projectId })
+      },
+
+      saveProjectBundle: (projectId) => {
+        const snap = snapshotProject(get())
+        set({
+          bundles: {
+            ...get().bundles,
+            [projectId]: snap,
+          },
+        })
+      },
+
+      ensureProjectBundle: (projectId, name) => {
+        if (get().bundles[projectId]) return
+        set({
+          bundles: {
+            ...get().bundles,
+            [projectId]: { ...structuredClone(seedState), projectName: name },
+          },
+        })
+      },
 
       pushStructureToCloud: async () => {
         const mode = firebaseModeLabel()
@@ -200,8 +262,8 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       },
     }),
     {
-      name: 'site-inspection-v3',
-      version: 3,
+      name: 'site-inspection-v4',
+      version: 4,
     },
   ),
 )

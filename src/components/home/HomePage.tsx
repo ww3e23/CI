@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
+import { useCurrentProject } from '../../store/useAuthStore'
 import { unitProgress } from '../../lib/progress'
 import { UnitSwitcher } from '../UnitSwitcher'
+import { ProjectSwitcher } from './ProjectSwitcher'
 import type { ChecklistCategory } from '../../types'
 
 export function HomePage({
@@ -10,7 +13,9 @@ export function HomePage({
   onOpenCategory: (categoryId: string) => void
 }) {
   const [switchOpen, setSwitchOpen] = useState(false)
+  const [projectOpen, setProjectOpen] = useState(false)
   const projectName = useProjectStore((s) => s.projectName)
+  const currentProject = useCurrentProject()
   const units = useProjectStore((s) => s.units)
   const categories = useProjectStore((s) => s.categories)
   const defects = useProjectStore((s) => s.defects)
@@ -42,23 +47,42 @@ export function HomePage({
   return (
     <div className="rise">
       <header style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div className="eyebrow">SITE INSPECTION</div>
-          <div className="serif" style={{ fontSize: 20, fontWeight: 700, marginTop: 2 }}>
-            {projectName}
-          </div>
-          <div style={{ color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600, marginTop: 2 }}>
+          <button
+            type="button"
+            className="glass"
+            onClick={() => setProjectOpen(true)}
+            style={{
+              marginTop: 6,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              minHeight: 36,
+              padding: '0 12px',
+              borderRadius: 999,
+              fontWeight: 700,
+              fontSize: 13,
+              maxWidth: '100%',
+            }}
+          >
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentProject ? `${currentProject.name}` : projectName}
+            </span>
+            <ChevronDown size={16} />
+          </button>
+          <div style={{ color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600, marginTop: 6 }}>
             {unit.buildingName}・{unit.floor}・{unit.code}戶
           </div>
         </div>
-        <button type="button" className="btn btn-ghost" style={{ minHeight: 40, borderRadius: 999 }} onClick={() => setSwitchOpen(true)}>
+        <button type="button" className="btn btn-ghost" style={{ minHeight: 40, borderRadius: 999, flexShrink: 0 }} onClick={() => setSwitchOpen(true)}>
           切換戶別
         </button>
       </header>
 
       <div className="hero-stack">
-        <div className="layer l3" />
-        <div className="layer l2" />
+        <div className="layer l2" aria-hidden />
+        <div className="layer l1" aria-hidden />
         <section className="glass-green hero-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
             <div>
@@ -147,6 +171,7 @@ export function HomePage({
       </div>
 
       {switchOpen && <UnitSwitcher onClose={() => setSwitchOpen(false)} />}
+      {projectOpen && <ProjectSwitcher onClose={() => setProjectOpen(false)} />}
     </div>
   )
 }

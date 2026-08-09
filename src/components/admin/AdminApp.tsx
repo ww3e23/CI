@@ -1,0 +1,122 @@
+import { useMemo, useState } from 'react'
+import { Building2, Clock3, Users } from 'lucide-react'
+import { useCurrentUser } from '../../store/useAuthStore'
+import { AccountsPage } from './AccountsPage'
+import { ProjectsPage } from './ProjectsPage'
+import { AuditPage } from './AuditPage'
+
+type AdminTab = 'accounts' | 'projects' | 'audit'
+
+export function AdminApp() {
+  const user = useCurrentUser()
+  const [tab, setTab] = useState<AdminTab>('accounts')
+  const canAccess = Boolean(user?.systemAdmin)
+
+  const nav = useMemo(
+    () => [
+      { key: 'accounts' as const, label: '帳號管理', icon: Users },
+      { key: 'projects' as const, label: '專案管理', icon: Building2 },
+      { key: 'audit' as const, label: '操作歷程', icon: Clock3 },
+    ],
+    [],
+  )
+
+  if (!user) {
+    return (
+      <div className="admin-shell">
+        <div className="admin-panel" style={{ margin: 'auto', padding: 24, maxWidth: 420 }}>
+          <h1 className="serif">請先登入</h1>
+          <p style={{ color: 'var(--ink-soft)' }}>後台需使用管理者帳號。</p>
+          <a href="#/" className="btn btn-primary" style={{ marginTop: 12, textDecoration: 'none' }}>
+            回現場 App 登入
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  if (!canAccess) {
+    return (
+      <div className="admin-shell">
+        <div className="admin-panel" style={{ margin: 'auto', padding: 24, maxWidth: 420 }}>
+          <h1 className="serif">無權限</h1>
+          <p style={{ color: 'var(--ink-soft)' }}>僅系統管理者可進入驗屋後台。</p>
+          <a href="#/" className="btn btn-primary" style={{ marginTop: 12, textDecoration: 'none' }}>
+            回現場 App
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="admin-shell">
+      <aside className="admin-sidebar glass">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 12,
+              background: 'var(--green-deep)',
+              color: '#fff',
+              display: 'grid',
+              placeItems: 'center',
+              fontWeight: 800,
+            }}
+          >
+            驗
+          </div>
+          <div>
+            <div className="serif" style={{ fontWeight: 700 }}>驗屋後台</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-soft)', fontWeight: 600 }}>ADMIN</div>
+          </div>
+        </div>
+
+        <nav style={{ display: 'grid', gap: 6, flex: 1 }}>
+          {nav.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              className={`admin-nav ${tab === key ? 'on' : ''}`}
+              onClick={() => setTab(key)}
+            >
+              <Icon size={18} /> {label}
+            </button>
+          ))}
+        </nav>
+
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 16 }}>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 999,
+              background: 'var(--green-deep)',
+              color: '#fff',
+              display: 'grid',
+              placeItems: 'center',
+              fontWeight: 800,
+            }}
+          >
+            {user.displayName.slice(0, 1)}
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 13 }}>{user.displayName}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>系統管理者</div>
+          </div>
+        </div>
+
+        <a href="#/" style={{ marginTop: 14, fontSize: 13, fontWeight: 700, color: 'var(--green-deep)' }}>
+          ← 回現場 App
+        </a>
+      </aside>
+
+      <main className="admin-main">
+        {tab === 'accounts' && <AccountsPage />}
+        {tab === 'projects' && <ProjectsPage />}
+        {tab === 'audit' && <AuditPage />}
+      </main>
+    </div>
+  )
+}

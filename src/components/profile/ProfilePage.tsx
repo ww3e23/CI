@@ -1,26 +1,131 @@
 import { useState } from 'react'
-import { Cloud, CloudOff, RefreshCw } from 'lucide-react'
+import { Cloud, CloudOff, Pencil, RefreshCw } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
+import {
+  useAuthStore,
+  useCurrentProject,
+  useCurrentRole,
+  useCurrentUser,
+} from '../../store/useAuthStore'
 import { firebaseModeLabel, isFirebaseConfigured } from '../../lib/firebase'
 import { SettingsPage } from '../settings/SettingsPage'
+import { ROLE_LABEL, ROLE_TONE } from '../../types/auth'
 
 export function ProfilePage() {
-  const projectName = useProjectStore((s) => s.projectName)
+  const user = useCurrentUser()
+  const role = useCurrentRole()
+  const project = useCurrentProject()
+  const members = useAuthStore((s) => s.members)
+  const projects = useAuthStore((s) => s.projects)
+  const updateDisplayName = useAuthStore((s) => s.updateDisplayName)
+  const logout = useAuthStore((s) => s.logout)
   const pushStructureToCloud = useProjectStore((s) => s.pushStructureToCloud)
+
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(user?.displayName ?? '')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const cloud = isFirebaseConfigured()
   const mode = firebaseModeLabel()
 
+  const myProjects = projects.filter((p) => {
+    if (user?.systemAdmin) return true
+    return members.some((m) => m.userId === user?.id && m.projectId === p.id)
+  })
+
+  if (!user) return null
+
+  const initial = user.displayName.slice(0, 1)
+
   return (
     <div className="rise">
       <header style={{ marginBottom: 14 }}>
-        <div className="eyebrow">PROFILE</div>
-        <h1 className="serif" style={{ margin: '4px 0 0', fontSize: 24, fontWeight: 700 }}>我的</h1>
-        <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)', fontSize: 13 }}>
-          {projectName}
-        </p>
+        <div className="eyebrow">MY ACCOUNT</div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 999,
+              background: 'var(--green-deep)',
+              color: '#fff',
+              display: 'grid',
+              placeItems: 'center',
+              fontWeight: 800,
+              fontSize: 22,
+            }}
+          >
+            {initial}
+          </div>
+          <div>
+            <div className="serif" style={{ fontSize: 22, fontWeight: 700 }}>{user.displayName}</div>
+            <div style={{ color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600 }}>{user.email}</div>
+          </div>
+        </div>
       </header>
+
+      <section className="glass" style={{ padding: 14, marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-soft)' }}>顯示名稱</div>
+            {!editing ? (
+              <div style={{ fontWeight: 800, marginTop: 4 }}>{user.displayName}</div>
+            ) : (
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                style={{ marginTop: 6, minHeight: 40, borderRadius: 12, border: '1px solid rgba(34,41,31,0.12)', padding: '0 10px', width: '100%' }}
+              />
+            )}
+            <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4 }}>
+              此名稱會出現在缺失紀錄與操作歷程
+            </div>
+          </div>
+          {!editing ? (
+            <button type="button" className="btn btn-ghost" style={{ minHeight: 40 }} onClick={() => { setName(user.displayName); setEditing(true) }}>
+              <Pencil size={14} /> 編輯
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ minHeight: 40 }}
+              onClick={() => {
+                updateDisplayName(name)
+                setEditing(false)
+              }}
+            >
+              儲存
+            </button>
+          )}
+        </div>
+      </section>
+
+      <div className="section-row">
+        <h2>所屬專案與權限</h2>
+      </div>
+      <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12 }}>
+        權限由各專案管理者於後台指派，無法自行變更
+        {project && role ? ` · 目前專案角色：${ROLE_LABEL[role]}` : ''}
+      </p>
+      <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
+        {myProjects.map((p) => {
+          const r =
+            user.systemAdmin
+              ? 'admin'
+              : members.find((m) => m.userId === user.id && m.projectId === p.id)?.role
+          if (!r) return null
+          return (
+            <article key={p.id} className="glass" style={{ padding: 12, display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: 800 }}>{p.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600 }}>{p.code}</div>
+              </div>
+              <span className={`role-tag ${ROLE_TONE[r]}`}>{ROLE_LABEL[r]}</span>
+            </article>
+          )
+        })}
+      </div>
 
       <section className="glass" style={{ padding: 14, marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -30,14 +135,11 @@ export function ProfilePage() {
               {cloud ? 'Firebase 已設定' : '示範模式（本機資料）'}
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, marginTop: 2 }}>
-              {cloud
-                ? '缺失與結構可同步至 Firestore'
-                : '複製 .env.example 為 .env.local 並填入 Firebase 設定後即可上雲'}
+              {cloud ? '可同步至 Firestore' : '可先完整操作；接上 Firebase 後再上雲'}
             </div>
           </div>
           <span className="chip" style={{ minHeight: 32 }}>{mode}</span>
         </div>
-
         <button
           type="button"
           className="btn btn-primary"
@@ -55,7 +157,32 @@ export function ProfilePage() {
         {msg && <div className="sync-hint">{msg}</div>}
       </section>
 
+      {(role === 'admin' || user.systemAdmin) && (
+        <a
+          href="#/admin"
+          className="btn btn-ghost"
+          style={{ width: '100%', marginBottom: 10, textDecoration: 'none' }}
+        >
+          開啟驗屋後台（桌面版）
+        </a>
+      )}
+
       <SettingsPage embedded />
+
+      <button
+        type="button"
+        className="btn"
+        style={{
+          width: '100%',
+          marginTop: 16,
+          background: 'rgba(174,76,59,0.12)',
+          color: 'var(--terracotta)',
+          fontWeight: 800,
+        }}
+        onClick={logout}
+      >
+        登出
+      </button>
     </div>
   )
 }

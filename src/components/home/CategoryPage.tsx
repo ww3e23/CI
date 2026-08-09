@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { statusLabel } from '../../lib/progress'
@@ -52,7 +53,7 @@ export function CategoryPage({
   }
 
   return (
-    <div className="rise">
+    <div className="rise" style={{ paddingBottom: 72 }}>
       <button
         type="button"
         onClick={onBack}
@@ -110,16 +111,19 @@ export function CategoryPage({
         })}
       </div>
 
-      <button type="button" className="fab-defect" onClick={() => setAddFor('')}>
-        ＋ 新增缺失
-      </button>
-
       {addFor !== null && (
         <AddDefectSheet
           categoryId={cat.id}
           checklistItemId={addFor || undefined}
           onClose={() => setAddFor(null)}
         />
+      )}
+
+      {createPortal(
+        <button type="button" className="fab-defect" onClick={() => setAddFor('')}>
+          ＋ 新增缺失
+        </button>,
+        document.body,
       )}
     </div>
   )
