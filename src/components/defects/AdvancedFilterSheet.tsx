@@ -1,6 +1,7 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { useProjectStore } from '../../store/useProjectStore'
 import type { DefectStatus } from '../../types'
+import { Modal } from '../ui/Modal'
 
 export interface DefectFilters {
   buildingIds: string[]
@@ -98,10 +99,7 @@ export function AdvancedFilterSheet({
   ]
 
   return (
-    <>
-      <div className="sheet-backdrop" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-label="進階篩選">
-        <div className="sheet-handle" />
+    <Modal onClose={onClose} aria-label="進階篩選">
         <h3 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>進階篩選</h3>
         <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13 }}>
           可組合棟／樓／戶、工項、區域、狀態與日期，套用後會實際過濾列表。
@@ -321,8 +319,7 @@ export function AdvancedFilterSheet({
             套用篩選
           </button>
         </div>
-      </div>
-    </>
+    </Modal>
   )
 }
 

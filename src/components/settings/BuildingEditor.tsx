@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { BuildingRule } from '../../types'
 import { expandFloorRange, naKey, parseUnitCodes, sortFloorsAsc } from '../../lib/floors'
 import { countActiveUnits } from '../../lib/units'
+import { Modal } from '../ui/Modal'
 
 export function BuildingEditor({
   initial,
@@ -58,10 +59,7 @@ export function BuildingEditor({
   }, [initial, name, floors, unitCodes, naFloors])
 
   return (
-    <>
-      <div className="sheet-backdrop" onClick={onCancel} />
-      <div className="sheet" role="dialog" aria-label="編輯棟別結構">
-        <div className="sheet-handle" />
+    <Modal onClose={onCancel} aria-label="編輯棟別結構">
         <h3 style={{ margin: '0 0 4px', fontSize: 18 }}>
           {initial.name ? `編輯 ${initial.name}` : '新增棟別'}
         </h3>
@@ -175,8 +173,7 @@ export function BuildingEditor({
             </button>
           )}
         </div>
-      </div>
-    </>
+    </Modal>
   )
 }
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAuthStore } from '../../store/useAuthStore'
 import { createId } from '../../lib/id'
 import { ROLE_LABEL, ROLE_TONE, type ProjectMeta } from '../../types/auth'
+import { Modal } from '../ui/Modal'
 
 export function ProjectsPage() {
   const projects = useAuthStore((s) => s.projects)
@@ -121,49 +122,45 @@ export function ProjectsPage() {
       )}
 
       {creating && (
-        <>
-          <div className="sheet-backdrop" onClick={() => setCreating(false)} />
-          <div className="sheet" style={{ maxWidth: 480 }}>
-            <div className="sheet-handle" />
-            <h3 className="serif" style={{ marginTop: 0 }}>新增專案</h3>
-            <div className="field">
-              <label>專案名稱</label>
-              <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>代號</label>
-              <input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} placeholder="YS-2026-X" />
-            </div>
-            <div className="field">
-              <label>地址／區域</label>
-              <input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} />
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary"
-              style={{ width: '100%' }}
-              onClick={() => {
-                if (!draft.name.trim() || !draft.code.trim()) {
-                  alert('請填寫名稱與代號')
-                  return
-                }
-                const project: ProjectMeta = {
-                  id: createId('proj'),
-                  name: draft.name.trim(),
-                  code: draft.code.trim(),
-                  location: draft.location.trim() || '未填寫',
-                  status: 'active',
-                  createdAt: new Date().toISOString(),
-                }
-                upsertProject(project)
-                setCreating(false)
-                setSelectedId(project.id)
-              }}
-            >
-              建立專案
-            </button>
+        <Modal onClose={() => setCreating(false)} aria-label="新增專案" className="modal-wide">
+          <h3 className="serif" style={{ marginTop: 0 }}>新增專案</h3>
+          <div className="field">
+            <label>專案名稱</label>
+            <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
           </div>
-        </>
+          <div className="field">
+            <label>代號</label>
+            <input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} placeholder="YS-2026-X" />
+          </div>
+          <div className="field">
+            <label>地址／區域</label>
+            <input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} />
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%' }}
+            onClick={() => {
+              if (!draft.name.trim() || !draft.code.trim()) {
+                alert('請填寫名稱與代號')
+                return
+              }
+              const project: ProjectMeta = {
+                id: createId('proj'),
+                name: draft.name.trim(),
+                code: draft.code.trim(),
+                location: draft.location.trim() || '未填寫',
+                status: 'active',
+                createdAt: new Date().toISOString(),
+              }
+              upsertProject(project)
+              setCreating(false)
+              setSelectedId(project.id)
+            }}
+          >
+            建立專案
+          </button>
+        </Modal>
       )}
     </div>
   )

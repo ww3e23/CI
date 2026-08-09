@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import type { ChecklistCategory, ChecklistItem } from '../../types'
 import { createId } from '../../lib/id'
+import { Modal } from '../ui/Modal'
 
 const PRESET_COLORS = ['#2F5D4C', '#3C6E8F', '#A67C52', '#AE4C3B', '#6B7C8A', '#8B6B4A', '#C97B2E']
 
@@ -36,10 +37,7 @@ export function TemplateEditor({
   )
 
   return (
-    <>
-      <div className="sheet-backdrop" onClick={onCancel} />
-      <div className="sheet" role="dialog" aria-label="編輯查驗範本">
-        <div className="sheet-handle" />
+    <Modal onClose={onCancel} aria-label="編輯查驗範本">
         <h3 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>
           {initial.name ? `編輯「${initial.name}」` : '新增大項'}
         </h3>
@@ -193,7 +191,6 @@ export function TemplateEditor({
             刪除／停用此大項
           </button>
         )}
-      </div>
-    </>
+    </Modal>
   )
 }

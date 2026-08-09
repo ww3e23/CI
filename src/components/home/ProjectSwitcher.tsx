@@ -1,5 +1,6 @@
 import { useAuthStore, useCurrentProject } from '../../store/useAuthStore'
 import { ROLE_LABEL, ROLE_TONE, type MemberRole } from '../../types/auth'
+import { Modal } from '../ui/Modal'
 
 export function ProjectSwitcher({ onClose }: { onClose: () => void }) {
   const userId = useAuthStore((s) => s.currentUserId)
@@ -22,10 +23,7 @@ export function ProjectSwitcher({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <>
-      <div className="sheet-backdrop" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-label="切換專案">
-        <div className="sheet-handle" />
+    <Modal onClose={onClose} aria-label="切換專案">
         <h3 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>切換專案</h3>
         <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13 }}>
           你目前有 {accessible.length} 個專案的存取權限
@@ -70,7 +68,6 @@ export function ProjectSwitcher({ onClose }: { onClose: () => void }) {
             )
           })}
         </div>
-      </div>
-    </>
+    </Modal>
   )
 }

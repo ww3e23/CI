@@ -3,6 +3,7 @@ import { Lock } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { cloudReady } from '../../services/cloudSync'
+import { Modal } from '../ui/Modal'
 import { AnnotatePlanModal } from './AnnotatePlanModal'
 
 export function AddDefectSheet({
@@ -48,16 +49,12 @@ export function AddDefectSheet({
 
   if (!unit || !cat) {
     return (
-      <>
-        <div className="sheet-backdrop" onClick={onClose} />
-        <div className="sheet">
-          <div className="sheet-handle" />
-          <p>請先設定可查驗戶別。</p>
-          <button type="button" className="btn btn-primary" style={{ width: '100%', marginTop: 12 }} onClick={onClose}>
-            關閉
-          </button>
-        </div>
-      </>
+      <Modal onClose={onClose} aria-label="新增缺失">
+        <p>請先設定可查驗戶別。</p>
+        <button type="button" className="btn btn-primary" style={{ width: '100%', marginTop: 12 }} onClick={onClose}>
+          關閉
+        </button>
+      </Modal>
     )
   }
 
@@ -126,9 +123,7 @@ export function AddDefectSheet({
 
   return (
     <>
-      <div className="sheet-backdrop" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-label="新增缺失">
-        <div className="sheet-handle" />
+      <Modal onClose={onClose} aria-label="新增缺失">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>新增缺失</h3>
           <span className="chip on" style={{ minHeight: 34 }}>
@@ -256,7 +251,7 @@ export function AddDefectSheet({
           {saving ? '儲存中…' : '儲存並同步雲端'}
         </button>
         <div className="sync-hint">{syncMsg}</div>
-      </div>
+      </Modal>
 
       {annotateOpen && (planOriginal || planPhoto) && (
         <AnnotatePlanModal

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useProjectStore } from '../store/useProjectStore'
 import { sortFloorsDesc } from '../lib/floors'
+import { Modal } from './ui/Modal'
 
 export function UnitSwitcher({ onClose }: { onClose: () => void }) {
   const buildings = useProjectStore((s) => s.buildings)
@@ -40,10 +41,7 @@ export function UnitSwitcher({ onClose }: { onClose: () => void }) {
     .slice(0, 6)
 
   return (
-    <>
-      <div className="sheet-backdrop" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-label="快速切換戶別">
-        <div className="sheet-handle" />
+    <Modal onClose={onClose} aria-label="快速切換戶別">
         <h3 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>
           快速切換戶別
         </h3>
@@ -162,7 +160,6 @@ export function UnitSwitcher({ onClose }: { onClose: () => void }) {
         >
           開始查驗此戶
         </button>
-      </div>
-    </>
+    </Modal>
   )
 }
