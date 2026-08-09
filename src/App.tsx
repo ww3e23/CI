@@ -8,6 +8,7 @@ import { ProfilePage } from './components/profile/ProfilePage'
 import { AddDefectSheet } from './components/defects/AddDefectSheet'
 import { LoginPage } from './components/auth/LoginPage'
 import { AdminApp } from './components/admin/AdminApp'
+import { InstallBanner } from './components/pwa/InstallBanner'
 import { useAuthStore } from './store/useAuthStore'
 
 function useHashRoute() {
@@ -32,7 +33,12 @@ export default function App() {
   }
 
   if (!currentUserId) {
-    return <LoginPage />
+    return (
+      <>
+        <LoginPage />
+        <InstallBanner />
+      </>
+    )
   }
 
   function handleNav(next: TabKey) {
@@ -59,6 +65,7 @@ export default function App() {
       </main>
       <BottomNav active={tab} onChange={handleNav} />
       {addOpen && <AddDefectSheet onClose={() => setAddOpen(false)} />}
+      <InstallBanner />
     </div>
   )
 }
