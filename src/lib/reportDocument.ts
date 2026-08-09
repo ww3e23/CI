@@ -166,25 +166,30 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     .btn-ghost { background: rgba(255,255,255,0.7); color: var(--ink); }
     .page { max-width: 980px; margin: 0 auto; padding: 18px 16px 48px; }
     .report-head {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      padding: 14px 16px; border-radius: 18px; margin-bottom: 18px;
-      background: linear-gradient(155deg, #3a6f5c, #2f5d4c);
-      color: #fff;
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      padding: 0 0 14px; margin: 0 0 16px;
+      border-bottom: 2px solid var(--green);
+      background: none; color: var(--ink);
+      min-height: 0 !important;
+      page-break-after: avoid;
+      break-after: avoid-page;
     }
     .report-head h1 {
-      font-family: 'Noto Serif TC', serif; font-size: 22px; margin: 0 0 4px; line-height: 1.2;
+      font-family: 'Noto Serif TC', serif; font-size: 20px; margin: 0 0 4px; line-height: 1.25;
+      color: var(--ink);
     }
-    .report-head .meta { margin: 0; font-size: 12px; line-height: 1.45; opacity: 0.92; }
+    .report-head .meta { margin: 0; font-size: 12px; line-height: 1.45; color: var(--soft); }
     .report-head .pct {
-      flex-shrink: 0; min-width: 64px; height: 64px; border-radius: 16px;
-      background: rgba(255,255,255,0.16); display: grid; place-items: center;
-      font-size: 20px; font-weight: 800;
+      flex-shrink: 0; min-width: 56px; padding: 8px 10px; border-radius: 12px;
+      border: 1.5px solid var(--green); color: var(--green);
+      background: rgba(47,93,76,0.06); display: grid; place-items: center;
+      font-size: 18px; font-weight: 800; line-height: 1.1;
     }
-    .section { margin: 28px 0; }
+    .section { margin: 18px 0; page-break-inside: avoid; }
     .section h2 {
-      font-family: 'Noto Serif TC', serif; font-size: 26px; margin: 0 0 6px;
+      font-family: 'Noto Serif TC', serif; font-size: 20px; margin: 0 0 6px;
     }
-    .section .lead { color: var(--soft); margin: 0 0 16px; font-size: 14px; }
+    .section .lead { color: var(--soft); margin: 0 0 12px; font-size: 13px; }
     .stats {
       display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
     }
@@ -233,10 +238,22 @@ export function buildInspectionReportHtml(input: ReportInput): string {
       .photos { grid-template-columns: repeat(2, 1fr); }
     }
     @media print {
-      .toolbar { display: none; }
-      body { background: #fff; }
-      .defect, .panel, .stat { box-shadow: none; }
-      .page { max-width: none; padding: 0; }
+      .toolbar { display: none !important; }
+      body { background: #fff !important; }
+      .page { max-width: none; padding: 12mm; }
+      .report-head, .section, .stats, .panel, .defect {
+        page-break-after: avoid;
+        break-after: avoid-page;
+        box-shadow: none !important;
+      }
+      .report-head {
+        min-height: 0 !important;
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+      }
+      .cover, .ring { display: none !important; }
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
   </style>
 </head>
@@ -306,7 +323,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
       ${defectCards || '<div class="panel no-photo">目前沒有缺失紀錄</div>'}
     </section>
 
-    <div class="footer">現場驗屋查驗系統 · ${escapeHtml(projectName)} · 本報告由系統自動產生</div>
+    <div class="footer">現場驗屋查驗系統 · ${escapeHtml(projectName)} · 本報告由系統自動產生 · v2</div>
   </div>
 </body>
 </html>`
