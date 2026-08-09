@@ -164,29 +164,21 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     }
     .btn-primary { background: var(--green); color: #fff; }
     .btn-ghost { background: rgba(255,255,255,0.7); color: var(--ink); }
-    .page { max-width: 980px; margin: 0 auto; padding: 28px 22px 64px; }
-    .cover {
-      min-height: 70vh; display: grid; align-content: end; gap: 18px;
-      padding: 40px 36px; border-radius: 28px;
-      background:
-        linear-gradient(155deg, rgba(47,93,76,0.92), rgba(38,75,62,0.88)),
-        url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><circle cx="20" cy="20" r="1.2" fill="rgba(255,255,255,0.18)"/></svg>');
-      color: #fff; box-shadow: 0 30px 60px -28px rgba(34,41,31,0.45);
-      margin-bottom: 28px;
+    .page { max-width: 980px; margin: 0 auto; padding: 18px 16px 48px; }
+    .report-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 16px; border-radius: 18px; margin-bottom: 18px;
+      background: linear-gradient(155deg, #3a6f5c, #2f5d4c);
+      color: #fff;
     }
-    .eyebrow { letter-spacing: 0.18em; font-size: 12px; font-weight: 700; opacity: 0.8; }
-    .cover h1 { font-family: 'Noto Serif TC', serif; font-size: clamp(34px, 6vw, 54px); margin: 0; line-height: 1.15; }
-    .cover .meta { opacity: 0.9; font-size: 14px; line-height: 1.6; }
-    .ring {
-      width: 120px; height: 120px; border-radius: 999px;
-      display: grid; place-items: center;
-      background: conic-gradient(#fff ${matrix.overallPercent}%, rgba(255,255,255,0.2) 0);
-      margin-top: 8px;
+    .report-head h1 {
+      font-family: 'Noto Serif TC', serif; font-size: 22px; margin: 0 0 4px; line-height: 1.2;
     }
-    .ring > span {
-      width: 92px; height: 92px; border-radius: 999px;
-      background: rgba(38,75,62,0.95); display: grid; place-items: center;
-      font-size: 28px; font-weight: 800;
+    .report-head .meta { margin: 0; font-size: 12px; line-height: 1.45; opacity: 0.92; }
+    .report-head .pct {
+      flex-shrink: 0; min-width: 64px; height: 64px; border-radius: 16px;
+      background: rgba(255,255,255,0.16); display: grid; place-items: center;
+      font-size: 20px; font-weight: 800;
     }
     .section { margin: 28px 0; }
     .section h2 {
@@ -239,12 +231,10 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     @media (max-width: 720px) {
       .stats { grid-template-columns: repeat(2, 1fr); }
       .photos { grid-template-columns: repeat(2, 1fr); }
-      .cover { padding: 28px 22px; min-height: 56vh; }
     }
     @media print {
       .toolbar { display: none; }
       body { background: #fff; }
-      .cover { box-shadow: none; break-after: page; }
       .defect, .panel, .stat { box-shadow: none; }
       .page { max-width: none; padding: 0; }
     }
@@ -260,20 +250,21 @@ export function buildInspectionReportHtml(input: ReportInput): string {
       : ''
   }
   <div class="page">
-    <section class="cover">
-      <div class="eyebrow">SITE INSPECTION REPORT</div>
-      <h1>${escapeHtml(projectName)}</h1>
-      <div class="meta">
-        ${projectCode ? escapeHtml(projectCode) + ' · ' : ''}${location ? escapeHtml(location) + '<br/>' : ''}
-        產出時間 ${escapeHtml(dateLabel)}<br/>
-        可查驗 ${matrix.activeUnitCount} 戶 · 樓層 ${matrix.floors.length} · 缺失 ${counts.all} 筆
+    <header class="report-head">
+      <div>
+        <h1>${escapeHtml(projectName)}｜查驗報告</h1>
+        <p class="meta">
+          ${projectCode ? escapeHtml(projectCode) + ' · ' : ''}${location ? escapeHtml(location) + ' · ' : ''}
+          ${escapeHtml(dateLabel)}
+          <br/>可查驗 ${matrix.activeUnitCount} 戶 · ${matrix.floors.length} 層 · 缺失 ${counts.all} 筆
+        </p>
       </div>
-      <div class="ring"><span>${matrix.overallPercent}%</span></div>
-    </section>
+      <div class="pct">${matrix.overallPercent}%</div>
+    </header>
 
     <section class="section">
       <h2>執行總覽</h2>
-      <p class="lead">以現場查驗進度與缺失狀態為核心的摘要，便於工程協調與結案追蹤。</p>
+      <p class="lead">查驗進度與缺失狀態摘要。</p>
       <div class="stats">
         <div class="stat"><div class="n">${matrix.overallPercent}%</div><div class="l">整體進度</div></div>
         <div class="stat"><div class="n">${counts.pending_repair}</div><div class="l">待改善</div></div>
