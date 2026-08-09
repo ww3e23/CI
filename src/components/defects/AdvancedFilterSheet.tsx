@@ -1,5 +1,6 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { useProjectStore } from '../../store/useProjectStore'
+import { collectAllAreas } from '../../lib/areas'
 import type { DefectStatus } from '../../types'
 import { Modal } from '../ui/Modal'
 import { TitleHint } from '../ui/TitleHint'
@@ -51,8 +52,13 @@ export function AdvancedFilterSheet({
   const units = useProjectStore((s) => s.units)
   const categories = useProjectStore((s) => s.categories)
   const items = useProjectStore((s) => s.checklistItems)
-  const areas = useProjectStore((s) => s.areas)
+  const projectAreas = useProjectStore((s) => s.areas)
+  const defects = useProjectStore((s) => s.defects)
   const activities = useProjectStore((s) => s.activities)
+  const areas = useMemo(
+    () => collectAllAreas({ areas: projectAreas, units, defects }),
+    [projectAreas, units, defects],
+  )
 
   const [draft, setDraft] = useState<DefectFilters>(initial)
   const [unitQuery, setUnitQuery] = useState('')

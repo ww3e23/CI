@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
-import { Lock } from 'lucide-react'
+import { Lock, Settings2 } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { cloudReady } from '../../services/cloudSync'
 import { fileToCompressedDataUrl } from '../../lib/imageCompress'
+import { getUnitAreas } from '../../lib/areas'
 import { Modal } from '../ui/Modal'
 import { TitleHint } from '../ui/TitleHint'
 import { AnnotatePlanModal } from './AnnotatePlanModal'
+import { UnitAreasEditor } from '../settings/UnitAreasEditor'
 
 export function AddDefectSheet({
   onClose,
@@ -19,17 +21,18 @@ export function AddDefectSheet({
 }) {
   const units = useProjectStore((s) => s.units)
   const categories = useProjectStore((s) => s.categories)
-  const areas = useProjectStore((s) => s.areas)
+  const projectAreas = useProjectStore((s) => s.areas)
   const currentUnitId = useProjectStore((s) => s.currentUnitId)
   const addDefect = useProjectStore((s) => s.addDefect)
   const role = useCurrentRole()
   const user = useCurrentUser()
 
   const unit = units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active)
+  const areas = useMemo(() => getUnitAreas(unit, projectAreas), [unit, projectAreas])
   const activeCats = categories.filter((c) => c.active)
   const [catId, setCatId] = useState(categoryId ?? activeCats[0]?.id ?? '')
   const cat = activeCats.find((c) => c.id === catId) ?? activeCats[0]
-  const [area, setArea] = useState(areas[1] ?? areas[0] ?? '客廳')
+  const [area, setArea] = useState(() => areas[1] ?? areas[0] ?? '客廳')
   const [description, setDescription] = useState('')
   const [planPhoto, setPlanPhoto] = useState<string | undefined>()
   const [planOriginal, setPlanOriginal] = useState<string | undefined>()
@@ -37,6 +40,7 @@ export function AddDefectSheet({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [annotateOpen, setAnnotateOpen] = useState(false)
+  const [areasOpen, setAreasOpen] = useState(false)
   const [syncMsg, setSyncMsg] = useState(
     cloudReady() ? '儲存後將同步至雲端' : '示範模式：資料存在本機，尚未接 Firebase',
   )
@@ -167,8 +171,22 @@ export function AddDefectSheet({
         </div>
 
         <div className="field">
-          <label>缺失區域</label>
-          <div className="chip-row" style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <label style={{ margin: 0 }}>缺失區域（此戶）</label>
+            {unit && (
+              <button
+                type="button"
+                className="link"
+                style={{ fontSize: 12, fontWeight: 700, color: 'var(--green-deep)' }}
+                onClick={() => setAreasOpen(true)}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Settings2 size={14} /> 編輯區域
+                </span>
+              </button>
+            )}
+          </div>
+          <div className="chip-row" style={{ flexWrap: 'nowrap', overflowX: 'auto', marginTop: 8 }}>
             {areas.map((a) => (
               <button
                 key={a}
@@ -180,6 +198,11 @@ export function AddDefectSheet({
               </button>
             ))}
           </div>
+          {areas.length === 0 && (
+            <p style={{ margin: '8px 0 0', color: 'var(--terracotta)', fontSize: 12, fontWeight: 700 }}>
+              此戶尚無查驗區域，請先編輯新增。
+            </p>
+          )}
         </div>
 
         <div className="field">
@@ -275,6 +298,20 @@ export function AddDefectSheet({
             setPlanPhoto(url)
             setAnnotateOpen(false)
             setSyncMsg('圖面標註已套用，記得按下方儲存')
+          }}
+        />
+      )}
+
+      {areasOpen && unit && (
+        <UnitAreasEditor
+          unitId={unit.id}
+          onClose={() => {
+            setAreasOpen(false)
+            const next = getUnitAreas(
+              useProjectStore.getState().units.find((u) => u.id === unit.id),
+              useProjectStore.getState().areas,
+            )
+            if (next.length && !next.includes(area)) setArea(next[0])
           }}
         />
       )}

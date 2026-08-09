@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { countActiveUnits, newBuildingDraft, summarizeBuilding } from '../../lib/units'
+import { getUnitAreas } from '../../lib/areas'
 import { BuildingEditor } from './BuildingEditor'
 import { TemplateEditor } from './TemplateEditor'
+import { UnitAreasEditor } from './UnitAreasEditor'
+import { ProjectAreasEditor } from './ProjectAreasEditor'
 import { createId } from '../../lib/id'
 import type { BuildingRule, ChecklistCategory } from '../../types'
 import { TitleHint } from '../ui/TitleHint'
@@ -12,6 +15,8 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const categories = useProjectStore((s) => s.categories)
   const checklistItems = useProjectStore((s) => s.checklistItems)
   const units = useProjectStore((s) => s.units)
+  const projectAreas = useProjectStore((s) => s.areas)
+  const currentUnitId = useProjectStore((s) => s.currentUnitId)
   const upsertBuilding = useProjectStore((s) => s.upsertBuilding)
   const removeBuilding = useProjectStore((s) => s.removeBuilding)
   const upsertCategory = useProjectStore((s) => s.upsertCategory)
@@ -22,6 +27,11 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const [editing, setEditing] = useState<BuildingRule | null>(null)
   const [editingCat, setEditingCat] = useState<ChecklistCategory | null>(null)
   const [isNewCat, setIsNewCat] = useState(false)
+  const [unitAreasOpen, setUnitAreasOpen] = useState(false)
+  const [projectAreasOpen, setProjectAreasOpen] = useState(false)
+
+  const currentUnit =
+    units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active)
 
   const activeBuildings = [...buildings]
     .filter((b) => b.active)
@@ -115,6 +125,48 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
         >
           + 新增棟別
         </button>
+      </div>
+
+      <div className="section-row" style={{ marginTop: 22 }}>
+        <TitleHint
+          as="h2"
+          hint="每戶可自訂不同區域名稱與編號（例如臥室1／臥室2）。未自訂的戶別會沿用專案預設。"
+        >
+          查驗區域
+        </TitleHint>
+      </div>
+      <div style={{ display: 'grid', gap: 10, marginBottom: 8 }}>
+        <article className="glass" style={{ padding: 14 }}>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>目前戶別區域</div>
+          <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
+            {currentUnit
+              ? `${currentUnit.buildingName} ${currentUnit.floor} ${currentUnit.code}戶 · ${getUnitAreas(currentUnit, projectAreas).join('、')}`
+              : '尚未選擇可查驗戶別'}
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ marginTop: 10, minHeight: 40, width: '100%' }}
+            disabled={!currentUnit}
+            onClick={() => setUnitAreasOpen(true)}
+          >
+            編輯此戶區域
+          </button>
+        </article>
+        <article className="glass" style={{ padding: 14 }}>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>專案預設區域</div>
+          <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
+            {projectAreas.join('、')}
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ marginTop: 10, minHeight: 40, width: '100%' }}
+            onClick={() => setProjectAreasOpen(true)}
+          >
+            編輯專案預設
+          </button>
+        </article>
       </div>
 
       <div className="section-row">
@@ -284,6 +336,11 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
           }
         />
       )}
+
+      {unitAreasOpen && currentUnit && (
+        <UnitAreasEditor unitId={currentUnit.id} onClose={() => setUnitAreasOpen(false)} />
+      )}
+      {projectAreasOpen && <ProjectAreasEditor onClose={() => setProjectAreasOpen(false)} />}
     </div>
   )
 }

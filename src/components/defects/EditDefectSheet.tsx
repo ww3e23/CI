@@ -1,10 +1,13 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { Settings2 } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { fileToCompressedDataUrl } from '../../lib/imageCompress'
+import { getUnitAreas } from '../../lib/areas'
 import type { Defect } from '../../types'
 import { Modal } from '../ui/Modal'
 import { AnnotatePlanModal } from './AnnotatePlanModal'
+import { UnitAreasEditor } from '../settings/UnitAreasEditor'
 
 export function EditDefectSheet({
   defect,
@@ -14,11 +17,18 @@ export function EditDefectSheet({
   onClose: () => void
 }) {
   const categories = useProjectStore((s) => s.categories)
-  const areas = useProjectStore((s) => s.areas)
+  const units = useProjectStore((s) => s.units)
+  const projectAreas = useProjectStore((s) => s.areas)
   const updateDefect = useProjectStore((s) => s.updateDefect)
   const role = useCurrentRole()
   const user = useCurrentUser()
   const canEdit = role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
+
+  const unit = units.find((u) => u.id === defect.unitId)
+  const areas = useMemo(() => {
+    const list = getUnitAreas(unit, projectAreas)
+    return list.includes(defect.area) ? list : [defect.area, ...list]
+  }, [unit, projectAreas, defect.area])
 
   const activeCats = categories.filter((c) => c.active)
   const [catId, setCatId] = useState(defect.categoryId)
@@ -31,6 +41,7 @@ export function EditDefectSheet({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [annotateOpen, setAnnotateOpen] = useState(false)
+  const [areasOpen, setAreasOpen] = useState(false)
 
   async function onPick(file: File | undefined, kind: 'plan' | 'photo') {
     if (!file) return
@@ -117,8 +128,22 @@ export function EditDefectSheet({
         </div>
 
         <div className="field">
-          <label>缺失區域</label>
-          <div className="chip-row" style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <label style={{ margin: 0 }}>缺失區域（此戶）</label>
+            {unit && canEdit && (
+              <button
+                type="button"
+                className="link"
+                style={{ fontSize: 12, fontWeight: 700, color: 'var(--green-deep)' }}
+                onClick={() => setAreasOpen(true)}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Settings2 size={14} /> 編輯區域
+                </span>
+              </button>
+            )}
+          </div>
+          <div className="chip-row" style={{ flexWrap: 'nowrap', overflowX: 'auto', marginTop: 8 }}>
             {areas.map((a) => (
               <button
                 key={a}
@@ -251,6 +276,10 @@ export function EditDefectSheet({
             setAnnotateOpen(false)
           }}
         />
+      )}
+
+      {areasOpen && unit && (
+        <UnitAreasEditor unitId={unit.id} onClose={() => setAreasOpen(false)} />
       )}
     </>
   )

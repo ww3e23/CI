@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore'
 import { getDb, getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase'
 import { expandUnitsFromBuildings } from '../lib/units'
+import { DEFAULT_AREAS } from '../lib/areas'
 import type {
   ActivityLog,
   BuildingRule,
@@ -118,6 +119,25 @@ function unitNextMap(units: ProjectState['units']): Record<string, number> {
   return map
 }
 
+function unitAreasMap(units: ProjectState['units']): Record<string, string[]> {
+  const map: Record<string, string[]> = {}
+  for (const u of units) {
+    if (u.areas && u.areas.length > 0) map[u.id] = [...u.areas]
+  }
+  return map
+}
+
+function parseUnitAreasMap(raw: unknown): Record<string, string[]> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, string[]> = {}
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(value)) continue
+    const areas = value.map(String).map((s) => s.trim()).filter(Boolean)
+    if (areas.length) out[id] = areas
+  }
+  return out
+}
+
 /** 將完整現場狀態推上雲端（棟別／範本／缺失／進度／歷程） */
 export async function pushProjectState(
   projectId: string,
@@ -216,6 +236,7 @@ export async function pushProjectState(
       unitCheckedCount: state.unitCheckedCount,
       activities: state.activities.slice(0, 40),
       unitNextDefect: unitNextMap(state.units),
+      unitAreas: unitAreasMap(state.units),
       currentUnitId: state.currentUnitId,
       recentUnitIds: state.recentUnitIds,
       updatedAt: serverTimestamp(),
@@ -277,10 +298,12 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
       meta.unitNextDefect && typeof meta.unitNextDefect === 'object'
         ? (meta.unitNextDefect as Record<string, number>)
         : {}
+    const unitAreas = parseUnitAreasMap(meta.unitAreas)
 
     const units = expandUnitsFromBuildings(buildings).map((u) => ({
       ...u,
       nextDefectNumber: Number(unitNext[u.id] ?? u.nextDefectNumber ?? 1),
+      areas: unitAreas[u.id]?.length ? unitAreas[u.id] : undefined,
     }))
 
     const activities = Array.isArray(meta.activities)
@@ -303,9 +326,7 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
       recentUnitIds: Array.isArray(meta.recentUnitIds)
         ? meta.recentUnitIds.map(String)
         : [],
-      areas: Array.isArray(meta.areas)
-        ? meta.areas.map(String)
-        : ['玄關', '客廳', '餐廳', '廚房', '主臥', '臥室1', '主浴', '客浴', '前陽台'],
+      areas: Array.isArray(meta.areas) ? meta.areas.map(String) : [...DEFAULT_AREAS],
       cloudUpdatedAt: meta.clientUpdatedAt ? String(meta.clientUpdatedAt) : undefined,
     }
   } catch (err) {
@@ -384,13 +405,22 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
 
   const buildings = [...buildingMap.values()].sort((a, b) => a.sortOrder - b.sortOrder)
   const unitNext: Record<string, number> = {}
-  for (const u of local.units) unitNext[u.id] = u.nextDefectNumber
+  const unitAreas: Record<string, string[]> = {}
+  for (const u of local.units) {
+    unitNext[u.id] = u.nextDefectNumber
+    if (u.areas?.length) unitAreas[u.id] = [...u.areas]
+  }
   for (const u of remote.units) {
     unitNext[u.id] = Math.max(unitNext[u.id] ?? 1, u.nextDefectNumber)
+    // 本機已有自訂區域優先；否則用雲端
+    if (!unitAreas[u.id]?.length && u.areas?.length) {
+      unitAreas[u.id] = [...u.areas]
+    }
   }
   const units = expandUnitsFromBuildings(buildings).map((u) => ({
     ...u,
     nextDefectNumber: unitNext[u.id] ?? 1,
+    areas: unitAreas[u.id]?.length ? unitAreas[u.id] : undefined,
   }))
 
   return {

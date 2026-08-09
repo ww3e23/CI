@@ -28,6 +28,8 @@ export interface Unit {
   label: string
   active: boolean
   nextDefectNumber: number
+  /** 此戶專屬查驗區域（客廳／臥室等）；未設定時沿用專案預設 areas */
+  areas?: string[]
 }
 
 export interface ChecklistItem {

@@ -1,5 +1,6 @@
 import type { ProjectState } from '../types'
 import { buildDefaultChecklist } from './defaultChecklist'
+import { DEFAULT_AREAS } from '../lib/areas'
 
 /** 新專案預設狀態：含標準查驗範本，無棟別／缺失／歷程 */
 export function createEmptyProjectState(name = '未命名專案'): ProjectState {
@@ -15,7 +16,7 @@ export function createEmptyProjectState(name = '未命名專案'): ProjectState 
     activities: [],
     currentUnitId: '',
     recentUnitIds: [],
-    areas: ['玄關', '客廳', '餐廳', '廚房', '主臥', '臥室1', '主浴', '客浴', '前陽台'],
+    areas: [...DEFAULT_AREAS],
   }
 }
 

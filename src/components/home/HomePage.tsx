@@ -16,6 +16,8 @@ import { unitProgress } from '../../lib/progress'
 import { UnitSwitcher } from '../UnitSwitcher'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { TitleHint } from '../ui/TitleHint'
+import { UnitAreasEditor } from '../settings/UnitAreasEditor'
+import { getUnitAreas } from '../../lib/areas'
 import type { ChecklistCategory } from '../../types'
 
 const CATEGORY_ICONS: Record<string, ComponentType<LucideProps>> = {
@@ -35,11 +37,13 @@ export function HomePage({
 }) {
   const [switchOpen, setSwitchOpen] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
+  const [areasOpen, setAreasOpen] = useState(false)
   const projectName = useProjectStore((s) => s.projectName)
   const currentProject = useCurrentProject()
   const units = useProjectStore((s) => s.units)
   const categories = useProjectStore((s) => s.categories)
   const defects = useProjectStore((s) => s.defects)
+  const projectAreas = useProjectStore((s) => s.areas)
   const currentUnitId = useProjectStore((s) => s.currentUnitId)
 
   const unit = units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active)
@@ -190,6 +194,22 @@ export function HomePage({
               <span className="l">已改善</span>
             </div>
           </div>
+
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{
+              width: '100%',
+              marginTop: 12,
+              minHeight: 40,
+              background: 'rgba(255,255,255,0.14)',
+              color: '#fff',
+              borderColor: 'rgba(255,255,255,0.28)',
+            }}
+            onClick={() => setAreasOpen(true)}
+          >
+            查驗區域 {getUnitAreas(unit, projectAreas).length} 項・點此增刪改
+          </button>
         </section>
       </div>
 
@@ -214,6 +234,9 @@ export function HomePage({
 
       {switchOpen && <UnitSwitcher onClose={() => setSwitchOpen(false)} />}
       {projectOpen && <ProjectSwitcher onClose={() => setProjectOpen(false)} />}
+      {areasOpen && unit && (
+        <UnitAreasEditor unitId={unit.id} onClose={() => setAreasOpen(false)} />
+      )}
     </div>
   )
 }

@@ -23,6 +23,7 @@ import { uploadDefectImages } from '../services/storageUpload'
 import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
 import { statusLabel } from '../lib/progress'
+import { normalizeAreaName } from '../lib/areas'
 import {
   clearPendingDefectMedia,
   listPendingDefectMedia,
@@ -65,6 +66,19 @@ interface ProjectActions {
   ) => Promise<{ ok: boolean; error?: string }>
   /** 刪除缺失（軟刪：改為作廢，並同步雲端） */
   deleteDefect: (defectId: string) => Promise<{ ok: boolean; error?: string }>
+  /**
+   * 設定某戶查驗區域。
+   * renames：區域重新命名時，同步更新該戶既有缺失的 area 字串。
+   */
+  setUnitAreas: (
+    unitId: string,
+    areas: string[],
+    renames?: { from: string; to: string }[],
+  ) => { ok: boolean; error?: string }
+  /** 清除此戶自訂區域，改回專案預設 */
+  resetUnitAreasToProjectDefault: (unitId: string) => { ok: boolean; error?: string }
+  /** 更新專案預設查驗區域（尚未自訂的戶別會沿用） */
+  setProjectAreas: (areas: string[]) => { ok: boolean; error?: string }
   markUnitChecked: (unitId: string, checked: number) => void
   resetDemoData: () => void
   pushStructureToCloud: () => Promise<{ ok: boolean; mode: string }>
@@ -157,7 +171,12 @@ function rebuildUnits(buildings: BuildingRule[], prevUnits: ProjectState['units'
   const prevMap = new Map(prevUnits.map((u) => [u.id, u]))
   return next.map((u) => {
     const old = prevMap.get(u.id)
-    return old ? { ...u, nextDefectNumber: old.nextDefectNumber } : u
+    if (!old) return u
+    return {
+      ...u,
+      nextDefectNumber: old.nextDefectNumber,
+      areas: old.areas?.length ? [...old.areas] : undefined,
+    }
   })
 }
 
@@ -521,6 +540,110 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           }
         }
 
+        return { ok: true }
+      },
+
+      setUnitAreas: (unitId, areas, renames = []) => {
+        const state = get()
+        const unit = state.units.find((u) => u.id === unitId)
+        if (!unit) return { ok: false, error: '找不到此戶別' }
+
+        const cleaned: string[] = []
+        const seen = new Set<string>()
+        for (const raw of areas) {
+          const name = normalizeAreaName(raw)
+          if (!name) continue
+          if (seen.has(name)) continue
+          seen.add(name)
+          cleaned.push(name)
+        }
+        if (cleaned.length === 0) {
+          return { ok: false, error: '至少需要保留一個查驗區域' }
+        }
+
+        const renameMap = new Map<string, string>()
+        for (const r of renames) {
+          const from = normalizeAreaName(r.from)
+          const to = normalizeAreaName(r.to)
+          if (from && to && from !== to) renameMap.set(from, to)
+        }
+
+        const nextUnits = state.units.map((u) =>
+          u.id === unitId ? { ...u, areas: cleaned } : u,
+        )
+        const nextDefects =
+          renameMap.size === 0
+            ? state.defects
+            : state.defects.map((d) => {
+                if (d.unitId !== unitId) return d
+                const to = renameMap.get(d.area)
+                if (!to) return d
+                return { ...d, area: to, updatedAt: new Date().toISOString() }
+              })
+
+        set({
+          units: nextUnits,
+          defects: nextDefects,
+          activities: [
+            {
+              id: createId('act'),
+              at: new Date().toLocaleString('zh-TW', {
+                month: 'numeric',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+              buildingName: unit.buildingName,
+              floor: unit.floor,
+              unitCode: unit.code,
+              summary: `更新 ${unit.code}戶 查驗區域（${cleaned.length} 項）`,
+              actorName: '現場查驗',
+            },
+            ...state.activities,
+          ].slice(0, 40),
+        })
+        afterProjectChange(get, set)
+
+        const projectId = get().activeProjectId
+        if (projectId && cloudReady() && renameMap.size > 0) {
+          const renamedTargets = new Set(renameMap.values())
+          for (const d of get().defects) {
+            if (d.unitId === unitId && renamedTargets.has(d.area)) {
+              void syncDefect(projectId, d)
+            }
+          }
+        }
+
+        return { ok: true }
+      },
+
+      resetUnitAreasToProjectDefault: (unitId) => {
+        const state = get()
+        const unit = state.units.find((u) => u.id === unitId)
+        if (!unit) return { ok: false, error: '找不到此戶別' }
+        set({
+          units: state.units.map((u) =>
+            u.id === unitId ? { ...u, areas: undefined } : u,
+          ),
+        })
+        afterProjectChange(get, set)
+        return { ok: true }
+      },
+
+      setProjectAreas: (areas) => {
+        const cleaned: string[] = []
+        const seen = new Set<string>()
+        for (const raw of areas) {
+          const name = normalizeAreaName(raw)
+          if (!name || seen.has(name)) continue
+          seen.add(name)
+          cleaned.push(name)
+        }
+        if (cleaned.length === 0) {
+          return { ok: false, error: '至少需要保留一個查驗區域' }
+        }
+        set({ areas: cleaned })
+        afterProjectChange(get, set)
         return { ok: true }
       },
 
