@@ -7,14 +7,13 @@ export type DefectStatus =
 
 export type CellStatus = 'na' | 'not_started' | 'in_progress' | 'has_defects' | 'completed'
 
+export type SyncState = 'synced' | 'pending' | 'syncing' | 'failed' | 'demo'
+
 export interface BuildingRule {
   id: string
   name: string
-  /** 樓層標籤，由高到低顯示時再反轉 */
   floors: string[]
-  /** 各層共用的戶別編號，如 A1,A2,A3,A5 */
   unitCodes: string[]
-  /** 標記不適用的「樓層|戶別」，如 "B1F|A1" */
   naKeys: string[]
   sortOrder: number
   active: boolean
@@ -29,6 +28,14 @@ export interface Unit {
   label: string
   active: boolean
   nextDefectNumber: number
+}
+
+export interface ChecklistItem {
+  id: string
+  categoryId: string
+  description: string
+  sortOrder: number
+  active: boolean
 }
 
 export interface ChecklistCategory {
@@ -51,9 +58,13 @@ export interface Defect {
   defectNumber: number
   categoryId: string
   categoryName: string
+  checklistItemId?: string
   area: string
   description: string
   status: DefectStatus
+  planPhotoDataUrl?: string
+  photoDataUrls: string[]
+  syncState: SyncState
   createdAt: string
   updatedAt: string
 }
@@ -86,10 +97,11 @@ export interface ProjectState {
   buildings: BuildingRule[]
   units: Unit[]
   categories: ChecklistCategory[]
+  checklistItems: ChecklistItem[]
   defects: Defect[]
-  /** unitId -> 已查驗細項數 */
   unitCheckedCount: Record<string, number>
   activities: ActivityLog[]
   currentUnitId: string | null
   recentUnitIds: string[]
+  areas: string[]
 }

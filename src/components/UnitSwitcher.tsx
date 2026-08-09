@@ -19,44 +19,48 @@ export function UnitSwitcher({ onClose }: { onClose: () => void }) {
     () => (building ? sortFloorsDesc(building.floors) : []),
     [building],
   )
-  const [floor, setFloor] = useState(floors[0] ?? '')
+  const [floor, setFloor] = useState(floors.includes('3F') ? '3F' : floors[0] ?? '')
   const effectiveFloor = floors.includes(floor) ? floor : floors[0] ?? ''
 
   const floorUnits = useMemo(() => {
     if (!building) return []
     return units.filter(
-      (u) =>
-        u.buildingId === building.id &&
-        u.floor === effectiveFloor &&
-        u.active,
+      (u) => u.buildingId === building.id && u.floor === effectiveFloor && u.active,
     )
   }, [units, building, effectiveFloor])
 
   const [unitId, setUnitId] = useState('')
-  const selected =
-    floorUnits.find((u) => u.id === unitId) ?? floorUnits[0] ?? null
+  const selected = floorUnits.find((u) => u.id === unitId) ?? floorUnits[0] ?? null
+
+  const step = !building ? 1 : !effectiveFloor ? 2 : selected ? 3 : 2
 
   const recent = recentUnitIds
     .map((id) => units.find((u) => u.id === id))
     .filter(Boolean)
-    .slice(0, 5)
+    .slice(0, 6)
 
   return (
     <>
       <div className="sheet-backdrop" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-label="切換戶別">
+      <div className="sheet" role="dialog" aria-label="快速切換戶別">
         <div className="sheet-handle" />
-        <h3 style={{ margin: '0 0 4px', fontSize: 18 }}>快速切換戶別</h3>
-        <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
-          先選棟別 → 樓層 → 戶別，不必回到設定頁逐戶翻找。
+        <h3 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>
+          快速切換戶別
+        </h3>
+        <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)', fontSize: 13 }}>
+          棟別 → 樓層 → 戶別，適合數百戶現場導航。
         </p>
+
+        <div className="stepper">
+          <div className={`step ${step >= 1 ? 'on' : ''} ${building ? 'done' : ''}`}>1. 棟別</div>
+          <div className={`step ${step >= 2 ? 'on' : ''} ${effectiveFloor ? 'done' : ''}`}>2. 樓層</div>
+          <div className={`step ${step >= 3 ? 'on' : ''} ${selected ? 'done' : ''}`}>3. 戶別</div>
+        </div>
 
         {recent.length > 0 && (
           <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>
-              最近使用
-            </div>
-            <div className="chip-row">
+            <div className="eyebrow" style={{ marginBottom: 8 }}>最近使用</div>
+            <div className="chip-row" style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
               {recent.map((u) =>
                 u ? (
                   <button
@@ -77,13 +81,13 @@ export function UnitSwitcher({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="field">
-          <label>1. 棟別</label>
+          <label>棟別</label>
           <div className="chip-row">
             {activeBuildings.map((b) => (
               <button
                 key={b.id}
                 type="button"
-                className={`chip ${building?.id === b.id ? 'active' : ''}`}
+                className={`chip ${building?.id === b.id ? 'on' : ''}`}
                 onClick={() => {
                   setBuildingId(b.id)
                   setUnitId('')
@@ -96,13 +100,13 @@ export function UnitSwitcher({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="field">
-          <label>2. 樓層</label>
+          <label>樓層</label>
           <div className="chip-row">
             {floors.map((f) => (
               <button
                 key={f}
                 type="button"
-                className={`chip ${effectiveFloor === f ? 'active' : ''}`}
+                className={`chip ${effectiveFloor === f ? 'on' : ''}`}
                 onClick={() => {
                   setFloor(f)
                   setUnitId('')
@@ -115,31 +119,33 @@ export function UnitSwitcher({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="field">
-          <label>3. 戶別</label>
+          <label>戶別</label>
           <div className="chip-row">
             {floorUnits.map((u) => (
               <button
                 key={u.id}
                 type="button"
-                className={`chip ${(selected?.id === u.id) ? 'active' : ''}`}
+                className={`chip ${selected?.id === u.id ? 'on' : ''}`}
                 onClick={() => setUnitId(u.id)}
               >
                 {u.code}
               </button>
             ))}
             {floorUnits.length === 0 && (
-              <span style={{ color: 'var(--muted)', fontSize: 13 }}>此樓層無可查驗戶別</span>
+              <span style={{ color: 'var(--ink-soft)', fontSize: 13 }}>此樓層無可查驗戶別</span>
             )}
           </div>
         </div>
 
         <div
-          className="card"
-          style={{ padding: 14, marginBottom: 14, background: 'var(--green-50)' }}
+          className="glass-green"
+          style={{ padding: 12, marginBottom: 14, borderRadius: 16 }}
         >
-          <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>即將查驗</div>
-          <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>
-            {selected ? selected.label : '尚未選擇'}
+          <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 700 }}>即將切換至</div>
+          <div className="serif" style={{ fontSize: 20, fontWeight: 700, marginTop: 2 }}>
+            {selected
+              ? `${selected.buildingName}・${selected.floor}・${selected.code}戶`
+              : '尚未選擇'}
           </div>
         </div>
 

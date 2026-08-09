@@ -4,7 +4,7 @@ import { countActiveUnits, newBuildingDraft, summarizeBuilding } from '../../lib
 import { BuildingEditor } from './BuildingEditor'
 import type { BuildingRule } from '../../types'
 
-export function SettingsPage() {
+export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const buildings = useProjectStore((s) => s.buildings)
   const categories = useProjectStore((s) => s.categories)
   const units = useProjectStore((s) => s.units)
@@ -20,44 +20,30 @@ export function SettingsPage() {
   const totalActiveUnits = units.filter((u) => u.active).length
 
   return (
-    <div className="rise">
-      <header style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--muted)', fontWeight: 700 }}>
-          PROJECT SETUP
-        </div>
-        <h1 style={{ margin: '4px 0 0', fontSize: 22, fontWeight: 800 }}>棟別、樓層與戶別</h1>
-        <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: 13, lineHeight: 1.5 }}>
-          以規則批次建立結構：設定有哪幾棟、每棟樓層範圍、各層戶別編號。可重新命名、調整或停用，既有缺失紀錄仍會保留。
-        </p>
-      </header>
+    <div className={embedded ? undefined : 'rise'}>
+      {!embedded && (
+        <header style={{ marginBottom: 14 }}>
+          <div className="eyebrow">PROJECT SETUP</div>
+          <h1 className="serif" style={{ margin: '4px 0 0', fontSize: 22, fontWeight: 700 }}>
+            棟別、樓層與戶別
+          </h1>
+        </header>
+      )}
 
-      <div
-        className="card"
-        style={{
-          padding: 12,
-          marginBottom: 12,
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 8,
-          background: 'var(--green-50)',
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>目前結構</div>
-          <div style={{ fontWeight: 800, fontSize: 16 }}>
-            {activeBuildings.length} 棟 · {totalActiveUnits} 可查驗戶
-          </div>
-        </div>
-        <button type="button" className="btn btn-ghost" style={{ minHeight: 40 }} onClick={resetDemoData}>
-          還原示範
-        </button>
+      <div className="section-row" style={{ marginTop: embedded ? 0 : undefined }}>
+        <h2>棟別結構</h2>
+        <button type="button" className="link" onClick={resetDemoData}>還原示範</button>
       </div>
+
+      <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.5 }}>
+        以規則批次建立：棟別、樓層範圍、各層戶別編號。目前 {activeBuildings.length} 棟・{totalActiveUnits} 可查驗戶。
+      </p>
 
       <div style={{ display: 'grid', gap: 10 }}>
         {activeBuildings.map((b) => (
           <article
             key={b.id}
-            className="card"
+            className="glass"
             style={{
               padding: 14,
               display: 'flex',
@@ -67,13 +53,13 @@ export function SettingsPage() {
             }}
           >
             <div>
-              <div style={{ fontWeight: 800, fontSize: 17 }}>
+              <div className="serif" style={{ fontWeight: 700, fontSize: 17 }}>
                 {b.name}
-                <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 13, marginLeft: 8 }}>
+                <span style={{ color: 'var(--ink-soft)', fontWeight: 600, fontSize: 13, marginLeft: 8, fontFamily: 'Noto Sans TC, sans-serif' }}>
                   {summarizeBuilding(b)}
                 </span>
               </div>
-              <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 12, fontWeight: 600 }}>
+              <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
                 戶別 {b.unitCodes.join('、')} · 可查驗 {countActiveUnits(b)} 戶
               </div>
             </div>
@@ -107,11 +93,8 @@ export function SettingsPage() {
         </button>
       </div>
 
-      <div className="section-label">
-        <h2>
-          TEMPLATES
-          <span className="zh">查驗範本</span>
-        </h2>
+      <div className="section-row">
+        <h2>查驗範本</h2>
       </div>
 
       <div style={{ display: 'grid', gap: 8 }}>
@@ -121,13 +104,8 @@ export function SettingsPage() {
           .map((cat) => (
             <article
               key={cat.id}
-              className="card"
-              style={{
-                padding: 12,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-              }}
+              className="glass"
+              style={{ padding: 12, display: 'flex', alignItems: 'center', gap: 12 }}
             >
               <div
                 style={{
@@ -145,13 +123,10 @@ export function SettingsPage() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 800 }}>{cat.name}</div>
-                <div style={{ color: 'var(--muted)', fontSize: 12, fontWeight: 600 }}>
+                <div style={{ color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
                   {cat.itemCount} 細項
                 </div>
               </div>
-              <button type="button" className="btn btn-ghost" style={{ minHeight: 40 }}>
-                編輯
-              </button>
             </article>
           ))}
       </div>

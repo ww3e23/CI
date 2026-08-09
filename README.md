@@ -1,33 +1,48 @@
-# SITE INSPECTION 現場查驗
+# 現場查驗｜SITE INSPECTION
 
-手機優先的工地驗屋查驗前端（React + TypeScript + Vite）。
+手機優先驗屋查驗系統（React + TypeScript + Vite + Firebase）。
 
-## 這版重點
-
-1. **棟 → 樓 → 戶批次設定**  
-   在「設定」只需填：有哪幾棟、每棟樓層範圍、各層戶別編號。系統自動展開成數百戶，不必一戶一戶新增。
-
-2. **進度色塊矩陣**  
-   在「報表」以樓層 × 棟別／戶別顯示查驗進度色塊（完成／有缺失／未開始／不適用），並附各棟百分比與最近修改。
-
-3. **現場查驗流程**  
-   保留首頁綠色戶別卡、大項卡片、缺失列表、底部導覽，以及「切換戶別」三步選擇器（棟 → 樓 → 戶）。
-
-## 開發
+## 本機啟動
 
 ```bash
 npm install
 npm run dev
 ```
 
+瀏覽器開啟提示的位址（預設 `http://localhost:5173`）。
+
+## Firebase（正式雲端）
+
+1. 到 [Firebase Console](https://console.firebase.google.com/) 建立專案，啟用 Authentication、Firestore、Storage。
+2. 複製 `.env.example` 為 `.env.local`，填入網頁 SDK 設定。
+3. 重新 `npm run dev`；「我的」頁會顯示 Firebase 已設定，可同步棟樓戶與缺失。
+
+未設定時會以**示範模式**運作（本機 localStorage），介面可完整操作。
+
+## 部署
+
+### GitHub Pages（已設定 Actions）
+
+推送到分支後自動建置。請到 repo Settings → Pages → Source 選 **GitHub Actions**。
+
+公開網址：`https://ww3e23.github.io/CI/`
+
+也可手動：
+
 ```bash
-npm run build
+npm run deploy:pages
 ```
 
-資料目前以 `zustand` + `localStorage` 持久化，結構已對齊正式版計畫中的 Project → Building → Floor → Unit 階層，後續可接 Firebase。
+### Firebase Hosting（可選）
 
-## 操作提示
+```bash
+npm run build
+npx firebase-tools deploy --only hosting
+```
 
-- **設定**：編輯棟別規則 → 自動展開戶別  
-- **查驗**：切換戶別後點大項累計進度／示範缺失  
-- **報表**：檢視全案色塊矩陣，點色塊可定位到該戶
+## 功能重點
+
+- **克勞德 UI**：暖灰米背景、玻璃卡、疊層 Hero、漂浮底部導覽
+- **棟→樓→戶批次設定**：不必一戶一戶新增
+- **進度色塊矩陣**：報表頁全案進度總覽
+- **新增缺失**：圖面位置／現況照片分區、系統配號、同步狀態提示

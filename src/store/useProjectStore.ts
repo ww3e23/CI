@@ -1,25 +1,30 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { BuildingRule, Defect, DefectStatus, ProjectState } from '../types'
+import type { BuildingRule, Defect, DefectStatus, ProjectState, SyncState } from '../types'
 import { seedState } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
+import { cloudReady, syncDefect, syncProjectStructure } from '../services/cloudSync'
+import { firebaseModeLabel } from '../lib/firebase'
 
 interface ProjectActions {
   setCurrentUnit: (unitId: string) => void
   upsertBuilding: (building: BuildingRule) => void
   removeBuilding: (buildingId: string) => void
-  reorderBuildings: (buildingIds: string[]) => void
   addDefect: (input: {
     unitId: string
     categoryId: string
     categoryName: string
+    checklistItemId?: string
     area: string
     description: string
-  }) => void
+    planPhotoDataUrl?: string
+    photoDataUrls?: string[]
+  }) => Promise<Defect | null>
   updateDefectStatus: (defectId: string, status: DefectStatus) => void
   markUnitChecked: (unitId: string, checked: number) => void
   resetDemoData: () => void
+  pushStructureToCloud: () => Promise<{ ok: boolean; mode: string }>
 }
 
 function rebuildUnits(buildings: BuildingRule[], prevUnits: ProjectState['units']) {
@@ -46,37 +51,34 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         const idx = buildings.findIndex((b) => b.id === building.id)
         if (idx >= 0) buildings[idx] = building
         else buildings.push({ ...building, sortOrder: buildings.length })
-        const units = rebuildUnits(buildings, get().units)
-        set({ buildings, units })
+        set({ buildings, units: rebuildUnits(buildings, get().units) })
       },
 
       removeBuilding: (buildingId) => {
         const hasDefects = get().defects.some((d) => d.buildingId === buildingId)
-        // 有歷史則停用；無歷史則刪除
         const nextBuildings = hasDefects
           ? get().buildings.map((b) =>
               b.id === buildingId ? { ...b, active: false } : b,
             )
           : get().buildings.filter((b) => b.id !== buildingId)
-        const units = rebuildUnits(nextBuildings, get().units)
-        set({ buildings: nextBuildings, units })
+        set({ buildings: nextBuildings, units: rebuildUnits(nextBuildings, get().units) })
       },
 
-      reorderBuildings: (buildingIds) => {
-        const map = new Map(get().buildings.map((b) => [b.id, b]))
-        const buildings = buildingIds
-          .map((id, i) => {
-            const b = map.get(id)
-            return b ? { ...b, sortOrder: i } : null
-          })
-          .filter(Boolean) as BuildingRule[]
-        set({ buildings })
-      },
-
-      addDefect: ({ unitId, categoryId, categoryName, area, description }) => {
+      addDefect: async ({
+        unitId,
+        categoryId,
+        categoryName,
+        checklistItemId,
+        area,
+        description,
+        planPhotoDataUrl,
+        photoDataUrls = [],
+      }) => {
         const state = get()
         const unit = state.units.find((u) => u.id === unitId)
-        if (!unit) return
+        if (!unit) return null
+
+        const syncState: SyncState = cloudReady() ? 'pending' : 'demo'
         const defect: Defect = {
           id: createId('def'),
           unitId,
@@ -87,12 +89,17 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
           defectNumber: unit.nextDefectNumber,
           categoryId,
           categoryName,
+          checklistItemId,
           area,
           description,
           status: 'pending_repair',
+          planPhotoDataUrl,
+          photoDataUrls,
+          syncState,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }
+
         set({
           defects: [defect, ...state.defects],
           units: state.units.map((u) =>
@@ -116,6 +123,30 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
             ...state.activities,
           ].slice(0, 40),
         })
+
+        if (cloudReady()) {
+          set({
+            defects: get().defects.map((d) =>
+              d.id === defect.id ? { ...d, syncState: 'syncing' } : d,
+            ),
+          })
+          try {
+            await syncDefect(defect)
+            set({
+              defects: get().defects.map((d) =>
+                d.id === defect.id ? { ...d, syncState: 'synced' } : d,
+              ),
+            })
+          } catch {
+            set({
+              defects: get().defects.map((d) =>
+                d.id === defect.id ? { ...d, syncState: 'failed' } : d,
+              ),
+            })
+          }
+        }
+
+        return get().defects.find((d) => d.id === defect.id) ?? defect
       },
 
       updateDefectStatus: (defectId, status) => {
@@ -156,9 +187,21 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       },
 
       resetDemoData: () => set({ ...seedState }),
+
+      pushStructureToCloud: async () => {
+        const mode = firebaseModeLabel()
+        if (!cloudReady()) return { ok: false, mode }
+        try {
+          await syncProjectStructure(get())
+          return { ok: true, mode }
+        } catch {
+          return { ok: false, mode }
+        }
+      },
     }),
     {
-      name: 'site-inspection-v2',
+      name: 'site-inspection-v3',
+      version: 3,
     },
   ),
 )

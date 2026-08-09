@@ -1,12 +1,13 @@
-import { BarChart3, ClipboardList, Grid2x2, Settings } from 'lucide-react'
+import { BarChart3, ClipboardList, Home, Plus, UserRound } from 'lucide-react'
 
-export type TabKey = 'inspect' | 'defects' | 'reports' | 'settings'
+export type TabKey = 'home' | 'defects' | 'add' | 'reports' | 'profile'
 
-const items: { key: TabKey; label: string; icon: typeof Grid2x2 }[] = [
-  { key: 'inspect', label: '查驗', icon: Grid2x2 },
+const items: { key: TabKey; label: string; icon: typeof Home }[] = [
+  { key: 'home', label: '首頁', icon: Home },
   { key: 'defects', label: '缺失', icon: ClipboardList },
+  { key: 'add', label: '新增', icon: Plus },
   { key: 'reports', label: '報表', icon: BarChart3 },
-  { key: 'settings', label: '設定', icon: Settings },
+  { key: 'profile', label: '我的', icon: UserRound },
 ]
 
 export function BottomNav({
@@ -17,18 +18,35 @@ export function BottomNav({
   onChange: (tab: TabKey) => void
 }) {
   return (
-    <nav className="bottom-nav" aria-label="主選單">
-      {items.map(({ key, label, icon: Icon }) => (
-        <button
-          key={key}
-          type="button"
-          className={`nav-item ${active === key ? 'active' : ''}`}
-          onClick={() => onChange(key)}
-        >
-          <Icon size={20} strokeWidth={2.2} />
-          <span>{label}</span>
-        </button>
-      ))}
+    <nav className="bottom-nav glass" aria-label="主選單">
+      {items.map(({ key, label, icon: Icon }) => {
+        if (key === 'add') {
+          return (
+            <button
+              key={key}
+              type="button"
+              className={`nav-item add-slot ${active === key ? 'active' : ''}`}
+              onClick={() => onChange(key)}
+              aria-label="新增缺失"
+            >
+              <span className="add-fab">
+                <Plus size={22} strokeWidth={2.4} />
+              </span>
+            </button>
+          )
+        }
+        return (
+          <button
+            key={key}
+            type="button"
+            className={`nav-item ${active === key ? 'active' : ''}`}
+            onClick={() => onChange(key)}
+          >
+            <Icon size={18} strokeWidth={2.2} />
+            <span>{label}</span>
+          </button>
+        )
+      })}
     </nav>
   )
 }

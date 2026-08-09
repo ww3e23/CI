@@ -26,37 +26,19 @@ export function DefectsPage() {
     })
   }, [defects, status, buildingId])
 
-  const tabs: { key: FilterStatus; label: string; count: number }[] = [
+  const tabs: { key: FilterStatus; label: string; count: number; cls?: string }[] = [
     { key: 'all', label: '全部', count: counts.all },
-    { key: 'pending_repair', label: '待改善', count: counts.pending_repair },
-    { key: 'pending_reinspection', label: '待複驗', count: counts.pending_reinspection },
+    { key: 'pending_repair', label: '待改善', count: counts.pending_repair, cls: 'amber' },
+    { key: 'pending_reinspection', label: '待複驗', count: counts.pending_reinspection, cls: 'slate' },
     { key: 'completed', label: '已完成', count: counts.completed },
   ]
 
   return (
     <div className="rise">
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 12,
-              background: 'var(--green-800)',
-              color: '#fff',
-              display: 'grid',
-              placeItems: 'center',
-              fontWeight: 800,
-            }}
-          >
-            檢
-          </div>
-          <div>
-            <div style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--muted)', fontWeight: 700 }}>
-              DEFECT LOG
-            </div>
-            <div style={{ fontWeight: 800, fontSize: 16 }}>缺失紀錄</div>
-          </div>
+        <div>
+          <div className="eyebrow">DEFECT LOG</div>
+          <div className="serif" style={{ fontWeight: 700, fontSize: 22 }}>缺失紀錄</div>
         </div>
         <button type="button" className="btn btn-ghost" style={{ minHeight: 40, padding: '0 12px' }}>
           <ListFilter size={16} /> 篩選
@@ -71,16 +53,11 @@ export function DefectsPage() {
           style={{ appearance: 'auto' }}
         >
           <option value="all">全部棟別</option>
-          {buildings
-            .filter((b) => b.active)
-            .map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
+          {buildings.filter((b) => b.active).map((b) => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
         </select>
         <span className="chip">全部工項</span>
-        <span className="chip">全部狀態</span>
       </div>
 
       <div className="chip-row" style={{ marginBottom: 14 }}>
@@ -88,7 +65,7 @@ export function DefectsPage() {
           <button
             key={t.key}
             type="button"
-            className={`chip ${status === t.key ? 'active' : ''}`}
+            className={`chip ${status === t.key ? `on ${t.cls ?? ''}` : ''}`}
             onClick={() => setStatus(t.key)}
           >
             {t.label} {t.count}
@@ -98,24 +75,24 @@ export function DefectsPage() {
 
       <div style={{ display: 'grid', gap: 10 }}>
         {filtered.map((d) => (
-          <article key={d.id} className="card" style={{ padding: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <article key={d.id} className="glass" style={{ padding: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
             <div style={{ display: 'grid', gap: 4 }}>
               <Thumb label="位置" />
               <Thumb label="現況" />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 800, fontSize: 14 }}>
-                D-{String(d.defectNumber).padStart(2, '0')} {d.area}｜{d.description}
+                #{d.defectNumber} {d.area}｜{d.description}
               </div>
-              <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 12, fontWeight: 600 }}>
+              <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
                 {d.buildingName} {d.floor} {d.unitCode}戶 · {statusLabel(d.status)}
               </div>
             </div>
-            <ChevronRight size={18} color="#9aa89f" />
+            <ChevronRight size={18} color="var(--stone)" />
           </article>
         ))}
         {filtered.length === 0 && (
-          <div className="card" style={{ padding: 20, textAlign: 'center', color: 'var(--muted)' }}>
+          <div className="glass" style={{ padding: 20, textAlign: 'center', color: 'var(--ink-soft)' }}>
             沒有符合條件的缺失
           </div>
         )}
@@ -130,9 +107,9 @@ function Thumb({ label }: { label: string }) {
       style={{
         width: 44,
         height: 44,
-        borderRadius: 8,
-        background: '#edf2ee',
-        color: '#8a978e',
+        borderRadius: 10,
+        background: 'rgba(138,133,120,0.14)',
+        color: 'var(--stone)',
         fontSize: 10,
         fontWeight: 700,
         display: 'grid',
