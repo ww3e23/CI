@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth'
 import type { MemberRole, ProjectMember, ProjectMeta, UserAccount } from '../types/auth'
 import { seedMembers, seedProjects, seedUsers } from '../data/authSeed'
+import { isValidAccountInput, normalizeLoginId } from '../lib/accountId'
 import { createId } from '../lib/id'
 import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase'
 import { deleteProjectMeta, syncProjectMeta } from '../services/cloudSync'
@@ -25,7 +26,7 @@ interface AuthState {
 }
 
 interface AuthActions {
-  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>
+  login: (account: string, password: string) => Promise<{ ok: boolean; error?: string }>
   logout: () => Promise<void>
   updateDisplayName: (name: string) => void
   switchProject: (projectId: string) => void
@@ -91,19 +92,26 @@ export const useAuthStore = create<AuthState & AuthActions>()(
     (set, get) => ({
       ...projectSlice(),
 
-      login: async (email, password) => {
-        const user = get().users.find(
-          (u) => u.email.toLowerCase() === email.trim().toLowerCase(),
-        )
+      login: async (account, password) => {
+        const raw = account.trim().toLowerCase()
+        const loginId = normalizeLoginId(account)
+        const matches = get().users.filter((u) => {
+          const stored = normalizeLoginId(u.email)
+          if (stored === loginId) return true
+          // 允許只輸入 @ 前的帳號（例如 admin@site.tw → admin）
+          if (!raw.includes('@') && stored.split('@')[0] === raw) return true
+          return false
+        })
+        const user = matches.length === 1 ? matches[0] : matches.find((u) => u.active) ?? matches[0]
         if (!user || !user.active) {
-          return { ok: false, error: '帳號不存在或已停用' }
+          return { ok: false, error: matches.length > 1 ? '帳號不唯一，請改用完整帳號' : '帳號不存在或已停用' }
         }
         if (user.password !== password) {
           return { ok: false, error: '帳號或密碼不正確' }
         }
 
         if (isFirebaseConfigured()) {
-          const session = await ensureFirebaseSession(email.trim(), password)
+          const session = await ensureFirebaseSession(normalizeLoginId(user.email), password)
           if (!session.ok) return session
         }
 
@@ -184,18 +192,32 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       },
 
       upsertUser: async (user, options) => {
+        if (!isValidAccountInput(user.email)) {
+          return {
+            ok: false,
+            error: '帳號格式不正確（可用 inspector01，或完整 email）',
+          }
+        }
+        const loginId = normalizeLoginId(user.email)
         const nextUser: UserAccount = {
           ...user,
-          email: user.email.trim(),
+          email: loginId,
           displayName: user.displayName.trim(),
           password: user.password.trim(),
           active: true,
         }
-        if (!nextUser.email || !nextUser.displayName) {
+        if (!nextUser.displayName) {
           return { ok: false, error: '請填寫顯示名稱與帳號' }
         }
         if (!nextUser.password || nextUser.password.length < 6) {
           return { ok: false, error: '密碼至少需 6 碼（Firebase 規定）' }
+        }
+
+        const duplicate = get().users.some(
+          (u) => u.id !== nextUser.id && normalizeLoginId(u.email) === loginId,
+        )
+        if (duplicate) {
+          return { ok: false, error: '此帳號已被使用' }
         }
 
         const shouldProvision = options?.provisionFirebase !== false
@@ -211,10 +233,10 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             return { ok: false, error: provision.error || 'Firebase 登記失敗' }
           }
           if (provision.created) {
-            firebaseMessage = '已同步建立 Firebase Authentication 帳號'
+            firebaseMessage = '已同步建立 Firebase 登入（可用帳號密碼登入）'
           } else if (provision.alreadyExists) {
             firebaseMessage =
-              '本機已儲存；Firebase 已有此 Email（若密碼不同，請在 Console 重設或沿用原密碼）'
+              '本機已儲存；Firebase 已有此帳號（若密碼不同，請在 Console 重設或沿用原密碼）'
           } else {
             firebaseMessage = provision.error
           }
