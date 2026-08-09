@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useProjectStore } from '../store/useProjectStore'
 import { sortFloorsDesc } from '../lib/floors'
 import { Modal } from './ui/Modal'
+import { TitleHint } from './ui/TitleHint'
 
 export function UnitSwitcher({ onClose }: { onClose: () => void }) {
   const buildings = useProjectStore((s) => s.buildings)
@@ -42,12 +43,14 @@ export function UnitSwitcher({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal onClose={onClose} aria-label="快速切換戶別">
-        <h3 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>
+        <TitleHint
+          as="h3"
+          className="serif"
+          style={{ margin: '0 0 12px', fontSize: 20 }}
+          hint="棟別 → 樓層 → 戶別，適合數百戶現場導航。"
+        >
           快速切換戶別
-        </h3>
-        <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)', fontSize: 13 }}>
-          棟別 → 樓層 → 戶別，適合數百戶現場導航。
-        </p>
+        </TitleHint>
 
         <div className="stepper">
           <div className={`step ${step >= 1 ? 'on' : ''} ${building ? 'done' : ''}`}>1. 棟別</div>

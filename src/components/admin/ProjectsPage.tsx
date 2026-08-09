@@ -10,6 +10,7 @@ import {
   type ProjectMeta,
 } from '../../types/auth'
 import { Modal } from '../ui/Modal'
+import { TitleHint } from '../ui/TitleHint'
 
 const ROLE_SHORT: Record<MemberRole, string> = {
   admin: '管理',
@@ -102,10 +103,14 @@ export function ProjectsPage() {
     <div>
       <header style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
         <div>
-          <h1 className="serif" style={{ margin: 0, fontSize: 28 }}>專案管理</h1>
-          <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)' }}>
-            共 {projects.filter((p) => p.status === 'active').length} 個進行中專案 · 點專案即可指派人員
-          </p>
+          <TitleHint
+            as="h1"
+            className="serif"
+            style={{ margin: 0, fontSize: 28 }}
+            hint={`共 ${projects.filter((p) => p.status === 'active').length} 個進行中專案。點專案即可指派人員。`}
+          >
+            專案管理
+          </TitleHint>
         </div>
         <button
           type="button"
@@ -169,7 +174,14 @@ export function ProjectsPage() {
               flexWrap: 'wrap',
             }}
           >
-            <h2 className="serif" style={{ margin: 0 }}>{selected.name} · 設定</h2>
+            <TitleHint
+              as="h2"
+              className="serif"
+              style={{ margin: 0 }}
+              hint="系統管理者可進入任一專案查看現場進度與缺失。"
+            >
+              {selected.name} · 設定
+            </TitleHint>
             <button
               type="button"
               className="btn btn-primary"
@@ -182,13 +194,16 @@ export function ProjectsPage() {
               進入現場查看
             </button>
           </div>
-          <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--ink-soft)' }}>
-            系統管理者可進入任一專案查看現場進度與缺失。
-          </p>
 
-          <details style={{ marginBottom: 16 }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 800, color: 'var(--ink-soft)', fontSize: 13 }}>
-              Google 雲端硬碟（進階／暫可不設定）
+          <details style={{ marginBottom: 16, marginTop: 14 }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 800, color: 'var(--ink-soft)', fontSize: 13, listStyle: 'none' }}>
+              <TitleHint
+                as="span"
+                style={{ pointerEvents: 'auto' }}
+                hint="需另部署 Cloud Function 才會自動鏡像；目前以 Firebase Storage＋App 內下載／報告為主。暫可不設定。"
+              >
+                Google 雲端硬碟
+              </TitleHint>
             </summary>
             <div className="field" style={{ marginTop: 10 }}>
               <label>資料夾網址</label>
@@ -197,9 +212,6 @@ export function ProjectsPage() {
                 onChange={(e) => setDriveInput(e.target.value)}
                 placeholder="https://drive.google.com/drive/folders/xxxxx"
               />
-              <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 6, lineHeight: 1.45 }}>
-                需另部署 Cloud Function 才會自動鏡像；目前以 Firebase Storage＋App 內下載／報告為主。
-              </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                 <button type="button" className="btn btn-ghost" onClick={saveDriveFolder}>
                   儲存（可選）
@@ -234,18 +246,20 @@ export function ProjectsPage() {
               flexWrap: 'wrap',
             }}
           >
-            <h3 className="serif" style={{ margin: 0, fontSize: 18 }}>
+            <TitleHint
+              as="h3"
+              className="serif"
+              style={{ margin: 0, fontSize: 18 }}
+              hint="以本專案為中心設定誰可進入、以及角色（管理／查驗／查看）。人數多時可先搜尋再加入。"
+            >
               成員指派
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-soft)', marginLeft: 8 }}>
                 {selectedMembers.length} 人
               </span>
-            </h3>
+            </TitleHint>
           </div>
-          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-            以本專案為中心設定誰可進入、以及角色（管理／查驗／查看）。人數多時可先搜尋再加入。
-          </p>
 
-          <div className="field" style={{ marginBottom: 12 }}>
+          <div className="field" style={{ marginBottom: 12, marginTop: 12 }}>
             <label>搜尋人員</label>
             <input
               value={memberQuery}
@@ -315,10 +329,13 @@ export function ProjectsPage() {
           </div>
 
           <div style={{ marginTop: 18 }}>
-            <div style={{ fontWeight: 800, marginBottom: 4, fontSize: 14 }}>加入人員</div>
-            <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--ink-soft)' }}>
-              點「加入」預設為查驗；加入後可再改角色。
-            </p>
+            <TitleHint
+              as="div"
+              style={{ fontWeight: 800, marginBottom: 10, fontSize: 14 }}
+              hint="點「加入」預設為查驗；加入後可再改角色。"
+            >
+              加入人員
+            </TitleHint>
             {candidates.length === 0 ? (
               <p style={{ color: 'var(--ink-soft)', margin: 0, fontSize: 13 }}>
                 {q ? '沒有符合搜尋的可加入帳號' : '所有啟用帳號都已在本專案中'}
@@ -354,12 +371,14 @@ export function ProjectsPage() {
               borderTop: '1px solid rgba(34,41,31,0.1)',
             }}
           >
-            <h3 className="serif" style={{ margin: '0 0 6px', fontSize: 18, color: 'var(--terracotta)' }}>
+            <TitleHint
+              as="h3"
+              className="serif"
+              style={{ margin: '0 0 12px', fontSize: 18, color: 'var(--terracotta)' }}
+              hint="刪除後會移除本專案的查驗資料、成員指派與操作歷程，且無法復原。"
+            >
               危險操作
-            </h3>
-            <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-              刪除後會移除本專案的查驗資料、成員指派與操作歷程，且無法復原。
-            </p>
+            </TitleHint>
             <button
               type="button"
               className="btn btn-ghost"
@@ -398,7 +417,14 @@ export function ProjectsPage() {
 
       {creating && (
         <Modal onClose={() => setCreating(false)} aria-label="新增專案" className="modal-wide">
-          <h3 className="serif" style={{ marginTop: 0 }}>新增專案</h3>
+          <TitleHint
+            as="h3"
+            className="serif"
+            style={{ marginTop: 0 }}
+            hint={`代號由系統自動編號（例如 ${nextProjectCode(projects.map((p) => p.code))}）。`}
+          >
+            新增專案
+          </TitleHint>
           <div className="field">
             <label>專案名稱</label>
             <input
@@ -416,9 +442,6 @@ export function ProjectsPage() {
               placeholder="例如 新竹市東區"
             />
           </div>
-          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--ink-soft)' }}>
-            代號由系統自動編號（例如 {nextProjectCode(projects.map((p) => p.code))}）
-          </p>
           <div className="field">
             <label>Google 雲端硬碟資料夾（可選）</label>
             <input

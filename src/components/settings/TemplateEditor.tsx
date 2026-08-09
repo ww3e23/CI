@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import type { ChecklistCategory, ChecklistItem } from '../../types'
 import { createId } from '../../lib/id'
 import { Modal } from '../ui/Modal'
+import { TitleHint } from '../ui/TitleHint'
 
 const PRESET_COLORS = ['#2F5D4C', '#3C6E8F', '#A67C52', '#AE4C3B', '#6B7C8A', '#8B6B4A', '#C97B2E']
 
@@ -38,12 +39,14 @@ export function TemplateEditor({
 
   return (
     <Modal onClose={onCancel} aria-label="編輯查驗範本">
-        <h3 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>
+        <TitleHint
+          as="h3"
+          className="serif"
+          style={{ margin: '0 0 14px', fontSize: 20 }}
+          hint="修改後會同步到各戶查驗清單；已有缺失的細項只能停用、不會刪除歷史。"
+        >
           {initial.name ? `編輯「${initial.name}」` : '新增大項'}
-        </h3>
-        <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13 }}>
-          修改後會同步到各戶查驗清單；已有缺失的細項只能停用、不會刪除歷史。
-        </p>
+        </TitleHint>
 
         <div className="field">
           <label>大項名稱</label>

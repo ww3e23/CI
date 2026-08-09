@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Download, X } from 'lucide-react'
+import { TitleHint } from '../ui/TitleHint'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -68,10 +69,13 @@ export function InstallBanner() {
   return (
     <div className="install-banner glass">
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 800, fontSize: 14 }}>安裝到手機主畫面</div>
-        <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, marginTop: 2, lineHeight: 1.4 }}>
-          {hint || '像 App 一樣從桌面開啟，全螢幕、更好用'}
-        </div>
+        <TitleHint
+          as="div"
+          style={{ fontWeight: 800, fontSize: 14 }}
+          hint={hint || '像 App 一樣從桌面開啟，全螢幕、更好用。'}
+        >
+          安裝到手機主畫面
+        </TitleHint>
       </div>
       <button type="button" className="btn btn-primary" style={{ minHeight: 40, padding: '0 12px' }} onClick={() => void install()}>
         <Download size={16} /> 安裝

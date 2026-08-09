@@ -2,6 +2,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { useProjectStore } from '../../store/useProjectStore'
 import type { DefectStatus } from '../../types'
 import { Modal } from '../ui/Modal'
+import { TitleHint } from '../ui/TitleHint'
 
 export interface DefectFilters {
   buildingIds: string[]
@@ -100,10 +101,14 @@ export function AdvancedFilterSheet({
 
   return (
     <Modal onClose={onClose} aria-label="進階篩選" variant="bottom">
-        <h3 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>進階篩選</h3>
-        <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13 }}>
-          可組合棟／樓／戶、查驗大項、區域、人員與日期；狀態請用上方快捷 chip。
-        </p>
+        <TitleHint
+          as="h3"
+          className="serif"
+          style={{ margin: '0 0 14px', fontSize: 20 }}
+          hint="可組合棟／樓／戶、查驗大項、區域、人員與日期；狀態請用上方快捷 chip。"
+        >
+          進階篩選
+        </TitleHint>
 
         <Section title="棟別（可複選）">
           <div className="chip-row">

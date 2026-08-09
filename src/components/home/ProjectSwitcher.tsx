@@ -1,6 +1,7 @@
 import { useAuthStore, useCurrentProject, userCanAccessProject } from '../../store/useAuthStore'
 import { ROLE_LABEL, ROLE_TONE, type MemberRole } from '../../types/auth'
 import { Modal } from '../ui/Modal'
+import { TitleHint } from '../ui/TitleHint'
 
 export function ProjectSwitcher({ onClose }: { onClose: () => void }) {
   const userId = useAuthStore((s) => s.currentUserId)
@@ -31,18 +32,23 @@ export function ProjectSwitcher({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal onClose={onClose} aria-label="切換專案">
-      <h3 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>切換專案</h3>
-      <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13 }}>
-        {user?.systemAdmin
-          ? `系統管理者可查看全部 ${accessible.length} 個專案`
-          : `你目前有 ${accessible.length} 個專案的存取權限`}
-      </p>
+      <TitleHint
+        as="h3"
+        className="serif"
+        style={{ margin: '0 0 14px', fontSize: 20 }}
+        hint={
+          accessible.length === 0
+            ? '目前看不到專案。若你確定已被指派，請先同步雲端資料。'
+            : user?.systemAdmin
+              ? `系統管理者可查看全部 ${accessible.length} 個專案。`
+              : `你目前有 ${accessible.length} 個專案的存取權限。`
+        }
+      >
+        切換專案
+      </TitleHint>
 
       {accessible.length === 0 && (
         <div style={{ marginBottom: 12 }}>
-          <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.45 }}>
-            目前看不到專案。若你確定已被指派，請先同步雲端資料。
-          </p>
           <button
             type="button"
             className="btn btn-primary"

@@ -5,6 +5,7 @@ import { accountDisplay } from '../../lib/accountId'
 import { isFirebaseConfigured } from '../../lib/firebase'
 import { createId } from '../../lib/id'
 import { type MemberRole, type UserAccount } from '../../types/auth'
+import { TitleHint } from '../ui/TitleHint'
 
 const ROLE_SHORT: Record<MemberRole, string> = {
   admin: '管理',
@@ -41,11 +42,19 @@ export function AccountsPage() {
     <div>
       <header style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
         <div>
-          <h1 className="serif" style={{ margin: 0, fontSize: 28 }}>帳號管理</h1>
-          <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)', fontSize: 14 }}>
-            共 {rows.length} 個帳號 · 儲存前請先加入專案
-            {cloud ? ' · 會同步 Firebase 登入與雲端目錄' : ' · 尚未接 Firebase（僅本機）'}
-          </p>
+          <TitleHint
+            as="h1"
+            className="serif"
+            style={{ margin: 0, fontSize: 28 }}
+            hint={
+              <>
+                共 {rows.length} 個帳號。儲存前請先加入專案
+                {cloud ? '；會同步 Firebase 登入與雲端目錄。' : '；尚未接 Firebase（僅本機）。'}
+              </>
+            }
+          >
+            帳號管理
+          </TitleHint>
         </div>
         <button
           type="button"
@@ -149,16 +158,25 @@ export function AccountsPage() {
 
         {editing && (
           <aside className="edit-panel">
-            <h2 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>
+            <TitleHint
+              as="h2"
+              className="serif"
+              style={{ margin: '0 0 16px', fontSize: 20 }}
+              hint={
+                cloud
+                  ? '直接填帳號＋密碼即可；儲存時會同步到 Firebase 登入。'
+                  : '直接填帳號＋密碼即可（目前未接 Firebase，僅存本機）。'
+              }
+            >
               {isNew ? '新增帳號' : '編輯帳號'}
-            </h2>
-            <p style={{ margin: '0 0 16px', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.45 }}>
-              直接填帳號＋密碼即可
-              {cloud ? '；儲存時會同步到 Firebase 登入。' : '（目前未接 Firebase，僅存本機）。'}
-            </p>
+            </TitleHint>
 
             <div className="field">
-              <label>帳號</label>
+              <label>
+                <TitleHint as="span" hint="可用純帳號（英數），也可填完整 email。">
+                  帳號
+                </TitleHint>
+              </label>
               <input
                 value={isNew ? editing.email : accountDisplay(editing.email)}
                 onChange={(e) => setEditing({ ...editing, email: e.target.value })}
@@ -166,9 +184,6 @@ export function AccountsPage() {
                 disabled={!isNew && Boolean(editing.email)}
                 autoComplete="off"
               />
-              <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-                可用純帳號（英數），也可填完整 email。
-              </p>
             </div>
 
             <div className="field">
@@ -180,7 +195,14 @@ export function AccountsPage() {
             </div>
 
             <div className="field">
-              <label>密碼</label>
+              <label>
+                <TitleHint
+                  as="span"
+                  hint="請把帳號密碼交給人員使用。若 Firebase 已有此帳號，不會覆寫既有密碼。"
+                >
+                  密碼
+                </TitleHint>
+              </label>
               <input
                 value={editing.password}
                 onChange={(e) => setEditing({ ...editing, password: e.target.value })}
@@ -197,15 +219,15 @@ export function AccountsPage() {
                   產生密碼
                 </button>
               </div>
-              <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-                請把帳號密碼交給人員使用。若 Firebase 已有此帳號，不會覆寫既有密碼。
-              </p>
             </div>
 
-            <div style={{ fontWeight: 800, marginBottom: 4, fontSize: 14 }}>專案與權限指派（必填）</div>
-            <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-              一般帳號至少要加入一個專案，儲存後才能登入現場 App。
-            </p>
+            <TitleHint
+              as="div"
+              style={{ fontWeight: 800, marginBottom: 8, fontSize: 14 }}
+              hint="一般帳號至少要加入一個專案，儲存後才能登入現場 App。"
+            >
+              專案與權限指派（必填）
+            </TitleHint>
             {projects.length === 0 ? (
               <p style={{ color: 'var(--terracotta)', fontSize: 13, fontWeight: 600 }}>
                 尚無專案，請先到「專案管理」新增，再回來建立帳號。

@@ -5,6 +5,7 @@ import { useCurrentProject } from '../../store/useAuthStore'
 import { buildMatrix, formatActivity } from '../../lib/progress'
 import type { ProgressCell } from '../../types'
 import { ReportPreview } from './ReportPreview'
+import { TitleHint } from '../ui/TitleHint'
 
 export function ReportsPage() {
   const state = useProjectStore()
@@ -27,12 +28,14 @@ export function ReportsPage() {
       <header style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
         <div>
           <div className="eyebrow">PROGRESS MATRIX</div>
-          <h1 className="serif" style={{ margin: '4px 0 0', fontSize: 24, fontWeight: 700 }}>
+          <TitleHint
+            as="h1"
+            className="serif"
+            style={{ margin: '4px 0 0', fontSize: 24, fontWeight: 700 }}
+            hint="棟別 × 樓層 × 戶別一次看完全案；可預覽並匯出質感報告。"
+          >
             查驗進度色塊矩陣
-          </h1>
-          <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)', fontSize: 13 }}>
-            棟別 × 樓層 × 戶別一次看完全案；可預覽並匯出質感報告。
-          </p>
+          </TitleHint>
         </div>
         <button
           type="button"

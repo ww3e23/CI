@@ -4,6 +4,7 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { cloudReady } from '../../services/cloudSync'
 import { Modal } from '../ui/Modal'
+import { TitleHint } from '../ui/TitleHint'
 import { AnnotatePlanModal } from './AnnotatePlanModal'
 
 export function AddDefectSheet({
@@ -228,7 +229,11 @@ export function AddDefectSheet({
         </div>
 
         <div className="field">
-          <label>補充說明（可留空，系統會帶入大項／區域）</label>
+          <label>
+            <TitleHint as="span" hint="可留空，系統會帶入大項／區域。">
+              補充說明
+            </TitleHint>
+          </label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}

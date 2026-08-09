@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Building2 } from 'lucide-react'
 import { useAuthStore } from '../../store/useAuthStore'
+import { TitleHint } from '../ui/TitleHint'
 
 export function LoginPage() {
   const login = useAuthStore((s) => s.login)
@@ -44,10 +45,14 @@ export function LoginPage() {
             })()
           }}
         >
-          <h2 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>帳號登入</h2>
-          <p style={{ margin: '0 0 16px', color: 'var(--ink-soft)', fontSize: 13 }}>
-            請使用管理者提供的帳號密碼登入（不必是 email）
-          </p>
+          <TitleHint
+            as="h2"
+            className="serif"
+            style={{ margin: '0 0 16px', fontSize: 20 }}
+            hint="請使用管理者提供的帳號密碼登入（不必是 email）。尚未開放自行註冊，若忘記密碼請聯繫專案管理者重設。"
+          >
+            帳號登入
+          </TitleHint>
 
           <div className="field">
             <label>帳號</label>
@@ -77,10 +82,6 @@ export function LoginPage() {
             登入
           </button>
         </form>
-
-        <p style={{ marginTop: 14, textAlign: 'center', color: 'var(--ink-soft)', fontSize: 12, lineHeight: 1.5 }}>
-          尚未開放自行註冊，若忘記密碼請聯繫專案管理者重設。
-        </p>
       </div>
     </div>
   )

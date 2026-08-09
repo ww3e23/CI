@@ -3,6 +3,7 @@ import type { BuildingRule } from '../../types'
 import { expandFloorRange, naKey, parseUnitCodes, sortFloorsAsc } from '../../lib/floors'
 import { countActiveUnits } from '../../lib/units'
 import { Modal } from '../ui/Modal'
+import { TitleHint } from '../ui/TitleHint'
 
 export function BuildingEditor({
   initial,
@@ -60,12 +61,14 @@ export function BuildingEditor({
 
   return (
     <Modal onClose={onCancel} aria-label="編輯棟別結構">
-        <h3 style={{ margin: '0 0 4px', fontSize: 18 }}>
+        <TitleHint
+          as="h3"
+          className="serif"
+          style={{ margin: '0 0 14px', fontSize: 18 }}
+          hint="只需設定「棟別、樓層範圍、各層戶別編號」，系統自動展開成數百戶，不必一戶一戶新增。"
+        >
           {initial.name ? `編輯 ${initial.name}` : '新增棟別'}
-        </h3>
-        <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
-          只需設定「棟別、樓層範圍、各層戶別編號」，系統自動展開成數百戶，不必一戶一戶新增。
-        </p>
+        </TitleHint>
 
         <div className="field">
           <label>棟別名稱</label>
@@ -114,15 +117,16 @@ export function BuildingEditor({
         </div>
 
         <div className="field">
-          <label>各層戶別編號（逗號分隔）</label>
+          <label>
+            <TitleHint as="span" hint="同一套編號會套用到每一層，適合「每層戶號規則相同」的建案。">
+              各層戶別編號（逗號分隔）
+            </TitleHint>
+          </label>
           <input
             value={unitCodesText}
             onChange={(e) => setUnitCodesText(e.target.value)}
             placeholder="例如 A1, A2, A3, A5"
           />
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-            同一套編號會套用到每一層，適合「每層戶號規則相同」的建案。
-          </div>
         </div>
 
         <div className="field">

@@ -15,6 +15,7 @@ import { useCurrentProject } from '../../store/useAuthStore'
 import { unitProgress } from '../../lib/progress'
 import { UnitSwitcher } from '../UnitSwitcher'
 import { ProjectSwitcher } from './ProjectSwitcher'
+import { TitleHint } from '../ui/TitleHint'
 import type { ChecklistCategory } from '../../types'
 
 const CATEGORY_ICONS: Record<string, ComponentType<LucideProps>> = {
@@ -69,13 +70,15 @@ export function HomePage({
       <div className="rise">
         <header style={{ marginBottom: 12 }}>
           <div className="eyebrow">SITE INSPECTION</div>
-          <h1 className="serif" style={{ margin: '4px 0 0', fontSize: 22 }}>
+          <TitleHint
+            as="h1"
+            className="serif"
+            style={{ margin: '4px 0 0', fontSize: 22 }}
+            hint="此專案尚未建立棟樓戶結構。請到「我的」設定棟別與查驗範本後再開始查驗。"
+          >
             {currentProject?.name ?? projectName}
-          </h1>
+          </TitleHint>
         </header>
-        <p style={{ color: 'var(--ink-soft)', lineHeight: 1.5 }}>
-          此專案尚未建立棟樓戶結構。請到「我的」設定棟別與查驗範本後再開始查驗。
-        </p>
       </div>
     )
   }

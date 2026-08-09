@@ -5,6 +5,7 @@ import { BuildingEditor } from './BuildingEditor'
 import { TemplateEditor } from './TemplateEditor'
 import { createId } from '../../lib/id'
 import type { BuildingRule, ChecklistCategory } from '../../types'
+import { TitleHint } from '../ui/TitleHint'
 
 export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const buildings = useProjectStore((s) => s.buildings)
@@ -43,7 +44,12 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
       )}
 
       <div className="section-row" style={{ marginTop: embedded ? 0 : undefined }}>
-        <h2>棟別結構</h2>
+        <TitleHint
+          as="h2"
+          hint={`以規則批次建立：棟別、樓層範圍、各層戶別編號。目前 ${activeBuildings.length} 棟・${totalActiveUnits} 可查驗戶。`}
+        >
+          棟別結構
+        </TitleHint>
         <button
           type="button"
           className="link"
@@ -56,10 +62,6 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
           清空本專案
         </button>
       </div>
-
-      <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.5 }}>
-        以規則批次建立：棟別、樓層範圍、各層戶別編號。目前 {activeBuildings.length} 棟・{totalActiveUnits} 可查驗戶。
-      </p>
 
       <div style={{ display: 'grid', gap: 10 }}>
         {activeBuildings.map((b) => (
@@ -116,7 +118,12 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
       </div>
 
       <div className="section-row">
-        <h2>查驗範本</h2>
+        <TitleHint
+          as="h2"
+          hint="新專案已預載標準查驗範本。編輯細項後會套用到所有戶別；已有缺失的項目刪除時會改為停用並保留紀錄。"
+        >
+          查驗範本
+        </TitleHint>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button
             type="button"
@@ -157,10 +164,6 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
           </button>
         </div>
       </div>
-
-      <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12 }}>
-        新專案已預載標準查驗範本。編輯細項後會套用到所有戶別；已有缺失的項目刪除時會改為停用並保留紀錄。
-      </p>
 
       {activeCats.length === 0 && (
         <button

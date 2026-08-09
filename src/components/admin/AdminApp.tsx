@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Building2, Clock3, LogOut, Users } from 'lucide-react'
 import { useAuthStore, useCurrentUser } from '../../store/useAuthStore'
+import { TitleHint } from '../ui/TitleHint'
 import { isFirebaseConfigured } from '../../lib/firebase'
 import { AccountsPage } from './AccountsPage'
 import { ProjectsPage } from './ProjectsPage'
@@ -30,8 +31,9 @@ export function AdminApp() {
     return (
       <div className="admin-shell">
         <div className="admin-panel" style={{ margin: 'auto', padding: 24, maxWidth: 420 }}>
-          <h1 className="serif">請先登入</h1>
-          <p style={{ color: 'var(--ink-soft)' }}>後台需使用管理者帳號。</p>
+          <TitleHint as="h1" className="serif" hint="後台需使用管理者帳號。">
+            請先登入
+          </TitleHint>
           <a href="#/" className="btn btn-primary" style={{ marginTop: 12, textDecoration: 'none' }}>
             回現場 App 登入
           </a>
@@ -44,8 +46,9 @@ export function AdminApp() {
     return (
       <div className="admin-shell">
         <div className="admin-panel" style={{ margin: 'auto', padding: 24, maxWidth: 420 }}>
-          <h1 className="serif">無權限</h1>
-          <p style={{ color: 'var(--ink-soft)' }}>僅系統管理者可進入驗屋後台。</p>
+          <TitleHint as="h1" className="serif" hint="僅系統管理者可進入驗屋後台。">
+            無權限
+          </TitleHint>
           <a href="#/" className="btn btn-primary" style={{ marginTop: 12, textDecoration: 'none' }}>
             回現場 App
           </a>

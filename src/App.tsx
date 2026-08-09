@@ -10,6 +10,7 @@ import { LoginPage } from './components/auth/LoginPage'
 import { AdminApp } from './components/admin/AdminApp'
 import { InstallBanner } from './components/pwa/InstallBanner'
 import { useAuthStore } from './store/useAuthStore'
+import { TitleHint } from './components/ui/TitleHint'
 
 function useHashRoute() {
   const [hash, setHash] = useState(() => window.location.hash || '#/')
@@ -51,10 +52,14 @@ export default function App() {
     return (
       <div className="app-shell login-shell" style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
         <div className="glass" style={{ width: '100%', maxWidth: 420, padding: 22 }}>
-          <h1 className="serif" style={{ margin: '0 0 8px', fontSize: 24 }}>開始設定</h1>
-          <p style={{ margin: 0, color: 'var(--ink-soft)', lineHeight: 1.5, fontSize: 14 }}>
-            目前沒有任何專案。請先到後台新增專案、建立帳號並指派人員。
-          </p>
+          <TitleHint
+            as="h1"
+            className="serif"
+            style={{ margin: 0, fontSize: 24 }}
+            hint="目前沒有任何專案。請先到後台新增專案、建立帳號並指派人員。"
+          >
+            開始設定
+          </TitleHint>
           <a
             href="#/admin"
             className="btn btn-primary"
@@ -76,10 +81,14 @@ export default function App() {
       return (
         <div className="app-shell login-shell" style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
           <div className="glass" style={{ width: '100%', maxWidth: 420, padding: 22 }}>
-            <h1 className="serif" style={{ margin: '0 0 8px', fontSize: 24 }}>選擇要查看的專案</h1>
-            <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', lineHeight: 1.5, fontSize: 14 }}>
-              系統管理者可進入任一專案查看。
-            </p>
+            <TitleHint
+              as="h1"
+              className="serif"
+              style={{ margin: '0 0 14px', fontSize: 24 }}
+              hint="系統管理者可進入任一專案查看。"
+            >
+              選擇要查看的專案
+            </TitleHint>
             <div style={{ display: 'grid', gap: 8 }}>
               {projects.map((p) => (
                 <button
@@ -111,10 +120,14 @@ export default function App() {
     return (
       <div className="app-shell login-shell" style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
         <div className="glass" style={{ width: '100%', maxWidth: 420, padding: 22 }}>
-          <h1 className="serif" style={{ margin: '0 0 8px', fontSize: 24 }}>尚未指派專案</h1>
-          <p style={{ margin: 0, color: 'var(--ink-soft)', lineHeight: 1.5, fontSize: 14 }}>
-            帳號已登入，但還沒有可進入的專案。請請系統管理者在後台「專案管理」將你加入專案。
-          </p>
+          <TitleHint
+            as="h1"
+            className="serif"
+            style={{ margin: '0 0 14px', fontSize: 24 }}
+            hint="帳號已登入，但還沒有可進入的專案。請請系統管理者在後台「專案管理」將你加入專案。"
+          >
+            尚未指派專案
+          </TitleHint>
           <button
             type="button"
             className="btn btn-ghost"

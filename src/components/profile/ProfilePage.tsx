@@ -12,6 +12,7 @@ import { firebaseModeLabel, isFirebaseConfigured } from '../../lib/firebase'
 import { SettingsPage } from '../settings/SettingsPage'
 import { ProjectSwitcher } from '../home/ProjectSwitcher'
 import { ROLE_LABEL, ROLE_TONE } from '../../types/auth'
+import { TitleHint } from '../ui/TitleHint'
 
 export function ProfilePage() {
   const user = useCurrentUser()
@@ -70,7 +71,13 @@ export function ProfilePage() {
       <section className="glass" style={{ padding: 14, marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-soft)' }}>顯示名稱</div>
+            <TitleHint
+              as="div"
+              style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-soft)' }}
+              hint="此名稱會出現在缺失紀錄與操作歷程。"
+            >
+              顯示名稱
+            </TitleHint>
             {!editing ? (
               <div style={{ fontWeight: 800, marginTop: 4 }}>{user.displayName}</div>
             ) : (
@@ -80,9 +87,6 @@ export function ProfilePage() {
                 style={{ marginTop: 6, minHeight: 40, borderRadius: 12, border: '1px solid rgba(34,41,31,0.12)', padding: '0 10px', width: '100%' }}
               />
             )}
-            <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4 }}>
-              此名稱會出現在缺失紀錄與操作歷程
-            </div>
           </div>
           {!editing ? (
             <button type="button" className="btn btn-ghost" style={{ minHeight: 40 }} onClick={() => { setName(user.displayName); setEditing(true) }}>
@@ -105,7 +109,16 @@ export function ProfilePage() {
       </section>
 
       <div className="section-row">
-        <h2>{user.systemAdmin ? '全部專案' : '所屬專案與權限'}</h2>
+        <TitleHint
+          as="h2"
+          hint={
+            user.systemAdmin
+              ? '系統管理者可進入任一專案查看與設定。調整棟別／樓層／戶別前請先確認目前專案；點卡片即可切換。'
+              : '權限由各專案管理者於後台指派，無法自行變更。調整結構前請先確認目前專案；點卡片即可切換。'
+          }
+        >
+          {user.systemAdmin ? '全部專案' : '所屬專案與權限'}
+        </TitleHint>
         <button
           type="button"
           className="chip"
@@ -126,17 +139,8 @@ export function ProfilePage() {
             {project.code} · {project.location}
             {role ? ` · ${ROLE_LABEL[role]}` : ''}
           </div>
-          <div style={{ fontSize: 11, marginTop: 10, opacity: 0.88 }}>
-            調整棟別／樓層／戶別結構前，請先確認已切到正確專案。點下方卡片即可切換。
-          </div>
         </section>
       )}
-
-      <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12 }}>
-        {user.systemAdmin
-          ? '系統管理者可進入任一專案查看與設定。點專案卡片即可切換。'
-          : '權限由各專案管理者於後台指派，無法自行變更。點專案卡片可直接切換。'}
-      </p>
       {cloud && (
         <button
           type="button"
@@ -199,14 +203,17 @@ export function ProfilePage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {cloud ? <Cloud size={20} color="var(--green-deep)" /> : <CloudOff size={20} color="var(--stone)" />}
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 800 }}>
+              <TitleHint
+                as="div"
+                style={{ fontWeight: 800 }}
+                hint={
+                  cloud
+                    ? '管理者可見：缺失與照片同步狀態。'
+                    : '管理者可見：尚未接上 Firebase，資料僅存本機。'
+                }
+              >
                 {cloud ? 'Firebase 已設定' : '示範模式（本機資料）'}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, marginTop: 2 }}>
-                {cloud
-                  ? '管理者可見：缺失與照片同步狀態'
-                  : '管理者可見：尚未接上 Firebase'}
-              </div>
+              </TitleHint>
             </div>
             <span className="chip" style={{ minHeight: 32 }}>{mode}</span>
           </div>
@@ -229,10 +236,13 @@ export function ProfilePage() {
       )}
 
       <section className="glass" style={{ padding: 14, marginBottom: 14 }}>
-        <div style={{ fontWeight: 800, marginBottom: 4 }}>安裝到手機</div>
-        <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12, lineHeight: 1.45 }}>
-          Android 請用 Chrome 開啟本站，點下方橫幅「安裝」，或選單 ⋮ →「安裝應用程式／加到主畫面」。
-        </p>
+        <TitleHint
+          as="div"
+          style={{ fontWeight: 800 }}
+          hint="Android 請用 Chrome 開啟本站，點下方橫幅「安裝」，或選單 ⋮ →「安裝應用程式／加到主畫面」。"
+        >
+          安裝到手機
+        </TitleHint>
       </section>
 
       {(role === 'admin' || user.systemAdmin) && (

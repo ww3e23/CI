@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Redo2, Trash2, Undo2, X } from 'lucide-react'
+import { TitleHint } from '../ui/TitleHint'
 
 type Tool = 'pen' | 'circle' | 'arrow'
 
@@ -138,7 +139,14 @@ export function AnnotatePlanModal({
         <button type="button" className="icon-btn" onClick={onCancel} aria-label="關閉">
           <X size={20} />
         </button>
-        <div className="serif" style={{ fontWeight: 700 }}>標註位置</div>
+        <TitleHint
+          as="div"
+          className="serif"
+          style={{ fontWeight: 700 }}
+          hint="拖曳標註後放開即可；按「完成標註」套用回缺失表單。"
+        >
+          標註位置
+        </TitleHint>
         <button
           type="button"
           className="btn btn-primary"
@@ -259,7 +267,6 @@ export function AnnotatePlanModal({
           onPointerCancel={finishStroke}
         />
       </div>
-      <p className="annotate-hint">拖曳標註後放開即可；按「完成標註」套用回缺失表單。</p>
     </div>,
     document.body,
   )

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useAuthStore } from '../../store/useAuthStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { formatActivity } from '../../lib/progress'
+import { TitleHint } from '../ui/TitleHint'
 
 export function AuditPage() {
   const projects = useAuthStore((s) => s.projects)
@@ -30,10 +31,14 @@ export function AuditPage() {
   return (
     <div>
       <header style={{ marginBottom: 18 }}>
-        <h1 className="serif" style={{ margin: 0, fontSize: 28 }}>操作歷程</h1>
-        <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)' }}>
-          依專案查閱現場操作紀錄，不會把所有專案混在一起。
-        </p>
+        <TitleHint
+          as="h1"
+          className="serif"
+          style={{ margin: 0, fontSize: 28 }}
+          hint="依專案查閱現場操作紀錄，不會把所有專案混在一起。"
+        >
+          操作歷程
+        </TitleHint>
       </header>
 
       <div className="chip-row" style={{ marginBottom: 14 }}>
