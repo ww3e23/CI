@@ -37,7 +37,6 @@ export function TitleHint({ hint, children, as = 'div', className, style }: Prop
   const anchorRef = useRef<HTMLElement | null>(null)
   const bubbleRef = useRef<HTMLDivElement | null>(null)
   const timerRef = useRef<number | null>(null)
-  const openedByPressRef = useRef(false)
   const [open, setOpen] = useState(false)
   const [pop, setPop] = useState<Pop | null>(null)
 
@@ -77,10 +76,8 @@ export function TitleHint({ hint, children, as = 'div', className, style }: Prop
     if (e.pointerType === 'mouse' && e.button !== 0) return
     // 已開啟時點標題本身不關閉（避免長按放開後的殘餘手勢立刻關掉）
     clearTimer()
-    openedByPressRef.current = false
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null
-      openedByPressRef.current = true
       showHint()
     }, LONG_MS)
   }
