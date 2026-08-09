@@ -47,11 +47,11 @@ export function ProjectsPage() {
             <button
               key={p.id}
               type="button"
-              className={highlight ? 'glass-green project-card' : 'glass project-card'}
+              className={`project-card ${highlight ? 'on' : ''}`}
               onClick={() => setSelectedId(p.id)}
             >
               <div className="serif" style={{ fontSize: 22, fontWeight: 700 }}>{p.name}</div>
-              <div style={{ marginTop: 6, fontSize: 13, opacity: highlight ? 0.9 : 1, color: highlight ? undefined : 'var(--ink-soft)', fontWeight: 600 }}>
+              <div style={{ marginTop: 6, fontSize: 13, color: 'var(--ink-soft)', fontWeight: 600 }}>
                 {p.code} · {p.location}
               </div>
               <div style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

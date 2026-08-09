@@ -687,65 +687,170 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 .chip.on.role-inspector { background: var(--slate); border-color: var(--slate); color: #fff; }
 .chip.on.role-viewer { background: var(--stone); border-color: var(--stone); color: #fff; }
 
-/* 桌面後台 */
+/* 桌面後台 — 對齊設計稿：暖灰米底、淺側欄、膠囊選中、右側編輯面板 */
 .admin-shell {
   min-height: 100dvh;
   display: grid;
-  grid-template-columns: 240px 1fr;
-  gap: 18px;
-  padding: 18px;
+  grid-template-columns: 232px 1fr;
+  gap: 0;
+  padding: 0;
   background:
-    radial-gradient(120% 60% at 15% 0%, var(--bg-blob-green), transparent 55%),
-    radial-gradient(90% 50% at 100% 30%, var(--bg-blob-amber), transparent 60%),
-    #2a2f2b;
+    radial-gradient(110% 55% at 12% 0%, rgba(58, 102, 84, 0.16), transparent 55%),
+    radial-gradient(80% 45% at 100% 20%, rgba(201, 123, 46, 0.12), transparent 58%),
+    #efebe1;
+  color: var(--ink);
 }
 
 .admin-sidebar {
-  border-radius: 28px;
-  padding: 18px;
+  border-radius: 0;
+  padding: 22px 16px;
   display: flex;
   flex-direction: column;
-  min-height: calc(100dvh - 36px);
+  min-height: 100dvh;
+  background: #f7f3ea;
+  border-right: 1px solid rgba(34, 41, 31, 0.06);
+  box-shadow: none;
+}
+
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  padding: 0 6px;
+}
+
+.admin-brand-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--green-deep);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 15px;
+  flex-shrink: 0;
 }
 
 .admin-nav {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 44px;
-  padding: 0 14px;
+  min-height: 46px;
+  padding: 0 16px;
   border-radius: 999px;
   font-weight: 700;
   color: var(--ink-soft);
   text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.admin-nav:hover {
+  background: rgba(47, 93, 76, 0.08);
+  color: var(--green-deep);
 }
 
 .admin-nav.on {
   background: var(--green-deep);
   color: #fff;
+  box-shadow: 0 8px 18px -10px rgba(38, 75, 62, 0.55);
+}
+
+.admin-sidebar-foot {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid rgba(34, 41, 31, 0.08);
 }
 
 .admin-main {
-  background: linear-gradient(180deg, rgba(255,255,255,0.72), rgba(239,235,225,0.92));
-  border-radius: 28px;
-  padding: 22px;
-  min-height: calc(100dvh - 36px);
+  background: transparent;
+  border-radius: 0;
+  padding: 28px 28px 32px;
+  min-height: 100dvh;
   overflow: auto;
 }
 
 .admin-panel {
-  background: linear-gradient(150deg, rgba(255,255,255,0.7), rgba(255,255,255,0.42));
-  border: 1px solid rgba(255,255,255,0.55);
-  box-shadow: var(--shadow-tight);
-  border-radius: 24px;
+  background: #fff;
+  border: 1px solid rgba(34, 41, 31, 0.06);
+  box-shadow: 0 16px 40px -24px rgba(34, 41, 31, 0.28);
+  border-radius: 22px;
   padding: 16px;
 }
 
 .admin-layout {
   display: grid;
-  grid-template-columns: 1fr minmax(300px, 360px);
-  gap: 16px;
+  grid-template-columns: 1fr minmax(320px, 380px);
+  gap: 18px;
   align-items: start;
+}
+
+.admin-layout.single {
+  grid-template-columns: 1fr;
+}
+
+.edit-panel {
+  background: #f4efe4;
+  border: 1px solid rgba(34, 41, 31, 0.06);
+  box-shadow: 0 18px 44px -22px rgba(34, 41, 31, 0.3);
+  border-radius: 22px;
+  padding: 18px;
+  position: sticky;
+  top: 20px;
+}
+
+.edit-panel .field input,
+.edit-panel .field textarea,
+.edit-panel .field select {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+}
+
+.perm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(34, 41, 31, 0.08);
+}
+
+.perm-row:last-child {
+  border-bottom: none;
+}
+
+.perm-row .chip-row {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+.perm-row .chip {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.perm-row .chip.on {
+  background: var(--green-deep);
+  border-color: var(--green-deep);
+  color: #fff;
+}
+
+.perm-row .join-chip {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(34, 41, 31, 0.1);
+  color: var(--ink-soft);
+  font-weight: 700;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+}
+
+.perm-row .join-chip:hover {
+  color: var(--green-deep);
+  border-color: rgba(47, 93, 76, 0.35);
 }
 
 .admin-table {
@@ -756,9 +861,13 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 .admin-table th,
 .admin-table td {
   text-align: left;
-  padding: 14px 16px;
-  border-bottom: 1px solid rgba(34, 41, 31, 0.08);
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(34, 41, 31, 0.07);
   font-size: 14px;
+}
+
+.admin-table tr:last-child td {
+  border-bottom: none;
 }
 
 .admin-table th {
@@ -766,11 +875,12 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
+  background: rgba(255, 252, 246, 0.85);
 }
 
 .avatar-sm {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 999px;
   background: var(--green-deep);
   color: #fff;
@@ -818,17 +928,38 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 
 .project-card {
   padding: 18px;
-  border-radius: 24px;
+  border-radius: 22px;
   text-align: left;
   min-height: 140px;
+  background: #fff;
+  border: 1px solid rgba(34, 41, 31, 0.06);
+  box-shadow: 0 12px 28px -20px rgba(34, 41, 31, 0.28);
+  color: var(--ink);
+}
+
+.project-card.on {
+  background: linear-gradient(155deg, rgba(58, 111, 92, 0.14), rgba(47, 93, 76, 0.08));
+  border: 1px solid rgba(47, 93, 76, 0.22);
+  color: var(--ink);
+  box-shadow: 0 14px 30px -20px rgba(38, 75, 62, 0.35);
 }
 
 .project-card.dashed {
   border: 1.5px dashed rgba(47, 93, 76, 0.35);
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.45);
   display: grid;
   place-items: center;
   gap: 6px;
+  box-shadow: none;
+}
+
+@media (max-width: 1100px) {
+  .admin-layout {
+    grid-template-columns: 1fr;
+  }
+  .edit-panel {
+    position: static;
+  }
 }
 
 @media (max-width: 960px) {
@@ -837,9 +968,8 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   }
   .admin-sidebar {
     min-height: auto;
-  }
-  .admin-layout {
-    grid-template-columns: 1fr;
+    border-right: none;
+    border-bottom: 1px solid rgba(34, 41, 31, 0.06);
   }
 }
 

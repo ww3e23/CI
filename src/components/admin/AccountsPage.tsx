@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { useAuthStore } from '../../store/useAuthStore'
 import { createId } from '../../lib/id'
-import {
-  ROLE_LABEL,
-  ROLE_TONE,
-  type MemberRole,
-  type UserAccount,
-} from '../../types/auth'
+import { type MemberRole, type UserAccount } from '../../types/auth'
+
+const ROLE_SHORT: Record<MemberRole, string> = {
+  admin: '管理',
+  inspector: '查驗',
+  viewer: '查看',
+}
 
 export function AccountsPage() {
   const users = useAuthStore((s) => s.users)
@@ -31,7 +32,9 @@ export function AccountsPage() {
       <header style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
         <div>
           <h1 className="serif" style={{ margin: 0, fontSize: 28 }}>帳號管理</h1>
-          <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)' }}>共 {rows.length} 個帳號</p>
+          <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)', fontSize: 14 }}>
+            共 {rows.length} 個帳號，可新增、編輯、停用或刪除
+          </p>
         </div>
         <button
           type="button"
@@ -52,7 +55,7 @@ export function AccountsPage() {
         </button>
       </header>
 
-      <div className="admin-layout">
+      <div className={`admin-layout ${editing ? '' : 'single'}`}>
         <div className="admin-panel" style={{ padding: 0, overflow: 'hidden' }}>
           <table className="admin-table">
             <thead>
@@ -75,7 +78,7 @@ export function AccountsPage() {
                         <strong>{u.displayName}</strong>
                       </div>
                     </td>
-                    <td>{u.email}</td>
+                    <td style={{ color: 'var(--ink-soft)' }}>{u.email}</td>
                     <td>{count} 個專案</td>
                     <td>
                       <span className={`status-dot ${u.active ? 'on' : ''}`}>
@@ -119,11 +122,13 @@ export function AccountsPage() {
         </div>
 
         {editing && (
-          <aside className="admin-panel edit-panel">
+          <aside className="edit-panel">
             <h2 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>
               {isNew ? '新增帳號' : '編輯帳號'}
             </h2>
-            <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13 }}>
+            <p style={{ margin: '0 0 16px', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.45 }}>
+              {editing.displayName || '尚未命名'}
+              <br />
               {editing.email || '尚未設定帳號'}
             </p>
 
@@ -146,37 +151,40 @@ export function AccountsPage() {
               />
             </div>
 
-            <button type="button" className="btn btn-ghost" style={{ width: '100%', marginBottom: 14 }}>
+            <button type="button" className="btn btn-ghost" style={{ width: '100%', marginBottom: 18 }}>
               產生新密碼並通知
             </button>
 
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>專案與權限指派</div>
-            <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ fontWeight: 800, marginBottom: 4, fontSize: 14 }}>專案與權限指派</div>
+            <div>
               {projects.map((p) => {
                 const current =
                   members.find((m) => m.userId === editing.id && m.projectId === p.id)?.role ?? null
                 return (
-                  <div key={p.id} className="glass" style={{ padding: 12 }}>
-                    <div style={{ fontWeight: 800, marginBottom: 8 }}>{p.name}</div>
-                    <div className="chip-row">
-                      {(['admin', 'inspector', 'viewer'] as MemberRole[]).map((role) => (
-                        <button
-                          key={role}
-                          type="button"
-                          className={`chip ${current === role ? `on ${ROLE_TONE[role]}` : ''}`}
-                          onClick={() => setMemberRole(editing.id, p.id, role)}
-                        >
-                          {ROLE_LABEL[role].replace('人員', '').replace('僅', '')}
-                        </button>
-                      ))}
+                  <div key={p.id} className="perm-row">
+                    <div style={{ fontWeight: 700, fontSize: 14, minWidth: 0 }}>{p.name}</div>
+                    {current ? (
+                      <div className="chip-row">
+                        {(['admin', 'inspector', 'viewer'] as MemberRole[]).map((role) => (
+                          <button
+                            key={role}
+                            type="button"
+                            className={`chip ${current === role ? 'on' : ''}`}
+                            onClick={() => setMemberRole(editing.id, p.id, role)}
+                          >
+                            {ROLE_SHORT[role]}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
                       <button
                         type="button"
-                        className={`chip ${current === null ? 'on' : ''}`}
-                        onClick={() => setMemberRole(editing.id, p.id, null)}
+                        className="chip join-chip"
+                        onClick={() => setMemberRole(editing.id, p.id, 'inspector')}
                       >
-                        {current ? '移除' : '加入'}
+                        加入
                       </button>
-                    </div>
+                    )}
                   </div>
                 )
               })}
@@ -185,7 +193,7 @@ export function AccountsPage() {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ width: '100%', marginTop: 16 }}
+              style={{ width: '100%', marginTop: 18, boxShadow: '0 12px 24px -12px rgba(38, 75, 62, 0.55)' }}
               onClick={() => {
                 if (!editing.displayName.trim() || !editing.email.trim()) {
                   alert('請填寫顯示名稱與帳號')

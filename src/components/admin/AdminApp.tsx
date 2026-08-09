@@ -51,25 +51,13 @@ export function AdminApp() {
 
   return (
     <div className="admin-shell">
-      <aside className="admin-sidebar glass">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 12,
-              background: 'var(--green-deep)',
-              color: '#fff',
-              display: 'grid',
-              placeItems: 'center',
-              fontWeight: 800,
-            }}
-          >
-            驗
-          </div>
+      <aside className="admin-sidebar">
+        <div className="admin-brand">
+          <div className="admin-brand-mark">驗</div>
           <div>
-            <div className="serif" style={{ fontWeight: 700 }}>驗屋後台</div>
-            <div style={{ fontSize: 11, color: 'var(--ink-soft)', fontWeight: 600 }}>ADMIN</div>
+            <div className="serif" style={{ fontWeight: 700, fontSize: 17, lineHeight: 1.2 }}>
+              驗屋後台
+            </div>
           </div>
         </div>
 
@@ -86,30 +74,40 @@ export function AdminApp() {
           ))}
         </nav>
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 16 }}>
-          <div
+        <div className="admin-sidebar-foot">
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 999,
+                background: 'var(--green-deep)',
+                color: '#fff',
+                display: 'grid',
+                placeItems: 'center',
+                fontWeight: 800,
+              }}
+            >
+              {user.displayName.slice(0, 1)}
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 13 }}>{user.displayName}</div>
+              <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>系統管理者</div>
+            </div>
+          </div>
+          <a
+            href="#/"
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 999,
-              background: 'var(--green-deep)',
-              color: '#fff',
-              display: 'grid',
-              placeItems: 'center',
-              fontWeight: 800,
+              display: 'inline-block',
+              marginTop: 12,
+              fontSize: 12,
+              fontWeight: 700,
+              color: 'var(--ink-soft)',
             }}
           >
-            {user.displayName.slice(0, 1)}
-          </div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 13 }}>{user.displayName}</div>
-            <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>系統管理者</div>
-          </div>
+            ← 回現場 App
+          </a>
         </div>
-
-        <a href="#/" style={{ marginTop: 14, fontSize: 13, fontWeight: 700, color: 'var(--green-deep)' }}>
-          ← 回現場 App
-        </a>
       </aside>
 
       <main className="admin-main">
