@@ -1,0 +1,31 @@
+name: Deploy Firebase Rules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - firestore.rules
+      - storage.rules
+      - firebase.json
+      - .firebaserc
+      - .github/workflows/deploy-firebase-rules.yml
+  workflow_dispatch:
+
+jobs:
+  deploy-rules:
+    runs-on: ubuntu-latest
+    # 需在 repo Secrets 設定 FIREBASE_TOKEN（firebase login:ci）
+    if: ${{ secrets.FIREBASE_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+      - name: Deploy Firestore & Storage rules
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          firebase use ci-inspection
+          firebase deploy --only firestore:rules,storage --non-interactive

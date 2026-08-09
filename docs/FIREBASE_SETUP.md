@@ -143,12 +143,27 @@ firebase deploy --only functions,firestore:rules,storage
 
 ---
 
-## 6. 正式規則部署指令
+## 6. 正式規則部署指令（同步失敗必做）
 
+若後台出現「無法從雲端同步」或 Console 顯示  
+`FirebaseError: Missing or insufficient permissions`，代表**雲端規則尚未發布**（repo 裡的 `firestore.rules` 不會自動生效）。
+
+### 最快：Console 手動發布
+1. 開啟 [Firestore 規則](https://console.firebase.google.com/project/ci-inspection/firestore/rules)
+2. 貼上本 repo 的 `firestore.rules` 全文
+3. 按 **發布**
+4. 網站重新登入後再按「同步到雲端」
+
+### 本機 CLI
 ```bash
+firebase login
 firebase use ci-inspection
 firebase deploy --only firestore:rules,storage
 ```
+
+### GitHub Actions（可選）
+在 repo Secrets 新增 `FIREBASE_TOKEN`（本機執行 `firebase login:ci` 取得），  
+之後推送 `firestore.rules` / `storage.rules` 到 `main` 會自動部署。
 
 ---
 
@@ -157,6 +172,7 @@ firebase deploy --only firestore:rules,storage
 - [ ] GitHub Secrets 六個都已填，Pages 重新部署成功
 - [ ] 「我的」顯示 Firebase 已設定
 - [ ] 登入後 Authentication 出現使用者
+- [ ] 已發布 `firestore.rules`（後台「同步到雲端」成功、無 permission 錯誤）
 - [ ] 新增缺失後：Firestore 有 `projects/.../defects/...`，Storage 有照片
 - [ ] 後台建案已綁 Drive 資料夾，且資料夾已共用給服務帳戶
 - [ ] Cloud Function `mirrorDefectPhotoToDrive` 已部署
