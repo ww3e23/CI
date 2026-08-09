@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   setDoc,
   serverTimestamp,
@@ -38,6 +39,14 @@ export async function syncProjectMeta(project: ProjectMeta): Promise<boolean> {
     },
     { merge: true },
   )
+  return true
+}
+
+/** 刪除雲端專案文件（子集合建物／缺失需另行清理，此處先移除專案本體） */
+export async function deleteProjectMeta(projectId: string): Promise<boolean> {
+  const db = getDb()
+  if (!db) return false
+  await deleteDoc(doc(db, 'projects', projectId))
   return true
 }
 

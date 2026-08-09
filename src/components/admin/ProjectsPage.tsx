@@ -1,15 +1,29 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { Trash2, UserMinus } from 'lucide-react'
 import { useAuthStore } from '../../store/useAuthStore'
 import { createId } from '../../lib/id'
 import { driveFolderUrl, parseDriveFolderId } from '../../lib/driveFolder'
-import { ROLE_LABEL, ROLE_TONE, type ProjectMeta } from '../../types/auth'
+import {
+  ROLE_LABEL,
+  type MemberRole,
+  type ProjectMeta,
+} from '../../types/auth'
 import { Modal } from '../ui/Modal'
+
+const ROLE_SHORT: Record<MemberRole, string> = {
+  admin: '管理',
+  inspector: '查驗',
+  viewer: '查看',
+}
+
+const ROLE_OPTIONS: MemberRole[] = ['admin', 'inspector', 'viewer']
 
 export function ProjectsPage() {
   const projects = useAuthStore((s) => s.projects)
   const members = useAuthStore((s) => s.members)
   const users = useAuthStore((s) => s.users)
   const upsertProject = useAuthStore((s) => s.upsertProject)
+  const deleteProject = useAuthStore((s) => s.deleteProject)
   const setMemberRole = useAuthStore((s) => s.setMemberRole)
   const currentProjectId = useAuthStore((s) => s.currentProjectId)
 
@@ -18,15 +32,52 @@ export function ProjectsPage() {
   const [draft, setDraft] = useState({ name: '', code: '', location: '', driveInput: '' })
   const [driveInput, setDriveInput] = useState('')
   const [driveMsg, setDriveMsg] = useState('')
+  const [memberQuery, setMemberQuery] = useState('')
 
   const selected = projects.find((p) => p.id === selectedId) ?? null
   const selectedMembers = members.filter((m) => m.projectId === selectedId)
+
+  const memberRows = useMemo(() => {
+    return selectedMembers
+      .map((m) => {
+        const user = users.find((u) => u.id === m.userId)
+        return user ? { member: m, user } : null
+      })
+      .filter(Boolean)
+      .sort((a, b) =>
+        a!.user.displayName.localeCompare(b!.user.displayName, 'zh-Hant'),
+      ) as { member: (typeof selectedMembers)[number]; user: (typeof users)[number] }[]
+  }, [selectedMembers, users])
+
+  const q = memberQuery.trim().toLowerCase()
+  const filteredMembers = useMemo(() => {
+    if (!q) return memberRows
+    return memberRows.filter(
+      ({ user }) =>
+        user.displayName.toLowerCase().includes(q) ||
+        user.email.toLowerCase().includes(q),
+    )
+  }, [memberRows, q])
+
+  const candidates = useMemo(() => {
+    const inProject = new Set(selectedMembers.map((m) => m.userId))
+    return users
+      .filter((u) => u.active && !inProject.has(u.id))
+      .filter(
+        (u) =>
+          !q ||
+          u.displayName.toLowerCase().includes(q) ||
+          u.email.toLowerCase().includes(q),
+      )
+      .sort((a, b) => a.displayName.localeCompare(b.displayName, 'zh-Hant'))
+  }, [users, selectedMembers, q])
 
   function selectProject(id: string) {
     setSelectedId(id)
     const p = projects.find((x) => x.id === id)
     setDriveInput(p?.driveFolderUrl || p?.driveFolderId || '')
     setDriveMsg('')
+    setMemberQuery('')
   }
 
   function saveDriveFolder() {
@@ -51,7 +102,7 @@ export function ProjectsPage() {
         <div>
           <h1 className="serif" style={{ margin: 0, fontSize: 28 }}>專案管理</h1>
           <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)' }}>
-            共 {projects.filter((p) => p.status === 'active').length} 個進行中專案
+            共 {projects.filter((p) => p.status === 'active').length} 個進行中專案 · 點專案即可指派人員
           </p>
         </div>
         <button
@@ -146,45 +197,174 @@ export function ProjectsPage() {
             </div>
           </details>
 
-          <h3 className="serif" style={{ margin: '0 0 8px', fontSize: 18 }}>成員</h3>
-          <div style={{ display: 'grid', gap: 8 }}>
-            {selectedMembers.map((m) => {
-              const u = users.find((x) => x.id === m.userId)
-              if (!u) return null
-              return (
-                <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <span className="avatar-sm">{u.displayName.slice(0, 1)}</span>
-                    <div>
-                      <div style={{ fontWeight: 800 }}>{u.displayName}</div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>{u.email}</div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              gap: 12,
+              marginBottom: 8,
+              flexWrap: 'wrap',
+            }}
+          >
+            <h3 className="serif" style={{ margin: 0, fontSize: 18 }}>
+              成員指派
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-soft)', marginLeft: 8 }}>
+                {selectedMembers.length} 人
+              </span>
+            </h3>
+          </div>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
+            以本專案為中心設定誰可進入、以及角色（管理／查驗／查看）。人數多時可先搜尋再加入。
+          </p>
+
+          <div className="field" style={{ marginBottom: 12 }}>
+            <label>搜尋人員</label>
+            <input
+              value={memberQuery}
+              onChange={(e) => setMemberQuery(e.target.value)}
+              placeholder="姓名或帳號"
+            />
+          </div>
+
+          <div className="project-member-list">
+            {filteredMembers.map(({ member, user }) => (
+              <div key={member.id} className="perm-row project-member-row">
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+                  <span className="avatar-sm">{user.displayName.slice(0, 1)}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 800 }}>{user.displayName}</div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--ink-soft)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {user.email}
                     </div>
                   </div>
-                  <span className={`role-tag ${ROLE_TONE[m.role]}`}>{ROLE_LABEL[m.role]}</span>
                 </div>
-              )
-            })}
+                <div className="project-member-actions">
+                  <div className="chip-row">
+                    {ROLE_OPTIONS.map((role) => (
+                      <button
+                        key={role}
+                        type="button"
+                        className={`chip ${member.role === role ? 'on' : ''}`}
+                        title={ROLE_LABEL[role]}
+                        onClick={() => setMemberRole(user.id, selected.id, role)}
+                      >
+                        {ROLE_SHORT[role]}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={`移出 ${user.displayName}`}
+                    title="移出本專案"
+                    onClick={() => {
+                      if (confirm(`將「${user.displayName}」移出「${selected.name}」？`)) {
+                        setMemberRole(user.id, selected.id, null)
+                      }
+                    }}
+                  >
+                    <UserMinus size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
             {selectedMembers.length === 0 && (
-              <p style={{ color: 'var(--ink-soft)' }}>尚無成員，請到帳號管理指派。</p>
+              <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0' }}>
+                尚無成員，請從下方名單加入。
+              </p>
+            )}
+            {selectedMembers.length > 0 && filteredMembers.length === 0 && (
+              <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0' }}>沒有符合搜尋的已加入成員</p>
             )}
           </div>
 
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>快速加入既有帳號（查驗）</div>
-            <div className="chip-row">
-              {users
-                .filter((u) => u.active && !selectedMembers.some((m) => m.userId === u.id))
-                .map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    className="chip"
-                    onClick={() => setMemberRole(u.id, selected.id, 'inspector')}
-                  >
-                    + {u.displayName}
-                  </button>
+          <div style={{ marginTop: 18 }}>
+            <div style={{ fontWeight: 800, marginBottom: 4, fontSize: 14 }}>加入人員</div>
+            <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--ink-soft)' }}>
+              點「加入」預設為查驗；加入後可再改角色。
+            </p>
+            {candidates.length === 0 ? (
+              <p style={{ color: 'var(--ink-soft)', margin: 0, fontSize: 13 }}>
+                {q ? '沒有符合搜尋的可加入帳號' : '所有啟用帳號都已在本專案中'}
+              </p>
+            ) : (
+              <div className="project-candidate-list">
+                {candidates.map((u) => (
+                  <div key={u.id} className="perm-row project-member-row">
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+                      <span className="avatar-sm">{u.displayName.slice(0, 1)}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{u.displayName}</div>
+                        <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>{u.email}</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="chip join-chip"
+                      onClick={() => setMemberRole(u.id, selected.id, 'inspector')}
+                    >
+                      加入
+                    </button>
+                  </div>
                 ))}
-            </div>
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              marginTop: 22,
+              paddingTop: 16,
+              borderTop: '1px solid rgba(34,41,31,0.1)',
+            }}
+          >
+            <h3 className="serif" style={{ margin: '0 0 6px', fontSize: 18, color: 'var(--terracotta)' }}>
+              危險操作
+            </h3>
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
+              刪除後會移除本專案的查驗資料、成員指派與操作歷程，且無法復原。
+            </p>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{
+                color: 'var(--terracotta)',
+                borderColor: 'rgba(174,76,59,0.35)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+              onClick={() => {
+                const name = selected.name
+                if (
+                  !confirm(
+                    `確定刪除專案「${name}」？\n將一併清除該專案的查驗資料、成員與操作歷程，此操作無法復原。`,
+                  )
+                ) {
+                  return
+                }
+                if (!confirm(`再次確認：真的要刪除「${name}」？`)) return
+                const result = deleteProject(selected.id)
+                if (!result.ok) {
+                  alert(result.error || '刪除失敗')
+                  return
+                }
+                setSelectedId(null)
+                setDriveMsg('')
+              }}
+            >
+              <Trash2 size={16} />
+              刪除此專案
+            </button>
           </div>
         </section>
       )}

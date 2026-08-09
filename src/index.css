@@ -1172,6 +1172,45 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   box-shadow: none;
 }
 
+.project-member-list,
+.project-candidate-list {
+  border: 1px solid rgba(34, 41, 31, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 252, 246, 0.65);
+  padding: 0 14px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.project-member-row {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.project-member-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.project-member-actions .chip-row {
+  flex-wrap: nowrap;
+}
+
+@media (max-width: 720px) {
+  .project-member-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .project-member-actions {
+    margin-left: 0;
+    justify-content: space-between;
+  }
+}
+
 @media (max-width: 1100px) {
   .admin-layout {
     grid-template-columns: 1fr;

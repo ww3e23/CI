@@ -4,8 +4,8 @@ import { useAuthStore } from '../../store/useAuthStore'
 
 export function LoginPage() {
   const login = useAuthStore((s) => s.login)
-  const [email, setEmail] = useState('inspector01@site.tw')
-  const [password, setPassword] = useState('demo1234')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
   return (
@@ -54,7 +54,7 @@ export function LoginPage() {
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="inspector01@site.tw"
+              placeholder="email@example.com"
               autoComplete="username"
             />
           </div>
@@ -80,8 +80,6 @@ export function LoginPage() {
 
         <p style={{ marginTop: 14, textAlign: 'center', color: 'var(--ink-soft)', fontSize: 12, lineHeight: 1.5 }}>
           尚未開放自行註冊，若忘記密碼請聯繫專案管理者重設。
-          <br />
-          示範：inspector01@site.tw / demo1234　｜　後台 admin@site.tw / admin1234
         </p>
       </div>
     </div>

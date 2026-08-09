@@ -58,7 +58,19 @@ export function HomePage({
   }
 
   if (!unit || !progress) {
-    return <div className="rise"><p>請先到「我的」建立棟樓戶結構。</p></div>
+    return (
+      <div className="rise">
+        <header style={{ marginBottom: 12 }}>
+          <div className="eyebrow">SITE INSPECTION</div>
+          <h1 className="serif" style={{ margin: '4px 0 0', fontSize: 22 }}>
+            {currentProject?.name ?? projectName}
+          </h1>
+        </header>
+        <p style={{ color: 'var(--ink-soft)', lineHeight: 1.5 }}>
+          此專案尚未建立棟樓戶結構。請到「我的」設定棟別與查驗範本後再開始查驗。
+        </p>
+      </div>
+    )
   }
 
   const ring = 2 * Math.PI * 42

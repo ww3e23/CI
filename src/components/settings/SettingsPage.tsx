@@ -43,7 +43,17 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
 
       <div className="section-row" style={{ marginTop: embedded ? 0 : undefined }}>
         <h2>棟別結構</h2>
-        <button type="button" className="link" onClick={resetDemoData}>還原示範</button>
+        <button
+          type="button"
+          className="link"
+          onClick={() => {
+            if (confirm('確定清空本專案的棟別、範本、缺失與歷程？此操作無法復原。')) {
+              resetDemoData()
+            }
+          }}
+        >
+          清空本專案
+        </button>
       </div>
 
       <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.5 }}>

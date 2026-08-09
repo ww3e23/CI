@@ -10,7 +10,7 @@ import type { MemberRole, ProjectMember, ProjectMeta, UserAccount } from '../typ
 import { seedMembers, seedProjects, seedUsers } from '../data/authSeed'
 import { createId } from '../lib/id'
 import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase'
-import { syncProjectMeta } from '../services/cloudSync'
+import { deleteProjectMeta, syncProjectMeta } from '../services/cloudSync'
 import { useProjectStore } from './useProjectStore'
 
 interface AuthState {
@@ -32,6 +32,7 @@ interface AuthActions {
   setUserActive: (userId: string, active: boolean) => void
   setMemberRole: (userId: string, projectId: string, role: MemberRole | null) => void
   upsertProject: (project: ProjectMeta) => void
+  deleteProject: (projectId: string) => { ok: boolean; error?: string }
   resetAuthDemo: () => void
 }
 
@@ -105,14 +106,21 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         const memberships = get().members.filter((m) => m.userId === user.id)
         const firstProject =
           memberships[0]?.projectId ??
-          (user.systemAdmin ? get().projects[0]?.id : null)
-        if (!firstProject) {
+          (user.systemAdmin ? get().projects[0]?.id ?? null : null)
+
+        // 系統管理者可在尚無專案時登入，進後台建立
+        if (!firstProject && !user.systemAdmin) {
           return { ok: false, error: '此帳號尚未被指派任何專案' }
         }
+
         set({ currentUserId: user.id, currentProjectId: firstProject })
-        useProjectStore.getState().loadProjectBundle(firstProject)
-        const lastUnit = get().lastUnitByProject[firstProject]
-        if (lastUnit) useProjectStore.getState().setCurrentUnit(lastUnit)
+        if (firstProject) {
+          useProjectStore.getState().loadProjectBundle(firstProject)
+          const lastUnit = get().lastUnitByProject[firstProject]
+          if (lastUnit) useProjectStore.getState().setCurrentUnit(lastUnit)
+        } else {
+          useProjectStore.getState().resetDemoData()
+        }
         return { ok: true }
       },
 
@@ -219,11 +227,55 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         }
       },
 
-      resetAuthDemo: () => set(projectSlice()),
+      deleteProject: (projectId) => {
+        const { projects, currentProjectId, members, lastUnitByProject } = get()
+        const target = projects.find((p) => p.id === projectId)
+        if (!target) return { ok: false, error: '找不到專案' }
+
+        if (currentProjectId) {
+          useProjectStore.getState().saveProjectBundle(currentProjectId)
+        }
+
+        const nextProjects = projects.filter((p) => p.id !== projectId)
+        const nextMembers = members.filter((m) => m.projectId !== projectId)
+        const nextLast = { ...lastUnitByProject }
+        delete nextLast[projectId]
+
+        let nextCurrent = currentProjectId
+        if (currentProjectId === projectId) {
+          nextCurrent = nextProjects[0]?.id ?? null
+        }
+
+        set({
+          projects: nextProjects,
+          members: nextMembers,
+          lastUnitByProject: nextLast,
+          currentProjectId: nextCurrent,
+        })
+
+        useProjectStore.getState().removeProjectBundle(projectId)
+        if (nextCurrent && nextCurrent !== currentProjectId) {
+          useProjectStore.getState().loadProjectBundle(nextCurrent)
+          const lastUnit = nextLast[nextCurrent]
+          if (lastUnit) useProjectStore.getState().setCurrentUnit(lastUnit)
+        } else if (!nextCurrent) {
+          useProjectStore.getState().resetDemoData()
+        }
+
+        if (isFirebaseConfigured()) {
+          void deleteProjectMeta(projectId)
+        }
+        return { ok: true }
+      },
+
+      resetAuthDemo: () => {
+        set(projectSlice())
+        useProjectStore.getState().resetDemoData()
+      },
     }),
     {
-      name: 'site-auth-v1',
-      version: 1,
+      name: 'site-auth-v2',
+      version: 2,
     },
   ),
 )
