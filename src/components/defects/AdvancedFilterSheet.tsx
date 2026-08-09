@@ -99,10 +99,10 @@ export function AdvancedFilterSheet({
   ]
 
   return (
-    <Modal onClose={onClose} aria-label="進階篩選">
+    <Modal onClose={onClose} aria-label="進階篩選" variant="bottom">
         <h3 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>進階篩選</h3>
         <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13 }}>
-          可組合棟／樓／戶、工項、區域、狀態與日期，套用後會實際過濾列表。
+          可組合棟／樓／戶、查驗大項、區域、人員與日期；狀態請用上方快捷 chip。
         </p>
 
         <Section title="棟別（可複選）">
