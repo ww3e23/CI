@@ -19,13 +19,29 @@ export function DefectsPage() {
   const items = useProjectStore((s) => s.checklistItems)
 
   const [quickStatus, setQuickStatus] = useState<QuickStatus>('all')
+  const [quickCategory, setQuickCategory] = useState<string>('all')
   const [filters, setFilters] = useState<DefectFilters>(emptyFilters())
   const [sheetOpen, setSheetOpen] = useState(false)
 
   const filtered = useMemo(
-    () => applyFilters(defects, filters, quickStatus),
-    [defects, filters, quickStatus],
+    () => applyFilters(defects, filters, quickStatus, quickCategory),
+    [defects, filters, quickStatus, quickCategory],
   )
+
+  const categoryTabs = useMemo(() => {
+    const open = defects.filter((d) => d.status !== 'voided')
+    return [
+      { id: 'all', name: '全部大項', count: open.length },
+      ...categories
+        .filter((c) => c.active)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          count: open.filter((d) => d.categoryId === c.id).length,
+        })),
+    ]
+  }, [defects, categories])
 
   const counts = defectsByStatus(defects)
 
@@ -59,7 +75,7 @@ export function DefectsPage() {
         </button>
       </header>
 
-      <div className="chip-row" style={{ marginBottom: 10 }}>
+      <div className="chip-row" style={{ marginBottom: 8 }}>
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -68,6 +84,19 @@ export function DefectsPage() {
             onClick={() => setQuickStatus(t.key)}
           >
             {t.label} {t.count}
+          </button>
+        ))}
+      </div>
+
+      <div className="chip-row" style={{ marginBottom: 10, flexWrap: 'nowrap', overflowX: 'auto' }}>
+        {categoryTabs.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className={`chip ${quickCategory === c.id ? 'on' : ''}`}
+            onClick={() => setQuickCategory(c.id)}
+          >
+            {c.name} {c.count}
           </button>
         ))}
       </div>
@@ -112,15 +141,15 @@ export function DefectsPage() {
         {filtered.map((d) => (
           <article key={d.id} className="glass" style={{ padding: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
             <div style={{ display: 'grid', gap: 4 }}>
-              <Thumb label="位置" />
-              <Thumb label="現況" />
+              <Thumb label="位置" src={d.planPhotoDataUrl} />
+              <Thumb label="現況" src={d.photoDataUrls[0]} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 800, fontSize: 14 }}>
                 #{d.defectNumber} {d.area}｜{d.description}
               </div>
               <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-                {d.buildingName} {d.floor} {d.unitCode}戶 · {statusLabel(d.status)}
+                {d.categoryName} · {d.buildingName} {d.floor} {d.unitCode}戶 · {statusLabel(d.status)}
               </div>
             </div>
             <ChevronRight size={18} color="var(--stone)" />
@@ -144,11 +173,17 @@ export function DefectsPage() {
   )
 }
 
-function applyFilters(defects: Defect[], f: DefectFilters, quick: QuickStatus): Defect[] {
+function applyFilters(
+  defects: Defect[],
+  f: DefectFilters,
+  quick: QuickStatus,
+  quickCategory: string,
+): Defect[] {
   return defects.filter((d) => {
     if (d.status === 'voided') return false
 
     if (quick !== 'all' && d.status !== quick) return false
+    if (quickCategory !== 'all' && d.categoryId !== quickCategory) return false
 
     if (f.buildingIds.length && !f.buildingIds.includes(d.buildingId)) return false
     if (f.floors.length && !f.floors.includes(d.floor)) return false
@@ -275,7 +310,16 @@ function describeFilters(
   return chips
 }
 
-function Thumb({ label }: { label: string }) {
+function Thumb({ label, src }: { label: string; src?: string }) {
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={label}
+        style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover' }}
+      />
+    )
+  }
   return (
     <div
       style={{

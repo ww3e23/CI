@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Cloud, CloudOff, Pencil, RefreshCw } from 'lucide-react'
+import { ChevronDown, Cloud, CloudOff, Pencil, RefreshCw } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import {
   useAuthStore,
@@ -9,6 +9,7 @@ import {
 } from '../../store/useAuthStore'
 import { firebaseModeLabel, isFirebaseConfigured } from '../../lib/firebase'
 import { SettingsPage } from '../settings/SettingsPage'
+import { ProjectSwitcher } from '../home/ProjectSwitcher'
 import { ROLE_LABEL, ROLE_TONE } from '../../types/auth'
 
 export function ProfilePage() {
@@ -17,6 +18,7 @@ export function ProfilePage() {
   const project = useCurrentProject()
   const members = useAuthStore((s) => s.members)
   const projects = useAuthStore((s) => s.projects)
+  const switchProject = useAuthStore((s) => s.switchProject)
   const updateDisplayName = useAuthStore((s) => s.updateDisplayName)
   const logout = useAuthStore((s) => s.logout)
   const pushStructureToCloud = useProjectStore((s) => s.pushStructureToCloud)
@@ -25,6 +27,7 @@ export function ProfilePage() {
   const [name, setName] = useState(user?.displayName ?? '')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  const [projectOpen, setProjectOpen] = useState(false)
   const cloud = isFirebaseConfigured()
   const mode = firebaseModeLabel()
 
@@ -103,10 +106,44 @@ export function ProfilePage() {
 
       <div className="section-row">
         <h2>所屬專案與權限</h2>
+        <button type="button" className="link" onClick={() => setProjectOpen(true)}>
+          切換專案
+        </button>
       </div>
+
+      {project && (
+        <section className="glass-green" style={{ padding: 14, marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.9 }}>目前專案</div>
+          <div className="serif" style={{ fontSize: 20, fontWeight: 700, marginTop: 4 }}>
+            {project.name}
+          </div>
+          <div style={{ fontSize: 12, marginTop: 4, opacity: 0.9, fontWeight: 600 }}>
+            {project.code} · {project.location}
+            {role ? ` · ${ROLE_LABEL[role]}` : ''}
+          </div>
+          <button
+            type="button"
+            className="btn"
+            style={{
+              marginTop: 12,
+              width: '100%',
+              minHeight: 42,
+              background: 'rgba(255,255,255,0.22)',
+              color: '#fff',
+              fontWeight: 800,
+            }}
+            onClick={() => setProjectOpen(true)}
+          >
+            切換專案 <ChevronDown size={16} />
+          </button>
+          <div style={{ fontSize: 11, marginTop: 8, opacity: 0.88 }}>
+            調整棟別／樓層／戶別結構前，請先確認已切到正確專案。
+          </div>
+        </section>
+      )}
+
       <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12 }}>
-        權限由各專案管理者於後台指派，無法自行變更
-        {project && role ? ` · 目前專案角色：${ROLE_LABEL[role]}` : ''}
+        權限由各專案管理者於後台指派，無法自行變更。點專案卡片可直接切換。
       </p>
       <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
         {myProjects.map((p) => {
@@ -115,14 +152,34 @@ export function ProfilePage() {
               ? 'admin'
               : members.find((m) => m.userId === user.id && m.projectId === p.id)?.role
           if (!r) return null
+          const isCurrent = project?.id === p.id
           return (
-            <article key={p.id} className="glass" style={{ padding: 12, display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+            <button
+              key={p.id}
+              type="button"
+              className={isCurrent ? 'glass-green' : 'glass'}
+              style={{
+                padding: 12,
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 8,
+                alignItems: 'center',
+                textAlign: 'left',
+                borderRadius: 20,
+              }}
+              onClick={() => switchProject(p.id)}
+            >
               <div>
-                <div style={{ fontWeight: 800 }}>{p.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600 }}>{p.code}</div>
+                <div style={{ fontWeight: 800 }}>
+                  {p.name}
+                  {isCurrent ? ' · 目前' : ''}
+                </div>
+                <div style={{ fontSize: 12, opacity: isCurrent ? 0.9 : 1, color: isCurrent ? undefined : 'var(--ink-soft)', fontWeight: 600 }}>
+                  {p.code}
+                </div>
               </div>
               <span className={`role-tag ${ROLE_TONE[r]}`}>{ROLE_LABEL[r]}</span>
-            </article>
+            </button>
           )
         })}
       </div>
@@ -183,6 +240,8 @@ export function ProfilePage() {
       >
         登出
       </button>
+
+      {projectOpen && <ProjectSwitcher onClose={() => setProjectOpen(false)} />}
     </div>
   )
 }

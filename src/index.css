@@ -40,6 +40,17 @@
 
 * { box-sizing: border-box; }
 
+/* 隱藏所有滑軌，仍可滑動 */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 html, body, #root {
   margin: 0;
   min-height: 100%;
@@ -790,6 +801,77 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   .admin-layout {
     grid-template-columns: 1fr;
   }
+}
+
+/* 全螢幕圖面標註 */
+.annotate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: #1c211d;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+.annotate-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 12px calc(8px + env(safe-area-inset-top, 0px));
+}
+
+.annotate-bar .icon-btn { color: #fff; }
+
+.annotate-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 12px 10px;
+  align-items: center;
+}
+
+.annotate-tools .chip {
+  min-height: 34px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: transparent;
+}
+
+.annotate-tools .chip.on {
+  background: var(--green-deep);
+}
+
+.color-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: none;
+}
+
+.annotate-canvas-wrap {
+  flex: 1;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  padding: 8px 12px 16px;
+}
+
+.annotate-canvas {
+  touch-action: none;
+  max-width: 100%;
+  border-radius: 12px;
+  background: #111;
+  box-shadow: var(--shadow-soft);
+}
+
+.annotate-hint {
+  margin: 0;
+  padding: 0 14px calc(12px + env(safe-area-inset-bottom, 0px));
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
 }
 
 @media (min-width: 900px) {
