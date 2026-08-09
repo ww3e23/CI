@@ -11,6 +11,7 @@ import { seedMembers, seedProjects, seedUsers } from '../data/authSeed'
 import { createId } from '../lib/id'
 import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase'
 import { deleteProjectMeta, syncProjectMeta } from '../services/cloudSync'
+import { provisionFirebaseAuthUser } from '../services/firebaseAuthProvision'
 import { useProjectStore } from './useProjectStore'
 
 interface AuthState {
@@ -28,7 +29,10 @@ interface AuthActions {
   logout: () => Promise<void>
   updateDisplayName: (name: string) => void
   switchProject: (projectId: string) => void
-  upsertUser: (user: UserAccount) => void
+  upsertUser: (
+    user: UserAccount,
+    options?: { provisionFirebase?: boolean },
+  ) => Promise<{ ok: boolean; firebaseMessage?: string; error?: string }>
   setUserActive: (userId: string, active: boolean) => void
   setMemberRole: (userId: string, projectId: string, role: MemberRole | null) => void
   upsertProject: (project: ProjectMeta) => void
@@ -179,12 +183,51 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         if (lastUnit) useProjectStore.getState().setCurrentUnit(lastUnit)
       },
 
-      upsertUser: (user) => {
+      upsertUser: async (user, options) => {
+        const nextUser: UserAccount = {
+          ...user,
+          email: user.email.trim(),
+          displayName: user.displayName.trim(),
+          password: user.password.trim(),
+          active: true,
+        }
+        if (!nextUser.email || !nextUser.displayName) {
+          return { ok: false, error: '請填寫顯示名稱與帳號' }
+        }
+        if (!nextUser.password || nextUser.password.length < 6) {
+          return { ok: false, error: '密碼至少需 6 碼（Firebase 規定）' }
+        }
+
+        const shouldProvision = options?.provisionFirebase !== false
+        let firebaseMessage: string | undefined
+
+        if (shouldProvision && isFirebaseConfigured()) {
+          const provision = await provisionFirebaseAuthUser({
+            email: nextUser.email,
+            password: nextUser.password,
+            displayName: nextUser.displayName,
+          })
+          if (!provision.ok) {
+            return { ok: false, error: provision.error || 'Firebase 登記失敗' }
+          }
+          if (provision.created) {
+            firebaseMessage = '已同步建立 Firebase Authentication 帳號'
+          } else if (provision.alreadyExists) {
+            firebaseMessage =
+              '本機已儲存；Firebase 已有此 Email（若密碼不同，請在 Console 重設或沿用原密碼）'
+          } else {
+            firebaseMessage = provision.error
+          }
+        } else if (shouldProvision) {
+          firebaseMessage = '尚未設定 Firebase，僅存本機帳號'
+        }
+
         const users = [...get().users]
-        const idx = users.findIndex((u) => u.id === user.id)
-        if (idx >= 0) users[idx] = user
-        else users.push(user)
+        const idx = users.findIndex((u) => u.id === nextUser.id)
+        if (idx >= 0) users[idx] = nextUser
+        else users.push(nextUser)
         set({ users })
+        return { ok: true, firebaseMessage }
       },
 
       setUserActive: (userId, active) => {

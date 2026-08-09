@@ -12,6 +12,10 @@ const config = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID as string | undefined,
 }
 
+export function getFirebaseWebConfig() {
+  return config
+}
+
 export function isFirebaseConfigured(): boolean {
   return Boolean(config.apiKey && config.projectId && config.appId)
 }
