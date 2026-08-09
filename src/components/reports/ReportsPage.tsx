@@ -3,15 +3,15 @@ import { FileDown } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentProject } from '../../store/useAuthStore'
 import { buildMatrix, formatActivity } from '../../lib/progress'
-import { openInspectionReport } from '../../lib/reportDocument'
 import type { ProgressCell } from '../../types'
+import { ReportPreview } from './ReportPreview'
 
 export function ReportsPage() {
   const state = useProjectStore()
   const project = useCurrentProject()
   const matrix = useMemo(() => buildMatrix(state), [state])
   const [selected, setSelected] = useState<ProgressCell | null>(null)
-  const [exportHint, setExportHint] = useState('')
+  const [previewOpen, setPreviewOpen] = useState(false)
   const setCurrentUnit = useProjectStore((s) => s.setCurrentUnit)
 
   const cellMap = useMemo(() => {
@@ -20,19 +20,7 @@ export function ReportsPage() {
     return m
   }, [matrix.cells])
 
-  function handleExport() {
-    const win = openInspectionReport({
-      projectName: project?.name ?? state.projectName,
-      projectCode: project?.code,
-      location: project?.location,
-      state,
-    })
-    setExportHint(
-      win
-        ? '已開啟報告預覽，可按「列印／匯出 PDF」存檔'
-        : '瀏覽器封鎖了彈出視窗，請允許後再試',
-    )
-  }
+  const reportName = project?.name ?? state.projectName
 
   return (
     <div className="rise">
@@ -43,17 +31,18 @@ export function ReportsPage() {
             查驗進度色塊矩陣
           </h1>
           <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)', fontSize: 13 }}>
-            棟別 × 樓層 × 戶別一次看完全案；也可匯出質感報告 PDF。
+            棟別 × 樓層 × 戶別一次看完全案；可預覽並匯出質感報告。
           </p>
         </div>
-        <button type="button" className="btn btn-primary" style={{ flexShrink: 0 }} onClick={handleExport}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ flexShrink: 0 }}
+          onClick={() => setPreviewOpen(true)}
+        >
           <FileDown size={16} /> 匯出報告
         </button>
       </header>
-
-      {exportHint && (
-        <div className="sync-hint" style={{ marginBottom: 10 }}>{exportHint}</div>
-      )}
 
       <section className="glass-green" style={{ padding: 14, marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -189,6 +178,16 @@ export function ReportsPage() {
         <span>{matrix.floors.length}層 × {matrix.activeUnitCount}戶（NA:{matrix.naCount}）</span>
         <span>總進度 {matrix.overallPercent}%</span>
       </div>
+
+      {previewOpen && (
+        <ReportPreview
+          projectName={reportName}
+          projectCode={project?.code}
+          location={project?.location}
+          state={state}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
     </div>
   )
 }
