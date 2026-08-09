@@ -9,6 +9,7 @@ import {
   emptyFilters,
   type DefectFilters,
 } from './AdvancedFilterSheet'
+import { DefectDetailModal } from './DefectDetailModal'
 
 type QuickStatus = 'all' | DefectStatus
 
@@ -23,6 +24,7 @@ export function DefectsPage() {
   const [quickCategory, setQuickCategory] = useState<string>('all')
   const [filters, setFilters] = useState<DefectFilters>(emptyFilters())
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [selectedDefect, setSelectedDefect] = useState<Defect | null>(null)
 
   const filtered = useMemo(
     () => applyFilters(defects, filters, quickStatus, quickCategory),
@@ -138,7 +140,20 @@ export function DefectsPage() {
 
       <div style={{ display: 'grid', gap: 10 }}>
         {filtered.map((d) => (
-          <article key={d.id} className="glass" style={{ padding: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            key={d.id}
+            type="button"
+            className="glass"
+            style={{
+              padding: 12,
+              display: 'flex',
+              gap: 10,
+              alignItems: 'center',
+              width: '100%',
+              textAlign: 'left',
+            }}
+            onClick={() => setSelectedDefect(d)}
+          >
             <div style={{ display: 'grid', gap: 4 }}>
               <Thumb label="位置" src={d.planPhotoDataUrl} />
               <Thumb label="現況" src={d.photoDataUrls[0]} />
@@ -152,7 +167,7 @@ export function DefectsPage() {
               </div>
             </div>
             <ChevronRight size={18} color="var(--stone)" />
-          </article>
+          </button>
         ))}
         {filtered.length === 0 && (
           <div className="glass" style={{ padding: 20, textAlign: 'center', color: 'var(--ink-soft)' }}>
@@ -167,6 +182,10 @@ export function DefectsPage() {
           onApply={setFilters}
           onClose={() => setSheetOpen(false)}
         />
+      )}
+
+      {selectedDefect && (
+        <DefectDetailModal defect={selectedDefect} onClose={() => setSelectedDefect(null)} />
       )}
     </div>
   )

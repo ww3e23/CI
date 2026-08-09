@@ -51,7 +51,7 @@ export function ProjectsPage() {
         <div>
           <h1 className="serif" style={{ margin: 0, fontSize: 28 }}>專案管理</h1>
           <p style={{ margin: '6px 0 0', color: 'var(--ink-soft)' }}>
-            共 {projects.filter((p) => p.status === 'active').length} 個進行中專案；每個專案可綁不同 Google 雲端硬碟資料夾
+            共 {projects.filter((p) => p.status === 'active').length} 個進行中專案
           </p>
         </div>
         <button
@@ -108,38 +108,43 @@ export function ProjectsPage() {
         <section className="admin-panel" style={{ marginTop: 18, padding: 18 }}>
           <h2 className="serif" style={{ margin: '0 0 8px' }}>{selected.name} · 設定</h2>
 
-          <div className="field" style={{ marginBottom: 14 }}>
-            <label>Google 雲端硬碟資料夾</label>
-            <input
-              value={driveInput}
-              onChange={(e) => setDriveInput(e.target.value)}
-              placeholder="貼上資料夾網址，例如 https://drive.google.com/drive/folders/xxxxx"
-            />
-            <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 6, lineHeight: 1.45 }}>
-              每個建案可指向不同資料夾。請把該資料夾「共用」給 Firebase 服務帳戶（見設定文件）。
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-              <button type="button" className="btn btn-primary" onClick={saveDriveFolder}>
-                儲存雲端硬碟設定
-              </button>
-              {selected.driveFolderUrl && (
-                <a
-                  className="btn btn-ghost"
-                  href={selected.driveFolderUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ textDecoration: 'none' }}
-                >
-                  開啟資料夾
-                </a>
+          <details style={{ marginBottom: 16 }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 800, color: 'var(--ink-soft)', fontSize: 13 }}>
+              Google 雲端硬碟（進階／暫可不設定）
+            </summary>
+            <div className="field" style={{ marginTop: 10 }}>
+              <label>資料夾網址</label>
+              <input
+                value={driveInput}
+                onChange={(e) => setDriveInput(e.target.value)}
+                placeholder="https://drive.google.com/drive/folders/xxxxx"
+              />
+              <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 6, lineHeight: 1.45 }}>
+                需另部署 Cloud Function 才會自動鏡像；目前以 Firebase Storage＋App 內下載／報告為主。
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-ghost" onClick={saveDriveFolder}>
+                  儲存（可選）
+                </button>
+                {selected.driveFolderUrl && (
+                  <a
+                    className="btn btn-ghost"
+                    href={selected.driveFolderUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    開啟資料夾
+                  </a>
+                )}
+              </div>
+              {driveMsg && (
+                <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: 'var(--green-deep)' }}>
+                  {driveMsg}
+                </div>
               )}
             </div>
-            {driveMsg && (
-              <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: 'var(--green-deep)' }}>
-                {driveMsg}
-              </div>
-            )}
-          </div>
+          </details>
 
           <h3 className="serif" style={{ margin: '0 0 8px', fontSize: 18 }}>成員</h3>
           <div style={{ display: 'grid', gap: 8 }}>
