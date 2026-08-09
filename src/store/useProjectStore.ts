@@ -14,6 +14,11 @@ import { createEmptyProjectState, createProjectBundles } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
 import { cloudReady, syncDefect, syncProjectStructure } from '../services/cloudSync'
+import {
+  mergeProjectStates,
+  pullProjectState,
+  pushProjectState,
+} from '../services/projectSync'
 import { uploadDataUrl } from '../services/storageUpload'
 import { firebaseModeLabel } from '../lib/firebase'
 
@@ -37,6 +42,10 @@ interface ProjectActions {
   markUnitChecked: (unitId: string, checked: number) => void
   resetDemoData: () => void
   pushStructureToCloud: () => Promise<{ ok: boolean; mode: string }>
+  /** 從雲端拉取並與本機合併（登入／切專案／開 App） */
+  hydrateFromCloud: (projectId: string) => Promise<{ ok: boolean; error?: string }>
+  /** 立刻把作用中專案存本機並推上雲端 */
+  flushSyncNow: () => Promise<{ ok: boolean }>
   loadProjectBundle: (projectId: string) => void
   saveProjectBundle: (projectId: string) => void
   ensureProjectBundle: (projectId: string, name: string) => void
@@ -48,6 +57,63 @@ interface ProjectActions {
   removeCategory: (categoryId: string) => { ok: boolean; reason?: string }
   upsertChecklistItem: (item: ChecklistItem) => void
   removeChecklistItem: (itemId: string) => { ok: boolean; reason?: string }
+}
+
+let syncTimer: ReturnType<typeof setTimeout> | null = null
+let syncing = false
+let pendingFlush = false
+
+function scheduleCloudSync(get: () => ProjectState & BundleState) {
+  if (!cloudReady()) return
+  if (syncTimer) clearTimeout(syncTimer)
+  syncTimer = setTimeout(() => {
+    syncTimer = null
+    void flushCloudSync(get)
+  }, 700)
+}
+
+async function flushCloudSync(get: () => ProjectState & BundleState): Promise<boolean> {
+  if (!cloudReady()) return false
+  const projectId = get().activeProjectId
+  if (!projectId) return false
+  if (syncing) {
+    pendingFlush = true
+    return false
+  }
+  syncing = true
+  try {
+    const { useAuthStore } = await import('./useAuthStore')
+    const meta = useAuthStore.getState().projects.find((p) => p.id === projectId)
+    await pushProjectState(projectId, snapshotProject(get()), meta)
+    return true
+  } catch (err) {
+    console.warn('[flushCloudSync] failed', err)
+    return false
+  } finally {
+    syncing = false
+    if (pendingFlush) {
+      pendingFlush = false
+      void flushCloudSync(get)
+    }
+  }
+}
+
+/** 每次變更：立刻寫入 bundle（防滑掉 App 遺失），並 debounce 上雲 */
+function afterProjectChange(
+  get: () => ProjectState & BundleState & ProjectActions,
+  set: (partial: Partial<ProjectState & BundleState>) => void,
+) {
+  const projectId = get().activeProjectId
+  if (projectId) {
+    const snap = snapshotProject(get())
+    set({
+      bundles: {
+        ...get().bundles,
+        [projectId]: snap,
+      },
+    })
+  }
+  scheduleCloudSync(get)
 }
 
 interface BundleState {
@@ -93,6 +159,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
       setCurrentUnit: (unitId) => {
         const recent = [unitId, ...get().recentUnitIds.filter((id) => id !== unitId)].slice(0, 8)
         set({ currentUnitId: unitId, recentUnitIds: recent })
+        afterProjectChange(get, set)
       },
 
       upsertBuilding: (building) => {
@@ -101,6 +168,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         if (idx >= 0) buildings[idx] = building
         else buildings.push({ ...building, sortOrder: buildings.length })
         set({ buildings, units: rebuildUnits(buildings, get().units) })
+        afterProjectChange(get, set)
       },
 
       removeBuilding: (buildingId) => {
@@ -111,6 +179,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             )
           : get().buildings.filter((b) => b.id !== buildingId)
         set({ buildings: nextBuildings, units: rebuildUnits(nextBuildings, get().units) })
+        afterProjectChange(get, set)
       },
 
       addDefect: async ({
@@ -172,6 +241,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             ...state.activities,
           ].slice(0, 40),
         })
+        afterProjectChange(get, set)
 
         if (cloudReady()) {
           const projectId = get().activeProjectId
@@ -261,6 +331,13 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             ...state.activities,
           ].slice(0, 40),
         })
+        afterProjectChange(get, set)
+        // 狀態變更也立刻推該筆缺失
+        const projectId = get().activeProjectId
+        if (projectId && cloudReady()) {
+          const next = get().defects.find((d) => d.id === defectId)
+          if (next) void syncDefect(projectId, next)
+        }
       },
 
       markUnitChecked: (unitId, checked) => {
@@ -270,6 +347,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             [unitId]: checked,
           },
         })
+        afterProjectChange(get, set)
       },
 
       resetDemoData: () => {
@@ -285,6 +363,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           bundles: { ...get().bundles, [id]: blank },
           activeProjectId: id,
         })
+        scheduleCloudSync(get)
       },
 
       loadProjectBundle: (projectId) => {
@@ -297,6 +376,8 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           })
         }
         set({ ...structuredClone(bundle), activeProjectId: projectId })
+        // 本機載入後立刻嘗試從雲端還原／合併
+        void get().hydrateFromCloud(projectId)
       },
 
       saveProjectBundle: (projectId) => {
@@ -382,6 +463,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         } else {
           set({ categories, checklistItems })
         }
+        afterProjectChange(get, set)
         return { ok: true }
       },
 
@@ -390,12 +472,62 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         if (!cloudReady()) return { ok: false, mode }
         try {
           const projectId = get().activeProjectId ?? 'default'
+          get().saveProjectBundle(projectId)
           await syncProjectStructure(projectId, get(), {
             name: get().projectName,
           })
           return { ok: true, mode }
         } catch {
           return { ok: false, mode }
+        }
+      },
+
+      flushSyncNow: async () => {
+        const projectId = get().activeProjectId
+        if (projectId) get().saveProjectBundle(projectId)
+        if (syncTimer) {
+          clearTimeout(syncTimer)
+          syncTimer = null
+        }
+        const ok = await flushCloudSync(get)
+        return { ok }
+      },
+
+      hydrateFromCloud: async (projectId) => {
+        if (!cloudReady() || !projectId) {
+          return { ok: false, error: '尚未設定 Firebase' }
+        }
+        try {
+          const remote = await pullProjectState(projectId)
+          if (!remote) return { ok: true } // 雲端尚無資料，保留本機
+
+          const local =
+            get().activeProjectId === projectId
+              ? snapshotProject(get())
+              : (get().bundles[projectId] ?? createEmptyProjectState(projectId))
+
+          const merged = mergeProjectStates(local, remote)
+
+          set({
+            bundles: { ...get().bundles, [projectId]: structuredClone(merged) },
+          })
+
+          if (get().activeProjectId === projectId) {
+            set({ ...structuredClone(merged), activeProjectId: projectId })
+          }
+
+          // 本機有、雲端缺的部分補推回去
+          if (
+            local.buildings.length > remote.buildings.length ||
+            local.defects.length > remote.defects.length
+          ) {
+            scheduleCloudSync(get)
+          }
+
+          return { ok: true }
+        } catch (err) {
+          console.warn('[hydrateFromCloud] failed', err)
+          return { ok: false, error: '從雲端同步失敗' }
         }
       },
 
@@ -426,6 +558,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         )
 
         set({ categories: cats, checklistItems: nextItems, defects })
+        afterProjectChange(get, set)
       },
 
       removeCategory: (categoryId) => {
@@ -443,12 +576,14 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               i.categoryId === categoryId ? { ...i, active: false } : i,
             ),
           })
+          afterProjectChange(get, set)
           return { ok: true, reason: '已有缺失紀錄，已改為停用（無法物理刪除）' }
         }
         set({
           categories: state.categories.filter((c) => c.id !== categoryId),
           checklistItems: state.checklistItems.filter((i) => i.categoryId !== categoryId),
         })
+        afterProjectChange(get, set)
         return { ok: true }
       },
 
@@ -467,6 +602,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             : c,
         )
         set({ checklistItems: list, categories })
+        afterProjectChange(get, set)
       },
 
       removeChecklistItem: (itemId) => {
@@ -489,6 +625,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               : c,
           )
           set({ checklistItems: list, categories })
+          afterProjectChange(get, set)
           return { ok: true, reason: '細項已有缺失，已改為停用' }
         }
         const list = state.checklistItems.filter((i) => i.id !== itemId)
@@ -501,6 +638,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             : c,
         )
         set({ checklistItems: list, categories })
+        afterProjectChange(get, set)
         return { ok: true }
       },
     }),
@@ -510,3 +648,14 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
     },
   ),
 )
+
+/** App 被滑掉／切背景前盡力寫入雲端 */
+if (typeof window !== 'undefined') {
+  const flush = () => {
+    void useProjectStore.getState().flushSyncNow()
+  }
+  window.addEventListener('pagehide', flush)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush()
+  })
+}

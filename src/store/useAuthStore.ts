@@ -381,6 +381,8 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         const { currentProjectId } = get()
         if (currentProjectId) {
           useProjectStore.getState().saveProjectBundle(currentProjectId)
+          // 登出前先把現場資料推上雲端，避免滑掉 App／換裝置後遺失
+          await useProjectStore.getState().flushSyncNow()
         }
         set({ currentUserId: null })
         const auth = getFirebaseAuth()

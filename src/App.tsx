@@ -10,7 +10,12 @@ import { LoginPage } from './components/auth/LoginPage'
 import { AdminApp } from './components/admin/AdminApp'
 import { InstallBanner } from './components/pwa/InstallBanner'
 import { useAuthStore } from './store/useAuthStore'
+<<<<<<< HEAD
 import { TitleHint } from './components/ui/TitleHint'
+=======
+import { useProjectStore } from './store/useProjectStore'
+import { isFirebaseConfigured } from './lib/firebase'
+>>>>>>> origin/cursor/realtime-project-sync-4fdf
 
 function useHashRoute() {
   const [hash, setHash] = useState(() => window.location.hash || '#/')
@@ -33,6 +38,12 @@ export default function App() {
   const [tab, setTab] = useState<TabKey>('home')
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+
+  // 開 App／還原工作階段時，從雲端把棟別／缺失拉回來
+  useEffect(() => {
+    if (!currentUserId || !currentProjectId || !isFirebaseConfigured()) return
+    void useProjectStore.getState().hydrateFromCloud(currentProjectId)
+  }, [currentUserId, currentProjectId])
 
   if (hash.startsWith('#/admin')) {
     return <AdminApp />

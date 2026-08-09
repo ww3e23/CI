@@ -213,7 +213,16 @@ export function ProfilePage() {
                 }
               >
                 {cloud ? 'Firebase 已設定' : '示範模式（本機資料）'}
+<<<<<<< HEAD
               </TitleHint>
+=======
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, marginTop: 2 }}>
+                {cloud
+                  ? '變更會自動同步雲端；也可手動強制推送'
+                  : '管理者可見：尚未接上 Firebase'}
+              </div>
+>>>>>>> origin/cursor/realtime-project-sync-4fdf
             </div>
             <span className="chip" style={{ minHeight: 32 }}>{mode}</span>
           </div>
@@ -226,10 +235,10 @@ export function ProfilePage() {
               setBusy(true)
               const r = await pushStructureToCloud()
               setBusy(false)
-              setMsg(r.ok ? '結構已同步至雲端' : '同步失敗或尚未設定 Firebase')
+              setMsg(r.ok ? '已強制同步至雲端' : '同步失敗或尚未設定 Firebase')
             }}
           >
-            <RefreshCw size={16} /> 同步棟樓戶結構到雲端
+            <RefreshCw size={16} /> 立即同步全部資料
           </button>
           {msg && <div className="sync-hint">{msg}</div>}
         </section>
