@@ -11,6 +11,7 @@ import { seedMembers, seedProjects, seedUsers } from '../data/authSeed'
 import { isValidAccountInput, normalizeLoginId } from '../lib/accountId'
 import { createId } from '../lib/id'
 import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase'
+import { APP_MIN_PASSWORD_LENGTH, isValidAppPassword, toFirebasePassword } from '../lib/password'
 import { deleteProjectMeta, syncProjectMeta } from '../services/cloudSync'
 import { provisionFirebaseAuthUser } from '../services/firebaseAuthProvision'
 import { useProjectStore } from './useProjectStore'
@@ -52,9 +53,10 @@ function projectSlice(): Omit<AuthState, never> {
   }
 }
 
-async function ensureFirebaseSession(email: string, password: string) {
+async function ensureFirebaseSession(email: string, appPassword: string) {
   const auth = getFirebaseAuth()
   if (!auth || !isFirebaseConfigured()) return { ok: true as const }
+  const password = toFirebasePassword(appPassword)
   try {
     await signInWithEmailAndPassword(auth, email, password)
     return { ok: true as const }
@@ -209,8 +211,8 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         if (!nextUser.displayName) {
           return { ok: false, error: '請填寫顯示名稱與帳號' }
         }
-        if (!nextUser.password || nextUser.password.length < 6) {
-          return { ok: false, error: '密碼至少需 6 碼（Firebase 規定）' }
+        if (!isValidAppPassword(nextUser.password)) {
+          return { ok: false, error: `密碼至少需 ${APP_MIN_PASSWORD_LENGTH} 碼` }
         }
 
         const duplicate = get().users.some(
