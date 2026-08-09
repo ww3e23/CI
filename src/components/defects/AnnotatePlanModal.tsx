@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { Redo2, Trash2, Undo2, X } from 'lucide-react'
 
 type Tool = 'pen' | 'circle' | 'arrow'
@@ -131,8 +132,8 @@ export function AnnotatePlanModal({
     redraw(next)
   }
 
-  return (
-    <div className="annotate-overlay" role="dialog" aria-label="標註圖面位置">
+  return createPortal(
+    <div className="annotate-overlay" role="dialog" aria-modal="true" aria-label="標註圖面位置">
       <header className="annotate-bar">
         <button type="button" className="icon-btn" onClick={onCancel} aria-label="關閉">
           <X size={20} />
@@ -259,6 +260,7 @@ export function AnnotatePlanModal({
         />
       </div>
       <p className="annotate-hint">拖曳標註後放開即可；按「完成標註」套用回缺失表單。</p>
-    </div>
+    </div>,
+    document.body,
   )
 }
