@@ -245,7 +245,8 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   letter-spacing: 0.02em;
 }
 
-.filter-select select {
+.filter-select select,
+.glass-select-trigger {
   appearance: none;
   -webkit-appearance: none;
   width: 100%;
@@ -253,31 +254,92 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   padding: 0 40px 0 14px;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.65);
-  background:
-    linear-gradient(150deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.42)) padding-box,
-    transparent;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.42));
   box-shadow: var(--shadow-tight);
   color: var(--ink);
   font-weight: 700;
   font-size: 14px;
-  background-image:
-    linear-gradient(150deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.42)),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%232F5D4C' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat, no-repeat;
-  background-position: 0 0, right 14px center;
-  background-size: auto, 16px;
   cursor: pointer;
+  text-align: left;
 }
 
-.filter-select select:focus {
+.glass-select {
+  position: relative;
+}
+
+.glass-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 14px;
+}
+
+.glass-select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.glass-select-chevron {
+  flex-shrink: 0;
+  color: var(--green-deep);
+  transition: transform 0.15s ease;
+}
+
+.glass-select.open .glass-select-chevron {
+  transform: rotate(180deg);
+}
+
+.glass-select-trigger:focus {
   outline: 2px solid rgba(47, 93, 76, 0.28);
   border-color: var(--green-deep);
 }
 
-.filter-select select option {
+.glass-select-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: linear-gradient(160deg, rgba(255, 252, 246, 0.96), rgba(255, 255, 255, 0.9));
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: 0 18px 36px -16px rgba(34, 41, 31, 0.35), 0 4px 12px -6px rgba(34, 41, 31, 0.12);
+  max-height: min(280px, 50dvh);
+  overflow: auto;
+}
+
+.glass-select-option {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 12px;
+  text-align: left;
+  font-weight: 700;
+  font-size: 14px;
   color: var(--ink);
-  background: #fff;
-  font-weight: 600;
+}
+
+.glass-select-option:hover {
+  background: rgba(47, 93, 76, 0.08);
+  color: var(--green-deep);
+}
+
+.glass-select-option.on {
+  background: var(--green-deep);
+  color: #fff;
+}
+
+.glass-select-option.on:hover {
+  background: var(--green-deep2);
+  color: #fff;
 }
 
 .chip-row {

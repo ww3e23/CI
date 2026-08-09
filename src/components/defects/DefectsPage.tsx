@@ -3,6 +3,7 @@ import { ChevronRight, ListFilter, X } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { defectsByStatus, statusLabel } from '../../lib/progress'
 import type { Defect, DefectStatus } from '../../types'
+import { GlassSelect } from '../ui/GlassSelect'
 import {
   AdvancedFilterSheet,
   emptyFilters,
@@ -76,35 +77,27 @@ export function DefectsPage() {
       </header>
 
       <div className="filter-select-row">
-        <label className="filter-select">
-          <span className="filter-select-label">狀態</span>
-          <select
-            value={quickStatus}
-            onChange={(e) => setQuickStatus(e.target.value as QuickStatus)}
-            aria-label="依狀態篩選"
-          >
-            {tabs.map((t) => (
-              <option key={t.key} value={t.key}>
-                {t.label}（{t.count}）
-              </option>
-            ))}
-          </select>
-        </label>
+        <GlassSelect
+          label="狀態"
+          aria-label="依狀態篩選"
+          value={quickStatus}
+          onChange={(v) => setQuickStatus(v as QuickStatus)}
+          options={tabs.map((t) => ({
+            value: t.key,
+            label: `${t.label}（${t.count}）`,
+          }))}
+        />
 
-        <label className="filter-select">
-          <span className="filter-select-label">查驗大項</span>
-          <select
-            value={quickCategory}
-            onChange={(e) => setQuickCategory(e.target.value)}
-            aria-label="依查驗大項篩選"
-          >
-            {categoryTabs.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}（{c.count}）
-              </option>
-            ))}
-          </select>
-        </label>
+        <GlassSelect
+          label="查驗大項"
+          aria-label="依查驗大項篩選"
+          value={quickCategory}
+          onChange={setQuickCategory}
+          options={categoryTabs.map((c) => ({
+            value: c.id,
+            label: `${c.name}（${c.count}）`,
+          }))}
+        />
       </div>
 
       {(activeChips.length > 0 || filtered.length !== defects.filter((d) => d.status !== 'voided').length) && (
