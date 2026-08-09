@@ -24,6 +24,11 @@ function useHashRoute() {
 export default function App() {
   const hash = useHashRoute()
   const currentUserId = useAuthStore((s) => s.currentUserId)
+  const currentProjectId = useAuthStore((s) => s.currentProjectId)
+  const projects = useAuthStore((s) => s.projects)
+  const isSystemAdmin = useAuthStore(
+    (s) => s.users.find((u) => u.id === s.currentUserId)?.systemAdmin === true,
+  )
   const [tab, setTab] = useState<TabKey>('home')
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
@@ -38,6 +43,45 @@ export default function App() {
         <LoginPage />
         <InstallBanner />
       </>
+    )
+  }
+
+  // 管理者尚未建立專案：引導到後台，不塞示範資料
+  if (isSystemAdmin && projects.length === 0) {
+    return (
+      <div className="app-shell login-shell" style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
+        <div className="glass" style={{ width: '100%', maxWidth: 420, padding: 22 }}>
+          <h1 className="serif" style={{ margin: '0 0 8px', fontSize: 24 }}>開始設定</h1>
+          <p style={{ margin: 0, color: 'var(--ink-soft)', lineHeight: 1.5, fontSize: 14 }}>
+            目前沒有任何專案。請先到後台新增專案、建立帳號並指派人員。
+          </p>
+          <a
+            href="#/admin"
+            className="btn btn-primary"
+            style={{ marginTop: 16, textDecoration: 'none', display: 'inline-flex' }}
+            onClick={() => {
+              window.location.hash = '#/admin'
+            }}
+          >
+            開啟驗屋後台
+          </a>
+        </div>
+        <InstallBanner />
+      </div>
+    )
+  }
+
+  if (!currentProjectId) {
+    return (
+      <div className="app-shell login-shell" style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
+        <div className="glass" style={{ width: '100%', maxWidth: 420, padding: 22 }}>
+          <h1 className="serif" style={{ margin: '0 0 8px', fontSize: 24 }}>尚未選擇專案</h1>
+          <p style={{ margin: 0, color: 'var(--ink-soft)', lineHeight: 1.5, fontSize: 14 }}>
+            請聯繫管理者指派專案後再登入。
+          </p>
+        </div>
+        <InstallBanner />
+      </div>
     )
   }
 

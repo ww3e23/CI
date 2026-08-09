@@ -9,7 +9,7 @@ import type {
   ProjectState,
   SyncState,
 } from '../types'
-import { createProjectBundles, seedState } from '../data/seed'
+import { createEmptyProjectState, createProjectBundles } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
 import { cloudReady, syncDefect, syncProjectStructure } from '../services/cloudSync'
@@ -79,13 +79,14 @@ function snapshotProject(state: ProjectState): ProjectState {
 }
 
 const initialBundles = createProjectBundles()
+const emptyBoot = createEmptyProjectState('未選擇專案')
 
 export const useProjectStore = create<ProjectState & BundleState & ProjectActions>()(
   persist(
     (set, get) => ({
-      ...seedState,
+      ...emptyBoot,
       bundles: initialBundles,
-      activeProjectId: 'proj_qingchuan',
+      activeProjectId: null,
 
       setCurrentUnit: (unitId) => {
         const recent = [unitId, ...get().recentUnitIds.filter((id) => id !== unitId)].slice(0, 8)
@@ -270,16 +271,22 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
       },
 
       resetDemoData: () => {
-        const bundles = createProjectBundles()
-        const id = get().activeProjectId ?? 'proj_qingchuan'
-        set({ ...bundles[id], bundles, activeProjectId: id })
+        const id = get().activeProjectId
+        const name = get().projectName || '未命名專案'
+        const blank = createEmptyProjectState(name)
+        if (!id) {
+          set({ ...blank, bundles: {}, activeProjectId: null })
+          return
+        }
+        set({
+          ...blank,
+          bundles: { ...get().bundles, [id]: blank },
+          activeProjectId: id,
+        })
       },
 
       loadProjectBundle: (projectId) => {
-        const bundle = get().bundles[projectId] ?? {
-          ...structuredClone(seedState),
-          projectName: projectId,
-        }
+        const bundle = get().bundles[projectId] ?? createEmptyProjectState(projectId)
         set({ ...structuredClone(bundle), activeProjectId: projectId })
       },
 
@@ -298,7 +305,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         set({
           bundles: {
             ...get().bundles,
-            [projectId]: { ...structuredClone(seedState), projectName: name },
+            [projectId]: createEmptyProjectState(name),
           },
         })
       },
@@ -318,11 +325,9 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             })
           } else {
             set({
-              ...structuredClone(seedState),
-              projectName: '未選擇專案',
+              ...createEmptyProjectState('未選擇專案'),
               bundles: next,
               activeProjectId: null,
-              currentUnitId: '',
             })
           }
           return
@@ -456,8 +461,8 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
       },
     }),
     {
-      name: 'site-inspection-v4',
-      version: 4,
+      name: 'site-inspection-v5',
+      version: 5,
     },
   ),
 )

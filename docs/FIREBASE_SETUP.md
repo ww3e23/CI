@@ -43,7 +43,7 @@
 
 ### Authentication
 - 登入方式：**電子郵件/密碼** 已啟用
-- 第一次用示範帳號登入 App 時，系統會嘗試在 Authentication 自動建立對應使用者
+- 建議預先建立 `admin@site.tw`（密碼 `admin1234`）；App 登入時也會嘗試自動建立／使用 Email 工作階段
 
 ### Firestore
 - 資料庫已建立（建議區域 `asia-east1`）
