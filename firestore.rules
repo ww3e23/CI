@@ -24,6 +24,21 @@ service cloud.firestore {
         allow write: if signedIn();
       }
 
+      match /categories/{categoryId} {
+        allow read: if signedIn();
+        allow write: if signedIn();
+      }
+
+      match /checklistItems/{itemId} {
+        allow read: if signedIn();
+        allow write: if signedIn();
+      }
+
+      match /meta/{docId} {
+        allow read: if signedIn();
+        allow write: if signedIn();
+      }
+
       match /defects/{defectId} {
         allow read: if signedIn();
         allow create, update: if signedIn();
