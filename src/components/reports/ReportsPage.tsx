@@ -34,7 +34,7 @@ export function ReportsPage() {
             style={{ margin: '4px 0 0', fontSize: 24, fontWeight: 700 }}
             hint="棟別 × 樓層 × 戶別一次看完全案；可預覽並匯出質感報告。"
           >
-            查驗進度色塊矩陣
+            查驗進度矩陣
           </TitleHint>
         </div>
         <button

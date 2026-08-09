@@ -297,7 +297,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     </section>
 
     <section class="section">
-      <h2>進度色塊矩陣</h2>
+      <h2>進度矩陣</h2>
       <p class="lead">綠＝完成、紅＝有缺失、琥珀＝進行中、米白＝未開始、灰＝不適用。</p>
       <div class="legend">
         <span><i class="dot" style="background:#2f5d4c"></i>已完成</span>
