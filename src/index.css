@@ -524,11 +524,11 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   padding: 8px;
   border-radius: 999px;
   z-index: 40;
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.42));
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: var(--shadow-soft);
+  background: #fffcf6;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(34, 41, 31, 0.08);
+  box-shadow: 0 12px 28px -12px rgba(34, 41, 31, 0.28), 0 2px 8px -2px rgba(34, 41, 31, 0.1);
 }
 
 .nav-item {
