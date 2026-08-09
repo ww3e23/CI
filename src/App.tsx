@@ -10,12 +10,9 @@ import { LoginPage } from './components/auth/LoginPage'
 import { AdminApp } from './components/admin/AdminApp'
 import { InstallBanner } from './components/pwa/InstallBanner'
 import { useAuthStore } from './store/useAuthStore'
-<<<<<<< HEAD
 import { TitleHint } from './components/ui/TitleHint'
-=======
 import { useProjectStore } from './store/useProjectStore'
 import { isFirebaseConfigured } from './lib/firebase'
->>>>>>> origin/cursor/realtime-project-sync-4fdf
 
 function useHashRoute() {
   const [hash, setHash] = useState(() => window.location.hash || '#/')

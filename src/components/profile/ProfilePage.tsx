@@ -208,21 +208,12 @@ export function ProfilePage() {
                 style={{ fontWeight: 800 }}
                 hint={
                   cloud
-                    ? '管理者可見：缺失與照片同步狀態。'
+                    ? '變更會自動同步雲端；也可手動強制推送。'
                     : '管理者可見：尚未接上 Firebase，資料僅存本機。'
                 }
               >
                 {cloud ? 'Firebase 已設定' : '示範模式（本機資料）'}
-<<<<<<< HEAD
               </TitleHint>
-=======
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, marginTop: 2 }}>
-                {cloud
-                  ? '變更會自動同步雲端；也可手動強制推送'
-                  : '管理者可見：尚未接上 Firebase'}
-              </div>
->>>>>>> origin/cursor/realtime-project-sync-4fdf
             </div>
             <span className="chip" style={{ minHeight: 32 }}>{mode}</span>
           </div>
