@@ -192,7 +192,9 @@ export function ProfilePage() {
               {cloud ? 'Firebase 已設定' : '示範模式（本機資料）'}
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, marginTop: 2 }}>
-              {cloud ? '可同步至 Firestore' : '可先完整操作；接上 Firebase 後再上雲'}
+              {cloud
+                ? '缺失與照片會上 Firebase；各專案可另綁 Google 雲端硬碟資料夾'
+                : '可先完整操作；接上 Firebase 後再上雲'}
             </div>
           </div>
           <span className="chip" style={{ minHeight: 32 }}>{mode}</span>
@@ -236,7 +238,7 @@ export function ProfilePage() {
           color: 'var(--terracotta)',
           fontWeight: 800,
         }}
-        onClick={logout}
+        onClick={() => void logout()}
       >
         登出
       </button>

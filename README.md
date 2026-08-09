@@ -29,15 +29,15 @@ npm install
 npm run dev
 ```
 
-## Firebase
+## Firebase / Google 雲端硬碟
 
 詳見 **[docs/FIREBASE_SETUP.md](./docs/FIREBASE_SETUP.md)**。
 
 摘要：
-1. Firebase Console 建立專案 → 網頁 App → 複製 config  
-2. 啟用 Authentication（Email/Password）、Firestore、Storage  
-3. 複製 `.env.example` 為 `.env.local` 並填入 `VITE_FIREBASE_*`  
-4. GitHub Actions Secrets 填同樣六個，推 `main` 後線上站才會上雲  
+1. Firebase 專案建議 ID：`ci-inspection`；啟用 Auth、Firestore、Storage（正式規則）  
+2. 填 GitHub Secrets 六個 `VITE_FIREBASE_*`，推 `main` 後線上站才會上雲  
+3. 照片先上 Firebase Storage；Cloud Function 再鏡像到各建案綁定的 Google 雲端硬碟資料夾  
+4. 後台「專案管理」可為每個建案貼不同 Drive 資料夾網址  
 
 未設定時為示範模式（本機 localStorage），介面可完整操作。
 

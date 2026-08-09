@@ -13,6 +13,7 @@ import { createProjectBundles, seedState } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
 import { cloudReady, syncDefect, syncProjectStructure } from '../services/cloudSync'
+import { uploadDataUrl } from '../services/storageUpload'
 import { firebaseModeLabel } from '../lib/firebase'
 
 type BundleMap = Record<string, ProjectState>
@@ -167,17 +168,54 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         })
 
         if (cloudReady()) {
+          const projectId = get().activeProjectId
           set({
             defects: get().defects.map((d) =>
               d.id === defect.id ? { ...d, syncState: 'syncing' } : d,
             ),
           })
           try {
-            await syncDefect(defect)
+            if (!projectId) throw new Error('缺少專案 ID')
+
+            let planUrl = planPhotoDataUrl
+            if (planUrl?.startsWith('data:')) {
+              const up = await uploadDataUrl({
+                projectId,
+                defectId: defect.id,
+                kind: 'plan',
+                dataUrl: planUrl,
+              })
+              if (up) planUrl = up.url
+            }
+
+            const photoUrls: string[] = []
+            for (let i = 0; i < photoDataUrls.length; i += 1) {
+              const src = photoDataUrls[i]
+              if (src.startsWith('data:')) {
+                const up = await uploadDataUrl({
+                  projectId,
+                  defectId: defect.id,
+                  kind: 'photo',
+                  index: i,
+                  dataUrl: src,
+                })
+                photoUrls.push(up?.url ?? src)
+              } else {
+                photoUrls.push(src)
+              }
+            }
+
+            const syncedDefect: Defect = {
+              ...defect,
+              planPhotoDataUrl: planUrl,
+              photoDataUrls: photoUrls,
+              syncState: 'synced',
+              updatedAt: new Date().toISOString(),
+            }
+
+            await syncDefect(projectId, syncedDefect)
             set({
-              defects: get().defects.map((d) =>
-                d.id === defect.id ? { ...d, syncState: 'synced' } : d,
-              ),
+              defects: get().defects.map((d) => (d.id === defect.id ? syncedDefect : d)),
             })
           } catch {
             set({
@@ -266,7 +304,10 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         const mode = firebaseModeLabel()
         if (!cloudReady()) return { ok: false, mode }
         try {
-          await syncProjectStructure(get())
+          const projectId = get().activeProjectId ?? 'default'
+          await syncProjectStructure(projectId, get(), {
+            name: get().projectName,
+          })
           return { ok: true, mode }
         } catch {
           return { ok: false, mode }

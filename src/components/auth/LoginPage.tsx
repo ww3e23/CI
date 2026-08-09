@@ -37,9 +37,11 @@ export function LoginPage() {
           style={{ padding: 20 }}
           onSubmit={(e) => {
             e.preventDefault()
-            const r = login(email, password)
-            if (!r.ok) setError(r.error ?? '登入失敗')
-            else setError('')
+            void (async () => {
+              const r = await login(email, password)
+              if (!r.ok) setError(r.error ?? '登入失敗')
+              else setError('')
+            })()
           }}
         >
           <h2 className="serif" style={{ margin: '0 0 4px', fontSize: 20 }}>帳號登入</h2>

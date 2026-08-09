@@ -19,6 +19,10 @@ export interface ProjectMeta {
   location: string
   status: 'active' | 'archived'
   createdAt: string
+  /** Google 雲端硬碟資料夾 ID（每個建案可不同） */
+  driveFolderId?: string
+  /** 方便顯示的完整資料夾網址 */
+  driveFolderUrl?: string
 }
 
 export interface ProjectMember {

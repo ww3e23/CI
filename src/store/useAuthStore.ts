@@ -1,8 +1,16 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+} from 'firebase/auth'
 import type { MemberRole, ProjectMember, ProjectMeta, UserAccount } from '../types/auth'
 import { seedMembers, seedProjects, seedUsers } from '../data/authSeed'
 import { createId } from '../lib/id'
+import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase'
+import { syncProjectMeta } from '../services/cloudSync'
 import { useProjectStore } from './useProjectStore'
 
 interface AuthState {
@@ -16,8 +24,8 @@ interface AuthState {
 }
 
 interface AuthActions {
-  login: (email: string, password: string) => { ok: boolean; error?: string }
-  logout: () => void
+  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>
+  logout: () => Promise<void>
   updateDisplayName: (name: string) => void
   switchProject: (projectId: string) => void
   upsertUser: (user: UserAccount) => void
@@ -38,12 +46,47 @@ function projectSlice(): Omit<AuthState, never> {
   }
 }
 
+async function ensureFirebaseSession(email: string, password: string) {
+  const auth = getFirebaseAuth()
+  if (!auth || !isFirebaseConfigured()) return { ok: true as const }
+  try {
+    await signInWithEmailAndPassword(auth, email, password)
+    return { ok: true as const }
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code
+    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, email, password)
+        await updateProfile(cred.user, { displayName: email.split('@')[0] })
+        return { ok: true as const }
+      } catch (createErr: unknown) {
+        // 可能是密碼錯，或帳號已存在但密碼不符
+        const createCode = (createErr as { code?: string })?.code
+        if (createCode === 'auth/email-already-in-use') {
+          return { ok: false as const, error: 'Firebase 帳號密碼不符，請用 Firebase Authentication 中的密碼' }
+        }
+        return {
+          ok: false as const,
+          error: '無法建立 Firebase 登入工作階段，請確認 Authentication 已啟用',
+        }
+      }
+    }
+    if (code === 'auth/wrong-password') {
+      return { ok: false as const, error: 'Firebase 密碼不正確' }
+    }
+    return {
+      ok: false as const,
+      error: 'Firebase 登入失敗，請確認 Authentication（Email/密碼）已啟用',
+    }
+  }
+}
+
 export const useAuthStore = create<AuthState & AuthActions>()(
   persist(
     (set, get) => ({
       ...projectSlice(),
 
-      login: (email, password) => {
+      login: async (email, password) => {
         const user = get().users.find(
           (u) => u.email.toLowerCase() === email.trim().toLowerCase(),
         )
@@ -53,6 +96,12 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         if (user.password !== password) {
           return { ok: false, error: '帳號或密碼不正確' }
         }
+
+        if (isFirebaseConfigured()) {
+          const session = await ensureFirebaseSession(email.trim(), password)
+          if (!session.ok) return session
+        }
+
         const memberships = get().members.filter((m) => m.userId === user.id)
         const firstProject =
           memberships[0]?.projectId ??
@@ -67,12 +116,20 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         return { ok: true }
       },
 
-      logout: () => {
+      logout: async () => {
         const { currentProjectId } = get()
         if (currentProjectId) {
           useProjectStore.getState().saveProjectBundle(currentProjectId)
         }
         set({ currentUserId: null })
+        const auth = getFirebaseAuth()
+        if (auth) {
+          try {
+            await signOut(auth)
+          } catch {
+            /* ignore */
+          }
+        }
       },
 
       updateDisplayName: (name) => {
@@ -83,6 +140,10 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         set({
           users: get().users.map((u) => (u.id === id ? { ...u, displayName } : u)),
         })
+        const auth = getFirebaseAuth()
+        if (auth?.currentUser) {
+          void updateProfile(auth.currentUser, { displayName })
+        }
       },
 
       switchProject: (projectId) => {
@@ -153,6 +214,9 @@ export const useAuthStore = create<AuthState & AuthActions>()(
           useProjectStore.getState().ensureProjectBundle(project.id, project.name)
         }
         set({ projects })
+        if (isFirebaseConfigured()) {
+          void syncProjectMeta(project)
+        }
       },
 
       resetAuthDemo: () => set(projectSlice()),
