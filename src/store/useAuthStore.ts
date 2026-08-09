@@ -16,7 +16,7 @@ import {
   deleteProjectMemberDoc,
   deleteProjectMeta,
   deleteUserAccountDoc,
-  pullAuthDirectory,
+  pullAuthDirectoryWithRetry,
   syncProjectMember,
   syncProjectMeta,
   syncUserAccount,
@@ -51,6 +51,7 @@ interface AuthActions {
   setMemberRole: (userId: string, projectId: string, role: MemberRole | null) => void
   upsertProject: (project: ProjectMeta) => void
   deleteProject: (projectId: string) => { ok: boolean; error?: string }
+  refreshDirectory: () => Promise<{ ok: boolean; error?: string }>
   resetAuthDemo: () => void
 }
 
@@ -137,7 +138,22 @@ function membershipsForUser(
     users.filter((u) => normalizeLoginId(u.email) === email).map((u) => u.id),
   )
   ids.add(user.id)
-  return members.filter((m) => ids.has(m.userId))
+  return members.filter(
+    (m) =>
+      ids.has(m.userId) ||
+      (m.userEmail ? normalizeLoginId(m.userEmail) === email : false),
+  )
+}
+
+export function userCanAccessProject(
+  user: UserAccount | null | undefined,
+  projectId: string,
+  members: ProjectMember[],
+  users: UserAccount[],
+): boolean {
+  if (!user) return false
+  if (user.systemAdmin) return true
+  return membershipsForUser(members, users, user).some((m) => m.projectId === projectId)
 }
 
 function projectSlice(): Omit<AuthState, never> {
@@ -211,7 +227,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
               return session
             }
           } else {
-            const remote = await pullAuthDirectory()
+            const remote = await pullAuthDirectoryWithRetry(4)
             if (remote) {
               const merged = mergeDirectory(
                 {
@@ -227,7 +243,6 @@ export const useAuthStore = create<AuthState & AuthActions>()(
                 projects: merged.projects,
               })
             } else {
-              // 即使雲端拉取失敗，也先收斂本機重複帳號／成員 id
               const local = canonicalizeDirectory({
                 users: get().users,
                 members: get().members,
@@ -248,19 +263,22 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         let matches = findUserByAccount(get().users, account)
         let user = matches.length === 1 ? matches[0] : matches.find((u) => u.active) ?? matches[0]
 
-        // Firebase 已通過，但目錄尚無此帳號：建立本機＋雲端基本資料（不覆蓋既有指派）
+        // Firebase 已通過，但目錄尚無此帳號：若成員指派有同 email，沿用其 userId
         if ((!user || !user.active) && isFirebaseConfigured()) {
           const auth = getFirebaseAuth()
           if (auth?.currentUser) {
+            const memberHit = get().members.find(
+              (m) => m.userEmail && normalizeLoginId(m.userEmail) === loginId,
+            )
             const created: UserAccount = {
-              id: createId('user'),
+              id: memberHit?.userId || createId('user'),
               email: loginId,
               password: password.trim(),
               displayName: auth.currentUser.displayName || accountDisplay(loginId),
               active: true,
               createdAt: new Date().toISOString(),
             }
-            const nextUsers = [...get().users, created]
+            const nextUsers = [...get().users.filter((u) => u.id !== created.id), created]
             const healed = canonicalizeDirectory({
               users: nextUsers,
               members: get().members,
@@ -301,6 +319,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         const healedMembers = membershipsForUser(healed.members, healed.users, user).map((m) => ({
           ...m,
           userId: user!.id,
+          userEmail: normalizeLoginId(user!.email),
         }))
         const memberMap = new Map(healed.members.map((m) => [`${m.userId}|${m.projectId}`, m]))
         for (const m of healedMembers) memberMap.set(`${m.userId}|${m.projectId}`, m)
@@ -389,11 +408,10 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       },
 
       switchProject: (projectId) => {
-        const { currentUserId, currentProjectId, members } = get()
+        const { currentUserId, currentProjectId, members, users } = get()
         if (!currentUserId) return
-        const allowed =
-          get().users.find((u) => u.id === currentUserId)?.systemAdmin ||
-          members.some((m) => m.userId === currentUserId && m.projectId === projectId)
+        const me = users.find((u) => u.id === currentUserId)
+        const allowed = userCanAccessProject(me, projectId, members, users)
         if (!allowed) return
 
         if (currentProjectId) {
@@ -483,11 +501,20 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         else users.push(nextUser)
         set({ users })
 
+        // 補上成員的 userEmail，方便手機端對應
+        const email = normalizeLoginId(nextUser.email)
+        const patchedMembers = get().members.map((m) =>
+          m.userId === nextUser.id ? { ...m, userEmail: email } : m,
+        )
+        set({ members: patchedMembers })
+
         if (isFirebaseConfigured()) {
           try {
             await syncUserAccount(nextUser)
-            const userMembers = get().members.filter((m) => m.userId === nextUser.id)
+            const userMembers = patchedMembers.filter((m) => m.userId === nextUser.id)
             await Promise.all(userMembers.map((m) => syncProjectMember(m)))
+            // 一併推送專案目錄，避免手機端只有成員沒有專案名稱
+            await Promise.all(get().projects.map((p) => syncProjectMeta(p)))
             firebaseMessage = firebaseMessage
               ? `${firebaseMessage}；帳號目錄已同步雲端`
               : '帳號目錄已同步雲端'
@@ -550,6 +577,8 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       },
 
       setMemberRole: (userId, projectId, role) => {
+        const targetUser = get().users.find((u) => u.id === userId)
+        const userEmail = targetUser ? normalizeLoginId(targetUser.email) : undefined
         const members = [...get().members]
         const idx = members.findIndex((m) => m.userId === userId && m.projectId === projectId)
         let removed: ProjectMember | null = null
@@ -560,7 +589,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             members.splice(idx, 1)
           }
         } else if (idx >= 0) {
-          members[idx] = { ...members[idx], role }
+          members[idx] = { ...members[idx], role, userEmail: userEmail ?? members[idx].userEmail }
           upserted = members[idx]
         } else {
           upserted = {
@@ -570,6 +599,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             role,
             joinedAt: new Date().toISOString(),
             invitedBy: get().currentUserId ?? undefined,
+            userEmail,
           }
           members.push(upserted)
         }
@@ -591,7 +621,9 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         }
         set({ projects })
         if (isFirebaseConfigured()) {
-          void syncProjectMeta(project)
+          void syncProjectMeta(project).catch((err) => {
+            console.warn('[syncProjectMeta] failed', err)
+          })
         }
         // 系統管理者建立專案後若尚未選專案，自動進入以便查看
         if (isNew) {
@@ -600,6 +632,73 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             get().switchProject(project.id)
           }
         }
+      },
+
+      refreshDirectory: async () => {
+        if (!isFirebaseConfigured()) {
+          return { ok: false, error: '尚未設定 Firebase' }
+        }
+        const auth = getFirebaseAuth()
+        if (auth) await auth.authStateReady()
+        if (!auth?.currentUser) {
+          return { ok: false, error: '請先登入後再同步' }
+        }
+        // 先把本機目錄推上雲端，再拉回來（電腦建的資料可到手機）
+        try {
+          const snap = get()
+          await Promise.all(snap.users.map((u) => syncUserAccount(u)))
+          await Promise.all(
+            snap.members.map((m) => {
+              const u = snap.users.find((x) => x.id === m.userId)
+              return syncProjectMember({
+                ...m,
+                userEmail: m.userEmail || (u ? normalizeLoginId(u.email) : undefined),
+              })
+            }),
+          )
+          await Promise.all(snap.projects.map((p) => syncProjectMeta(p)))
+        } catch (err) {
+          console.warn('[refreshDirectory] push failed', err)
+        }
+
+        const remote = await pullAuthDirectoryWithRetry(4)
+        if (!remote) {
+          return { ok: false, error: '無法從雲端同步專案，請確認網路與 Firestore 權限' }
+        }
+        const merged = mergeDirectory(
+          {
+            users: get().users,
+            members: get().members,
+            projects: get().projects,
+          },
+          remote,
+        )
+        const me = merged.users.find((u) => u.id === get().currentUserId)
+        let nextMembers = merged.members
+        if (me) {
+          const fixed = membershipsForUser(merged.members, merged.users, me).map((m) => ({
+            ...m,
+            userId: me.id,
+            userEmail: normalizeLoginId(me.email),
+          }))
+          const map = new Map(merged.members.map((m) => [`${m.userId}|${m.projectId}`, m]))
+          for (const m of fixed) map.set(`${m.userId}|${m.projectId}`, m)
+          nextMembers = [...map.values()]
+        }
+        set({
+          users: merged.users,
+          members: nextMembers,
+          projects: merged.projects,
+        })
+
+        const currentId = get().currentUserId
+        const currentUser = get().users.find((u) => u.id === currentId)
+        if (currentUser && !get().currentProjectId) {
+          const ms = membershipsForUser(get().members, get().users, currentUser)
+          const pid = ms[0]?.projectId
+          if (pid) get().switchProject(pid)
+        }
+        return { ok: true }
       },
 
       deleteProject: (projectId) => {

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Building2, Clock3, LogOut, Users } from 'lucide-react'
 import { useAuthStore, useCurrentUser } from '../../store/useAuthStore'
+import { isFirebaseConfigured } from '../../lib/firebase'
 import { AccountsPage } from './AccountsPage'
 import { ProjectsPage } from './ProjectsPage'
 import { AuditPage } from './AuditPage'
@@ -10,8 +11,11 @@ type AdminTab = 'accounts' | 'projects' | 'audit'
 export function AdminApp() {
   const user = useCurrentUser()
   const logout = useAuthStore((s) => s.logout)
+  const refreshDirectory = useAuthStore((s) => s.refreshDirectory)
   const [tab, setTab] = useState<AdminTab>('accounts')
+  const [syncing, setSyncing] = useState(false)
   const canAccess = Boolean(user?.systemAdmin)
+  const cloud = isFirebaseConfigured()
 
   const nav = useMemo(
     () => [
@@ -106,6 +110,28 @@ export function AdminApp() {
             </div>
           </div>
           <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+            {cloud && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{
+                  justifyContent: 'flex-start',
+                  minHeight: 40,
+                  fontSize: 13,
+                }}
+                disabled={syncing}
+                onClick={() => {
+                  void (async () => {
+                    setSyncing(true)
+                    const r = await refreshDirectory()
+                    setSyncing(false)
+                    alert(r.ok ? '已同步到雲端，手機重新登入或按同步後即可看到專案' : r.error || '同步失敗')
+                  })()
+                }}
+              >
+                {syncing ? '同步中…' : '同步到雲端（給手機用）'}
+              </button>
+            )}
             <a
               href="#/"
               className="btn btn-ghost"

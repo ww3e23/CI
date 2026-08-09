@@ -6,6 +6,7 @@ import {
   useCurrentProject,
   useCurrentRole,
   useCurrentUser,
+  userCanAccessProject,
 } from '../../store/useAuthStore'
 import { firebaseModeLabel, isFirebaseConfigured } from '../../lib/firebase'
 import { SettingsPage } from '../settings/SettingsPage'
@@ -18,7 +19,9 @@ export function ProfilePage() {
   const project = useCurrentProject()
   const members = useAuthStore((s) => s.members)
   const projects = useAuthStore((s) => s.projects)
+  const users = useAuthStore((s) => s.users)
   const switchProject = useAuthStore((s) => s.switchProject)
+  const refreshDirectory = useAuthStore((s) => s.refreshDirectory)
   const updateDisplayName = useAuthStore((s) => s.updateDisplayName)
   const logout = useAuthStore((s) => s.logout)
   const pushStructureToCloud = useProjectStore((s) => s.pushStructureToCloud)
@@ -31,10 +34,7 @@ export function ProfilePage() {
   const cloud = isFirebaseConfigured()
   const mode = firebaseModeLabel()
 
-  const myProjects = projects.filter((p) => {
-    if (user?.systemAdmin) return true
-    return members.some((m) => m.userId === user?.id && m.projectId === p.id)
-  })
+  const myProjects = projects.filter((p) => userCanAccessProject(user, p.id, members, users))
 
   if (!user) return null
 
@@ -137,6 +137,24 @@ export function ProfilePage() {
           ? '系統管理者可進入任一專案查看與設定。點專案卡片即可切換。'
           : '權限由各專案管理者於後台指派，無法自行變更。點專案卡片可直接切換。'}
       </p>
+      {cloud && (
+        <button
+          type="button"
+          className="btn btn-ghost"
+          style={{ width: '100%', marginBottom: 10, minHeight: 40 }}
+          onClick={() => {
+            void (async () => {
+              setBusy(true)
+              const r = await refreshDirectory()
+              setBusy(false)
+              setMsg(r.ok ? '已同步雲端專案與指派' : r.error || '同步失敗')
+            })()
+          }}
+          disabled={busy}
+        >
+          <RefreshCw size={14} /> {busy ? '同步中…' : '重新同步專案（手機／電腦共用）'}
+        </button>
+      )}
       <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
         {myProjects.map((p) => {
           const r =

@@ -32,6 +32,8 @@ export interface ProjectMember {
   role: MemberRole
   joinedAt: string
   invitedBy?: string
+  /** 冗餘存放，方便手機端即使用戶 id 不一致也能對上指派 */
+  userEmail?: string
 }
 
 export const ROLE_LABEL: Record<MemberRole, string> = {
