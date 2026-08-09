@@ -1233,7 +1233,8 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 .annotate-overlay {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  /* 必須高於新增缺失 Modal（80），否則會被蓋在下一層 */
+  z-index: 120;
   background: #1c211d;
   color: #fff;
   display: flex;
