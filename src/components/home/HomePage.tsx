@@ -17,8 +17,9 @@ import { UnitSwitcher } from '../UnitSwitcher'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { TitleHint } from '../ui/TitleHint'
 import { UnitAreasEditor } from '../settings/UnitAreasEditor'
+import { UnitDefectsSheet } from '../defects/UnitDefectsSheet'
 import { getUnitAreas } from '../../lib/areas'
-import type { ChecklistCategory } from '../../types'
+import type { ChecklistCategory, DefectStatus } from '../../types'
 
 const CATEGORY_ICONS: Record<string, ComponentType<LucideProps>> = {
   門: DoorOpen,
@@ -38,6 +39,8 @@ export function HomePage({
   const [switchOpen, setSwitchOpen] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
   const [areasOpen, setAreasOpen] = useState(false)
+  const [unitDefectsOpen, setUnitDefectsOpen] = useState(false)
+  const [unitDefectsStatus, setUnitDefectsStatus] = useState<'all' | DefectStatus>('all')
   const projectName = useProjectStore((s) => s.projectName)
   const currentProject = useCurrentProject()
   const units = useProjectStore((s) => s.units)
@@ -184,22 +187,50 @@ export function HomePage({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginTop: 14 }}>
-            <div className="status-pill status-pill-amber">
+            <button
+              type="button"
+              className="status-pill status-pill-amber"
+              onClick={() => {
+                setUnitDefectsStatus('pending_repair')
+                setUnitDefectsOpen(true)
+              }}
+            >
               <span className="n nums">{stats.repair}</span>
               <span className="l">待改善</span>
-            </div>
-            <div className="status-pill status-pill-slate">
+            </button>
+            <button
+              type="button"
+              className="status-pill status-pill-slate"
+              onClick={() => {
+                setUnitDefectsStatus('pending_reinspection')
+                setUnitDefectsOpen(true)
+              }}
+            >
               <span className="n nums">{stats.reinspect}</span>
               <span className="l">待複驗</span>
-            </div>
-            <div className="status-pill status-pill-terra">
+            </button>
+            <button
+              type="button"
+              className="status-pill status-pill-terra"
+              onClick={() => {
+                setUnitDefectsStatus('returned')
+                setUnitDefectsOpen(true)
+              }}
+            >
               <span className="n nums">{stats.returned}</span>
               <span className="l">退回</span>
-            </div>
-            <div className="status-pill status-pill-done">
+            </button>
+            <button
+              type="button"
+              className="status-pill status-pill-done"
+              onClick={() => {
+                setUnitDefectsStatus('completed')
+                setUnitDefectsOpen(true)
+              }}
+            >
               <span className="n nums">{stats.done}</span>
               <span className="l">已改善</span>
-            </div>
+            </button>
           </div>
 
           <button
@@ -208,6 +239,26 @@ export function HomePage({
             style={{
               width: '100%',
               marginTop: 12,
+              minHeight: 40,
+              background: 'rgba(255,255,255,0.14)',
+              color: '#fff',
+              borderColor: 'rgba(255,255,255,0.28)',
+              fontWeight: 800,
+            }}
+            onClick={() => {
+              setUnitDefectsStatus('all')
+              setUnitDefectsOpen(true)
+            }}
+          >
+            預覽本戶缺失（{unitDefects.length}）
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{
+              width: '100%',
+              marginTop: 8,
               minHeight: 40,
               background: 'rgba(255,255,255,0.14)',
               color: '#fff',
@@ -275,6 +326,13 @@ export function HomePage({
       {projectOpen && <ProjectSwitcher onClose={() => setProjectOpen(false)} />}
       {areasOpen && unit && (
         <UnitAreasEditor unitId={unit.id} onClose={() => setAreasOpen(false)} />
+      )}
+      {unitDefectsOpen && unit && (
+        <UnitDefectsSheet
+          unitId={unit.id}
+          initialStatus={unitDefectsStatus}
+          onClose={() => setUnitDefectsOpen(false)}
+        />
       )}
     </div>
   )
