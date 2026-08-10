@@ -1,12 +1,14 @@
 [
   {
-    "origin": [
-      "https://ww3e23.github.io",
-      "http://localhost:5173",
-      "http://127.0.0.1:5173"
+    "origin": ["*"],
+    "method": ["GET", "HEAD", "OPTIONS"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Disposition",
+      "Content-Length",
+      "Cache-Control",
+      "x-goog-meta-*"
     ],
-    "method": ["GET", "HEAD"],
-    "responseHeader": ["Content-Type", "Cache-Control"],
     "maxAgeSeconds": 3600
   }
 ]
