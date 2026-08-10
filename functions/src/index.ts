@@ -339,7 +339,7 @@ async function runPhotoSync(params: {
     scanned,
     errors: errors.slice(0, 12),
     clientEmail: actorLabel ?? null,
-    folderLayout: '棟別 / 樓層 / 戶別 / 大項 / 編號_小項',
+    folderLayout: '棟別 / 樓層 / 戶別 / 大項 / #編號 小項名稱',
   }
 }
 

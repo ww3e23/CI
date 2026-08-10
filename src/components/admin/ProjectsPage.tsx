@@ -257,7 +257,7 @@ export function ProjectsPage() {
               <TitleHint
                 as="span"
                 style={{ pointerEvents: 'auto' }}
-                hint="綁定後可用手動同步把既有照片補進 Drive；結構為棟別／樓層／戶別／大項／編號_小項。需已部署 Cloud Function，並把資料夾共用給服務帳戶。"
+                hint="綁定後可用手動同步把既有照片補進 Drive；結構為棟別／樓層／戶別／大項／#編號 小項名稱。個人碟請用「用我的 Google 帳號同步」。"
               >
                 Google 雲端硬碟
               </TitleHint>
@@ -305,11 +305,13 @@ export function ProjectsPage() {
                 </button>
               </div>
               <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, lineHeight: 1.5 }}>
-                同步後資料夾：棟別 → 樓層 → 戶別 → 大項 → <code>01_小項名稱</code>
+                同步後資料夾：棟別 → 樓層 → 戶別 → 大項 → <code>#5 小項名稱</code>（與缺失列表相同）
                 <br />
                 公司若未開放「共用雲端硬碟」，請用綠色按鈕「用我的 Google 帳號同步」（寫進你自己的雲端容量）。
                 <br />
                 在同一瀏覽器授權成功後，之後現場拍照會自動補傳到此資料夾（約數十秒內；換裝置或清快取需再按一次授權）。
+                <br />
+                舊的 <code>03_小項</code> 資料夾不會自動改名；新同步會依「#編號 小項名稱」建立。
               </div>
               {driveMsg && (
                 <div

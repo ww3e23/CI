@@ -151,22 +151,17 @@ export async function listFolderFiles(
   return out
 }
 
+/** 葉層資料夾：與缺失列表相同「#編號 小項名稱」 */
 export function buildItemFolderName(input: {
   itemSortOrder?: number | null
   itemDescription?: string | null
   defectNumber: number
   defectDescription: string
 }): string {
-  if (input.itemDescription) {
-    const num =
-      typeof input.itemSortOrder === 'number' && Number.isFinite(input.itemSortOrder)
-        ? String(input.itemSortOrder + 1).padStart(2, '0')
-        : '00'
-    return sanitizeDriveName(`${num}_${input.itemDescription}`)
-  }
-  const n = String(input.defectNumber || 0).padStart(3, '0')
-  const desc = (input.defectDescription || '未命名缺失').slice(0, 40)
-  return sanitizeDriveName(`${n}_${desc}`)
+  const itemLabel = (input.itemDescription || '').trim()
+  const fallback = (input.defectDescription || '未命名缺失').trim().slice(0, 60)
+  const title = itemLabel || fallback
+  return sanitizeDriveName(`#${input.defectNumber} ${title}`)
 }
 
 export function buildDriveFileName(defectNumber: number, storageFileName: string): string {
