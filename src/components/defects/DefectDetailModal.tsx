@@ -177,7 +177,7 @@ export function DefectDetailModal({
           disabled={photos.length === 0}
           onClick={() => openSave(photos)}
         >
-          <ImageDown size={16} /> 下載照片
+          <ImageDown size={16} /> 儲存照片
         </button>
         {canManage && (
           <button

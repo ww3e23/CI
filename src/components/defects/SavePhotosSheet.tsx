@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Share2, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Download, ExternalLink, Share2, X } from 'lucide-react'
 import {
   isLikelyMobile,
   prepareImageDownload,
@@ -12,8 +12,9 @@ import { Modal } from '../ui/Modal'
 type PhotoItem = { src: string; filename: string; kind: string }
 
 /**
- * 手機下載專用：先在面板內備妥圖片，再用「分享／儲存」按鈕觸發（保留使用者手勢）。
- * iOS／PWA 對直接 <a download> 常完全沒反應。
+ * 儲存照片面板：
+ * - 桌面：按鈕為「下載檔案」，直接另存
+ * - 手機：按鈕為「分享／儲存到照片」
  */
 export function SavePhotosSheet({
   photos,
@@ -22,6 +23,8 @@ export function SavePhotosSheet({
   photos: PhotoItem[]
   onClose: () => void
 }) {
+  const mobile = isLikelyMobile()
+  const preparedRef = useRef<(PreparedImage | null)[]>(photos.map(() => null))
   const [items, setItems] = useState<(PreparedImage | null)[]>(() => photos.map(() => null))
   const [errors, setErrors] = useState<(string | null)[]>(() => photos.map(() => null))
   const [loading, setLoading] = useState(true)
@@ -32,32 +35,34 @@ export function SavePhotosSheet({
     let cancelled = false
     const prepared: (PreparedImage | null)[] = photos.map(() => null)
     const errs: (string | null)[] = photos.map(() => null)
+    preparedRef.current = prepared
 
     ;(async () => {
-      for (let i = 0; i < photos.length; i += 1) {
-        if (cancelled) return
-        try {
-          prepared[i] = await prepareImageDownload(
-            photos[i].src,
-            photos[i].filename,
-            photos[i].kind,
-          )
-        } catch (err) {
-          errs[i] = err instanceof Error ? err.message : '載入失敗'
-        }
-        if (!cancelled) {
-          setItems([...prepared])
-          setErrors([...errs])
-        }
+      await Promise.all(
+        photos.map(async (photo, i) => {
+          try {
+            prepared[i] = await prepareImageDownload(photo.src, photo.filename, photo.kind)
+          } catch (err) {
+            errs[i] = err instanceof Error ? err.message : '載入失敗'
+          }
+        }),
+      )
+      if (cancelled) {
+        for (const p of prepared) revokePrepared(p)
+        return
       }
-      if (!cancelled) setLoading(false)
+      preparedRef.current = prepared
+      setItems([...prepared])
+      setErrors([...errs])
+      setLoading(false)
     })()
 
     return () => {
       cancelled = true
-      for (const p of prepared) revokePrepared(p)
+      // 真正卸載時才釋放；成功路徑由 ref 持有
+      for (const p of preparedRef.current) revokePrepared(p)
+      preparedRef.current = []
     }
-    // 只在開啟時依傳入 photos 準備一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -67,13 +72,13 @@ export function SavePhotosSheet({
     setBusyIndex(index)
     setHint(null)
     try {
-      const mode = await shareOrDownloadPrepared(image)
+      const mode = await shareOrDownloadPrepared(image, { forceDownload: !mobile })
       setHint(
         mode === 'shared'
           ? '請在選單點「儲存影像」或「存到照片」'
-          : isLikelyMobile()
-            ? '若沒跳出檔案，請改成長按上方圖片 → 儲存到照片'
-            : '已開始下載',
+          : mobile
+            ? '若沒有跳出選單，請長按上方圖片 → 儲存到照片'
+            : '已開始下載，請查看瀏覽器下載列／下載資料夾',
       )
     } catch (err) {
       setHint(err instanceof Error ? err.message : '儲存失敗')
@@ -81,6 +86,34 @@ export function SavePhotosSheet({
       setBusyIndex(null)
     }
   }
+
+  async function handleSaveAll() {
+    setHint(null)
+    let ok = 0
+    for (let i = 0; i < items.length; i += 1) {
+      if (!items[i]) continue
+      setBusyIndex(i)
+      try {
+        await shareOrDownloadPrepared(items[i]!, { forceDownload: !mobile })
+        ok += 1
+        await new Promise((r) => setTimeout(r, 350))
+      } catch (err) {
+        console.warn(err)
+      }
+    }
+    setBusyIndex(null)
+    if (ok === 0) {
+      setHint('下載失敗。可改按「開原圖」後右鍵另存，或檢查是否封鎖多檔下載。')
+    } else {
+      setHint(
+        mobile
+          ? `已處理 ${ok} 張，請在分享選單儲存`
+          : `已下載 ${ok} 張。若只下到 1 張，請允許瀏覽器「下載多個檔案」。`,
+      )
+    }
+  }
+
+  const readyCount = items.filter(Boolean).length
 
   return (
     <Modal onClose={onClose} aria-label="儲存照片" variant="bottom">
@@ -91,7 +124,9 @@ export function SavePhotosSheet({
             儲存照片
           </h3>
           <p style={{ margin: '8px 0 0', color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600 }}>
-            手機請點「分享／儲存」，再選「儲存影像」。也可長按圖片直接存到相簿。
+            {mobile
+              ? '點「分享／儲存到照片」，再選「儲存影像」。也可長按圖片存到相簿。'
+              : '電腦請點「下載檔案」，檔案會存到瀏覽器的下載資料夾。'}
           </p>
         </div>
         <button type="button" className="icon-btn" aria-label="關閉" onClick={onClose}>
@@ -110,6 +145,19 @@ export function SavePhotosSheet({
         </p>
       )}
 
+      {!loading && readyCount > 1 && (
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ width: '100%', marginTop: 12 }}
+          disabled={busyIndex !== null}
+          onClick={() => void handleSaveAll()}
+        >
+          <Download size={16} />
+          {mobile ? `分享全部（${readyCount}）` : `下載全部（${readyCount}）`}
+        </button>
+      )}
+
       <div style={{ display: 'grid', gap: 14, marginTop: 14, maxHeight: '58vh', overflow: 'auto' }}>
         {photos.map((p, index) => {
           const ready = items[index]
@@ -121,41 +169,54 @@ export function SavePhotosSheet({
               style={{ padding: 10, display: 'grid', gap: 10 }}
             >
               <div style={{ fontWeight: 800, fontSize: 13 }}>{p.kind}</div>
-              {(ready || p.src) && (
-                <img
-                  src={ready?.objectUrl || p.src}
-                  alt={p.kind}
-                  style={{
-                    width: '100%',
-                    maxHeight: 240,
-                    objectFit: 'contain',
-                    borderRadius: 12,
-                    background: '#1c211d',
-                    display: 'block',
-                    // 允許 iOS 長按呼出儲存選單
-                    WebkitTouchCallout: 'default',
-                    WebkitUserSelect: 'auto',
-                    userSelect: 'auto',
-                  }}
-                />
-              )}
+              <img
+                src={ready?.objectUrl || p.src}
+                alt={p.kind}
+                style={{
+                  width: '100%',
+                  maxHeight: 240,
+                  objectFit: 'contain',
+                  borderRadius: 12,
+                  background: '#1c211d',
+                  display: 'block',
+                  WebkitTouchCallout: 'default',
+                  WebkitUserSelect: 'auto',
+                  userSelect: 'auto',
+                }}
+              />
               {err && (
-                <div style={{ color: 'var(--terracotta)', fontWeight: 700, fontSize: 12 }}>{err}</div>
+                <div style={{ color: 'var(--terracotta)', fontWeight: 700, fontSize: 12 }}>
+                  準備失敗：{err}
+                </div>
               )}
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ width: '100%' }}
-                disabled={!ready || busyIndex === index}
-                onClick={() => void handleSave(index)}
-              >
-                <Share2 size={16} />
-                {busyIndex === index
-                  ? '開啟中…'
-                  : ready
-                    ? '分享／儲存到照片'
-                    : '準備中…'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ flex: 1, minWidth: 140 }}
+                  disabled={!ready || busyIndex === index}
+                  onClick={() => void handleSave(index)}
+                >
+                  {mobile ? <Share2 size={16} /> : <Download size={16} />}
+                  {busyIndex === index
+                    ? '處理中…'
+                    : ready
+                      ? mobile
+                        ? '分享／儲存到照片'
+                        : '下載檔案'
+                      : '準備中…'}
+                </button>
+                <a
+                  className="btn btn-ghost"
+                  style={{ minHeight: 48, textDecoration: 'none' }}
+                  href={ready?.objectUrl || p.src}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download={ready ? ready.filename : undefined}
+                >
+                  <ExternalLink size={16} /> 開原圖
+                </a>
+              </div>
             </article>
           )
         })}
