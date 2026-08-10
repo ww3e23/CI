@@ -123,8 +123,16 @@ Firebase／GCP 預設運算服務帳戶通常類似：
 
 ### 5-4 在驗屋後台綁定
 1. 用 `admin@site.tw` 登入 → 開 `#/admin` → **專案管理**
-2. 點選建案 → 貼上 Google 雲端硬碟資料夾網址 → **儲存雲端硬碟設定**
+2. 點選建案 → 貼上 Google 雲端硬碟資料夾網址 → **儲存**
 3. 每個建案可貼不同資料夾
+4. 若先前已拍過照片：按 **「同步既有照片到雲端硬碟」**  
+   只會補硬碟裡還沒有的檔案；資料夾結構為：
+
+   `棟別 / 樓層 / 戶別 / 大項 / 01_小項名稱`
+
+> 共用對象請用 **Cloud Functions 執行身分**（同步失敗時畫面上會顯示服務帳戶 email）。  
+> 常見為 `{專案編號}-compute@developer.gserviceaccount.com` 或 `ci-inspection@appspot.gserviceaccount.com`。  
+> 若你先前只共用給 `firebase-adminsdk-...`，請再把實際執行帳戶也加進共用雲端硬碟成員。
 
 ### 5-5 部署鏡像 Function
 本機：
@@ -137,9 +145,12 @@ cd functions && npm install && cd ..
 firebase deploy --only functions,firestore:rules,storage
 ```
 
+或在 GitHub Secrets 設定 `FIREBASE_TOKEN`（`firebase login:ci`），推送 `functions/**` 到 `main` 會自動部署。
+
 部署成功後流程：
 
-**拍照／上傳 → Firebase Storage →（自動）複製到該建案的 Google 雲端硬碟資料夾**
+**拍照／上傳 → Firebase Storage →（自動）依棟樓戶大項小項複製到 Google 雲端硬碟**  
+**手動按鈕 → 掃描既有 Storage 照片 → 只補硬碟缺少的檔案**
 
 ---
 

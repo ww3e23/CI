@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Trash2, UserMinus } from 'lucide-react'
+import { CloudUpload, Trash2, UserMinus } from 'lucide-react'
 import { useAuthStore } from '../../store/useAuthStore'
 import { createId } from '../../lib/id'
 import { nextProjectCode } from '../../lib/projectCode'
 import { driveFolderUrl, parseDriveFolderId } from '../../lib/driveFolder'
+import { syncProjectPhotosToDrive } from '../../services/driveSync'
 import {
   ROLE_LABEL,
   type MemberRole,
@@ -35,6 +36,7 @@ export function ProjectsPage() {
   const [draft, setDraft] = useState({ name: '', location: '', driveInput: '' })
   const [driveInput, setDriveInput] = useState('')
   const [driveMsg, setDriveMsg] = useState('')
+  const [driveSyncing, setDriveSyncing] = useState(false)
   const [memberQuery, setMemberQuery] = useState('')
 
   const selected = projects.find((p) => p.id === selectedId) ?? null
@@ -96,7 +98,45 @@ export function ProjectsPage() {
       driveFolderUrl: folderId ? driveFolderUrl(folderId) : undefined,
     }
     upsertProject(next)
-    setDriveMsg(folderId ? '已儲存，照片上傳後會鏡像到此資料夾（需部署 Cloud Function）' : '已清除雲端硬碟設定')
+    setDriveMsg(
+      folderId
+        ? '已儲存。可按「同步既有照片到雲端硬碟」把先前拍的照片補進去。'
+        : '已清除雲端硬碟設定',
+    )
+  }
+
+  async function runDriveSync() {
+    if (!selected?.driveFolderId) {
+      setDriveMsg('請先貼上並儲存雲端硬碟資料夾網址')
+      return
+    }
+    if (driveSyncing) return
+    const okConfirm = window.confirm(
+      `要把「${selected.name}」已上傳的照片同步到雲端硬碟嗎？\n\n` +
+        '只會補「硬碟裡還沒有」的照片，不會刪除或覆蓋既有檔案。\n' +
+        '資料夾結構：棟別／樓層／戶別／大項／編號_小項',
+    )
+    if (!okConfirm) return
+
+    setDriveSyncing(true)
+    setDriveMsg('同步中，照片多時可能需要幾分鐘，請勿關閉頁面…')
+    try {
+      const res = await syncProjectPhotosToDrive(selected.id)
+      if (!res.ok || !res.result) {
+        setDriveMsg(res.error || '同步失敗')
+        return
+      }
+      const r = res.result
+      const errHint =
+        r.errors.length > 0 ? `；部分失敗 ${r.errors.length} 筆（見下方）` : ''
+      setDriveMsg(
+        `同步完成：新增 ${r.uploaded} 張、略過已存在 ${r.skipped} 張、掃描 ${r.scanned} 張${errHint}` +
+          (r.clientEmail ? `\n服務帳戶：${r.clientEmail}` : '') +
+          (r.errors[0] ? `\n${r.errors.slice(0, 3).join('\n')}` : ''),
+      )
+    } finally {
+      setDriveSyncing(false)
+    }
   }
 
   return (
@@ -200,7 +240,7 @@ export function ProjectsPage() {
               <TitleHint
                 as="span"
                 style={{ pointerEvents: 'auto' }}
-                hint="需另部署 Cloud Function 才會自動鏡像；目前以 Firebase Storage＋App 內下載／報告為主。暫可不設定。"
+                hint="綁定後可用手動同步把既有照片補進 Drive；結構為棟別／樓層／戶別／大項／編號_小項。需已部署 Cloud Function，並把資料夾共用給服務帳戶。"
               >
                 Google 雲端硬碟
               </TitleHint>
@@ -227,9 +267,31 @@ export function ProjectsPage() {
                     開啟資料夾
                   </a>
                 )}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!selected.driveFolderId || driveSyncing}
+                  onClick={() => void runDriveSync()}
+                  title="把 Firebase 已有、但雲端硬碟還沒有的照片補同步進去"
+                >
+                  <CloudUpload size={16} />
+                  {driveSyncing ? '同步中…' : '同步既有照片到雲端硬碟'}
+                </button>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, lineHeight: 1.5 }}>
+                同步後資料夾：棟別 → 樓層 → 戶別 → 大項 → <code>01_小項名稱</code>
               </div>
               {driveMsg && (
-                <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: 'var(--green-deep)' }}>
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'var(--green-deep)',
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: 1.45,
+                  }}
+                >
                   {driveMsg}
                 </div>
               )}
