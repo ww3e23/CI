@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Download, ImageDown, Pencil, Trash2 } from 'lucide-react'
 import type { Defect, DefectStatus } from '../../types'
 import {
   resolveDefectItemLabel,
   resolveDefectRemark,
 } from '../../lib/defectDisplay'
+import { hasUploadableLocalMedia } from '../../lib/defectMedia'
 import { statusLabel } from '../../lib/progress'
 import { Modal } from '../ui/Modal'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
@@ -45,6 +46,11 @@ export function DefectDetailModal({
   const canManage =
     role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
 
+  // 開啟詳情時清掉「沒東西可傳卻一直顯示失敗自動重試」的假狀態
+  useEffect(() => {
+    void useProjectStore.getState().healStuckMediaSyncStates()
+  }, [defect.id])
+
   const photos = [
     live.planPhotoDataUrl
       ? {
@@ -60,12 +66,11 @@ export function DefectDetailModal({
     })),
   ].filter(Boolean) as { src: string; kind: string; filename: string }[]
 
+  const hasLocalPending = hasUploadableLocalMedia(live)
   const pendingUpload =
-    live.syncState === 'pending' ||
-    live.syncState === 'syncing' ||
-    live.syncState === 'failed' ||
-    Boolean(live.planPhotoDataUrl?.startsWith('data:')) ||
-    (live.photoDataUrls ?? []).some((p) => p.startsWith('data:'))
+    hasLocalPending || live.syncState === 'pending' || live.syncState === 'syncing'
+  const showFailedRetry = live.syncState === 'failed' && hasLocalPending
+  const emptyShell = photos.length === 0 && !hasLocalPending
 
   const improved = live.status === 'completed'
 
@@ -156,13 +161,19 @@ export function DefectDetailModal({
             {live.buildingName} {live.floor} {live.unitCode}戶
             <br />
             狀態：{statusLabel(live.status)}
-            {pendingUpload && (
+            {showFailedRetry && (
               <>
                 <br />
                 <span style={{ color: 'var(--terracotta)', fontWeight: 700 }}>
-                  {live.syncState === 'failed'
-                    ? '照片上傳失敗，將於連線後自動重試'
-                    : '照片上傳中／待補傳（請保持連線片刻）'}
+                  照片上傳失敗，將於連線後自動重試
+                </span>
+              </>
+            )}
+            {pendingUpload && !showFailedRetry && (
+              <>
+                <br />
+                <span style={{ color: 'var(--terracotta)', fontWeight: 700 }}>
+                  照片上傳中／待補傳（請保持連線片刻）
                 </span>
               </>
             )}
@@ -231,8 +242,11 @@ export function DefectDetailModal({
       <div style={{ display: 'grid', gap: 12, marginTop: 16 }} className={improved ? 'defect-detail-improved' : undefined}>
         {photos.length === 0 && (
           <div className="glass" style={{ padding: 16, color: 'var(--ink-soft)', textAlign: 'center' }}>
-            此筆缺失沒有附圖
-            {pendingUpload ? '（若剛上傳過，請稍候連線補傳後再開）' : ''}
+            {emptyShell
+              ? '此筆缺失沒有附圖。若不需要可直接刪除。'
+              : pendingUpload
+                ? '此筆缺失沒有附圖（若剛上傳過，請稍候連線補傳後再開）'
+                : '此筆缺失沒有附圖'}
           </div>
         )}
         {photos.map((p) => (

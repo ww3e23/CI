@@ -27,6 +27,7 @@ import {
 } from '../services/driveSync'
 import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
+import { hasUploadableLocalMedia } from '../lib/defectMedia'
 import { statusLabel } from '../lib/progress'
 import { normalizeAreaName } from '../lib/areas'
 import {
@@ -95,6 +96,8 @@ interface ProjectActions {
   hydrateFromCloud: (projectId: string) => Promise<{ ok: boolean; error?: string }>
   /** 把 IndexedDB 佇列中的照片掛回記憶體（離線也能看圖） */
   restorePendingMediaToMemory: () => Promise<number>
+  /** 清掉「已失敗／待傳但實際沒有可上傳照片」的卡住狀態，避免一直顯示自動重試 */
+  healStuckMediaSyncStates: () => Promise<number>
   /** 補傳 IndexedDB 佇列中尚未上雲的照片 */
   flushPendingMediaUploads: () => Promise<{ ok: boolean; uploaded: number }>
   /** 立刻把作用中專案存本機並推上雲端 */
@@ -1047,12 +1050,54 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         }
       },
 
+      healStuckMediaSyncStates: async () => {
+        const projectId = get().activeProjectId
+        if (!projectId) return 0
+        try {
+          const pending = await listPendingDefectMedia()
+          const pendingIds = new Set(
+            pending.filter((p) => p.projectId === projectId).map((p) => p.defectId),
+          )
+          const healedIds: string[] = []
+          const nextDefects = get().defects.map((defect) => {
+            if (defect.status === 'voided') return defect
+            if (
+              defect.syncState !== 'failed' &&
+              defect.syncState !== 'pending' &&
+              defect.syncState !== 'syncing'
+            ) {
+              return defect
+            }
+            // 佇列裡還有圖，或記憶體還有 data URL → 真的還在等上傳，不要清
+            if (pendingIds.has(defect.id) || hasUploadableLocalMedia(defect)) {
+              return defect
+            }
+            healedIds.push(defect.id)
+            return { ...defect, syncState: 'synced' as const }
+          })
+          if (healedIds.length === 0) return 0
+          set({ defects: nextDefects })
+          afterProjectChange(get, set, { syncCloud: false })
+          if (cloudReady()) {
+            for (const id of healedIds) {
+              const d = nextDefects.find((x) => x.id === id)
+              if (d) void syncDefect(projectId, d).catch(() => undefined)
+            }
+          }
+          return healedIds.length
+        } catch (err) {
+          console.warn('[healStuckMediaSyncStates] failed', err)
+          return 0
+        }
+      },
+
       flushPendingMediaUploads: async () => {
         const projectId = get().activeProjectId
         if (!projectId) return { ok: false, uploaded: 0 }
 
-        // 無論是否連線，先把照片掛回畫面
+        // 無論是否連線，先把照片掛回畫面，並清掉假的「上傳失敗」
         await get().restorePendingMediaToMemory()
+        await get().healStuckMediaSyncStates()
         if (!cloudReady() || !navigator.onLine) return { ok: false, uploaded: 0 }
 
         let uploaded = 0
@@ -1087,6 +1132,14 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               withLocal.photoDataUrls.some((p) => p.startsWith('data:'))
             if (!needsUpload) {
               await clearPendingDefectMedia(entry.defectId)
+              const latest = get().defects.find((d) => d.id === entry.defectId)
+              if (latest && latest.status !== 'voided' && latest.syncState !== 'synced') {
+                const synced = { ...latest, syncState: 'synced' as const }
+                set({
+                  defects: get().defects.map((d) => (d.id === synced.id ? synced : d)),
+                })
+                void syncDefect(projectId, synced).catch(() => undefined)
+              }
               continue
             }
 
