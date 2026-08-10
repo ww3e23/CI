@@ -45,8 +45,12 @@ function loadGis(): Promise<void> {
   return gisLoading
 }
 
+/** 網頁 OAuth 用戶端 ID（會公開嵌在前端；靠 JS origin 限制）。CI 未設 env 時用此預設。 */
+const DEFAULT_WEB_CLIENT_ID =
+  '829326871761-ah214ejvo8383ve0bq7d7nfsfrl1b9nb.apps.googleusercontent.com'
+
 export function getGoogleOAuthClientId(): string {
-  return String(import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || '').trim()
+  return String(import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || DEFAULT_WEB_CLIENT_ID).trim()
 }
 
 /** 跳出 Google 授權視窗，取得可寫入雲端硬碟的 access token */
