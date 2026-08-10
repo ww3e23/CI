@@ -1,5 +1,6 @@
 const GIS_SRC = 'https://accounts.google.com/gsi/client'
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+/** 需可讀寫使用者既有資料夾；drive.file 看不到手動建立的資料夾（會 File not found） */
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive'
 
 type TokenClient = {
   requestAccessToken: (override?: { prompt?: string }) => void

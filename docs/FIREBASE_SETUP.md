@@ -119,7 +119,7 @@ Firebase／GCP 預設運算服務帳戶通常類似：
 服務帳戶**沒有**「我的雲端硬碟」配額，個人資料夾請走 OAuth：
 
 1. GCP → **Google Auth Platform** 完成品牌／目標對象（外部）／聯絡信箱  
-2. **資料存取權** 加入 `.../auth/drive.file`  
+2. **資料存取權** 加入 `.../auth/drive`（完整雲端硬碟；`drive.file` 看不到你手動建的資料夾）  
 3. **用戶端** 建立 **網頁應用程式**；JavaScript 來源：
    - `https://ww3e23.github.io`
    - `http://localhost:5173`
