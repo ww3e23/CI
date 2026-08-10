@@ -6,6 +6,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { logger } from 'firebase-functions'
 import { Readable } from 'node:stream'
 import {
+  assertSharedDriveFolder,
   buildDriveFileName,
   buildItemFolderName,
   ensureDefectFolderPath,
@@ -224,6 +225,19 @@ export const syncProjectPhotosToDrive = onCall(
     }
 
     const { drive, clientEmail } = await getDriveClient()
+    try {
+      await assertSharedDriveFolder(drive, driveFolderId, clientEmail)
+    } catch (err) {
+      const msg = String((err as Error)?.message ?? err)
+      if (/storage quota|shared drives|共用雲端硬碟/i.test(msg)) {
+        throw new HttpsError('failed-precondition', msg)
+      }
+      throw new HttpsError(
+        'failed-precondition',
+        `${msg}${clientEmail ? `（服務帳戶：${clientEmail}）` : ''}`,
+      )
+    }
+
     const items = await loadChecklistItems(projectId)
     const defectsSnap = await getFirestore().collection(`projects/${projectId}/defects`).get()
     const bucket = getStorage().bucket()
@@ -323,7 +337,16 @@ export const syncProjectPhotosToDrive = onCall(
             { merge: true },
           )
         } catch (err) {
-          errors.push(`上傳失敗 ${driveFileName}: ${String((err as Error)?.message ?? err)}`)
+          const msg = String((err as Error)?.message ?? err)
+          if (/storage quota/i.test(msg)) {
+            throw new HttpsError(
+              'failed-precondition',
+              `服務帳戶沒有個人雲端容量，無法寫入「我的雲端硬碟」。` +
+                `請改用「共用雲端硬碟」，並把 ${clientEmail || '服務帳戶'} 加成該共用雲端硬碟的「內容管理員」` +
+                `（不是只共用資料夾），然後重新貼上資料夾網址再同步。`,
+            )
+          }
+          errors.push(`上傳失敗 ${driveFileName}: ${msg}`)
         }
       }
     }

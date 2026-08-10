@@ -280,6 +280,8 @@ export function ProjectsPage() {
               </div>
               <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, lineHeight: 1.5 }}>
                 同步後資料夾：棟別 → 樓層 → 戶別 → 大項 → <code>01_小項名稱</code>
+                <br />
+                重要：必須使用「共用雲端硬碟」內的資料夾，並把服務帳戶加成共用雲端硬碟成員（內容管理員），不能只用「我的雲端硬碟」共用。
               </div>
               {driveMsg && (
                 <div

@@ -6,6 +6,30 @@ const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive'
 
 export type DriveClient = drive_v3.Drive
 
+/** 確認目標資料夾位於「共用雲端硬碟」（服務帳戶沒有個人雲端配額） */
+export async function assertSharedDriveFolder(
+  drive: DriveClient,
+  folderId: string,
+  clientEmail: string | null,
+): Promise<{ driveId: string; name: string }> {
+  const meta = await drive.files.get({
+    fileId: folderId,
+    fields: 'id, name, mimeType, driveId, parents, capabilities',
+    supportsAllDrives: true,
+  })
+  const driveId = meta.data.driveId
+  const name = meta.data.name || folderId
+  if (!driveId) {
+    throw new Error(
+      `綁定的資料夾「${name}」不在共用雲端硬碟內。` +
+        `Google 規定服務帳戶沒有個人雲端硬碟容量，無法寫入「我的雲端硬碟」。` +
+        `請改為：1) 建立「共用雲端硬碟」2) 把服務帳戶 ${clientEmail || '（執行帳戶）'} 加成「內容管理員」` +
+        `3) 在共用雲端硬碟內建立／放入查驗資料夾 4) 重新貼上該資料夾網址並儲存。`,
+    )
+  }
+  return { driveId, name }
+}
+
 export async function getDriveClient(): Promise<{
   drive: DriveClient
   clientEmail: string | null
