@@ -115,26 +115,36 @@ Firebase／GCP 預設運算服務帳戶通常類似：
 
 可在 **Google Cloud → IAM 與管理 → 服務帳戶** 查看。
 
-### 5-3 為每個建案準備 Drive 資料夾
-1. 在 Google 雲端硬碟建立資料夾，例如「晴川院子-查驗照片」
-2. 右鍵資料夾 → **共用** → 貼上上面的服務帳戶 Email
-3. 權限選 **編輯者**
-4. 複製資料夾網址（含 `/folders/xxxxxx`）
+### 5-3 建議：用「我的雲端硬碟」＋本人 Google 授權（不需公司共用碟）
+服務帳戶**沒有**「我的雲端硬碟」配額，個人資料夾請走 OAuth：
 
-### 5-4 在驗屋後台綁定
+1. GCP → **Google Auth Platform** 完成品牌／目標對象（外部）／聯絡信箱  
+2. **資料存取權** 加入 `.../auth/drive.file`  
+3. **用戶端** 建立 **網頁應用程式**；JavaScript 來源：
+   - `https://ww3e23.github.io`
+   - `http://localhost:5173`
+4. 把用戶端 ID 設成 `VITE_GOOGLE_OAUTH_CLIENT_ID`（正式站亦可寫在 `.env.production`）  
+5. **目標對象 → 測試使用者** 加入你要授權的 Gmail（測試模式必填）  
+6. 在「我的雲端硬碟」建資料夾，複製網址（含 `/folders/xxxxxx`）  
+7. 後台綁定後，按綠色 **「用我的 Google 帳號同步」**（不要用服務帳戶按鈕）
+
+### 5-4 可選：共用雲端硬碟＋服務帳戶
+僅在你有權把服務帳戶加進**共用雲端硬碟**成員時使用：
+
+1. 建立／選用 Shared Drive 資料夾  
+2. 把 §5-2 的服務帳戶加為**內容管理員／編輯者**  
+3. 後台綁定網址後，用 **「服務帳戶同步（共用雲端硬碟）」**
+
+### 5-5 在驗屋後台綁定
 1. 用 `admin@site.tw` 登入 → 開 `#/admin` → **專案管理**
 2. 點選建案 → 貼上 Google 雲端硬碟資料夾網址 → **儲存**
 3. 每個建案可貼不同資料夾
-4. 若先前已拍過照片：按 **「同步既有照片到雲端硬碟」**  
+4. 若先前已拍過照片：按同步按鈕  
    只會補硬碟裡還沒有的檔案；資料夾結構為：
 
    `棟別 / 樓層 / 戶別 / 大項 / 01_小項名稱`
 
-> 共用對象請用 **Cloud Functions 執行身分**（同步失敗時畫面上會顯示服務帳戶 email）。  
-> 常見為 `{專案編號}-compute@developer.gserviceaccount.com` 或 `ci-inspection@appspot.gserviceaccount.com`。  
-> 若你先前只共用給 `firebase-adminsdk-...`，請再把實際執行帳戶也加進共用雲端硬碟成員。
-
-### 5-5 部署鏡像 Function
+### 5-6 部署鏡像 Function
 本機：
 
 ```bash
@@ -185,9 +195,10 @@ firebase deploy --only firestore:rules,storage
 - [ ] 登入後 Authentication 出現使用者
 - [ ] 已發布 `firestore.rules`（後台「同步到雲端」成功、無 permission 錯誤）
 - [ ] 新增缺失後：Firestore 有 `projects/.../defects/...`，Storage 有照片
-- [ ] 後台建案已綁 Drive 資料夾，且資料夾已共用給服務帳戶
-- [ ] Cloud Function `mirrorDefectPhotoToDrive` 已部署
-- [ ] 新上傳照片出現在對應 Google 雲端硬碟資料夾
+- [ ] 後台建案已綁 Drive 資料夾；個人碟用「用我的 Google 帳號同步」，共用碟才用服務帳戶
+- [ ] OAuth 測試使用者已加入；`VITE_GOOGLE_OAUTH_CLIENT_ID` / `.env.production` 已設定
+- [ ] Cloud Function `mirrorDefectPhotoToDrive` / `syncProjectPhotosToDriveAsUser` 已部署
+- [ ] 新上傳或手動同步後，照片出現在對應 Google 雲端硬碟資料夾
 
 ---
 
