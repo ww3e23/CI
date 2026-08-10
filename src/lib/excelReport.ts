@@ -65,6 +65,15 @@ function applyHeaderRow(row: ExcelJS.Row) {
   row.height = 22
 }
 
+function enableSheetFilter(sheet: ExcelJS.Worksheet, headerRow: number, colCount: number, lastRow: number) {
+  if (lastRow < headerRow) return
+  sheet.autoFilter = {
+    from: { row: headerRow, column: 1 },
+    to: { row: lastRow, column: colCount },
+  }
+  sheet.views = [{ state: 'frozen', ySplit: headerRow }]
+}
+
 async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: string) {
   const buffer = await workbook.xlsx.writeBuffer()
   const blob = new Blob([buffer], {
@@ -90,7 +99,7 @@ export async function exportInspectionExcel(project: ProjectState): Promise<void
     .filter((b) => b.active)
     .sort((a, b) => a.sortOrder - b.sortOrder)
 
-  // 說明
+  // 1) 說明
   {
     const sheet = workbook.addWorksheet(sanitizeSheetName('說明', usedNames))
     sheet.getColumn(1).width = 22
@@ -98,10 +107,12 @@ export async function exportInspectionExcel(project: ProjectState): Promise<void
     const rows: Array<[string, string]> = [
       ['專案', project.projectName],
       ['匯出時間', new Date().toLocaleString('zh-TW')],
-      ['說明', '各棟工作表為「樓層 × 戶別」未改善缺失數量。'],
-      ['綠底', '該戶所有查驗大項皆已標記查畢（查驗完成），可避免重複查驗。'],
-      ['數字', '該戶目前「待改善／待複驗／退回」的缺失筆數（不含已改善、已作廢）。'],
-      ['空值／0', '0 表示尚無未改善缺失；綠底才代表大項查驗已完成。'],
+      ['分頁順序', '說明 → 全案彙總 → 缺失明細 → 各棟矩陣'],
+      ['全案彙總／缺失明細', '表頭已開篩選器，可依棟別、樓層、戶別、大項等快速篩選。'],
+      ['已查大項', '該戶已標記查畢，或該大項已有缺失紀錄（細項不必全勾才算查過）。'],
+      ['已查畢大項', '僅計算有按「此大項已查畢／本戶查驗完成」的大項。'],
+      ['綠底', '該戶所有大項皆已標記查畢（查驗完成），可避免重複查驗。'],
+      ['數字（各棟表）', '該戶目前「待改善／待複驗／退回」的缺失筆數（不含已改善、已作廢）。'],
     ]
     rows.forEach(([k, v], idx) => {
       const row = sheet.getRow(idx + 1)
@@ -109,12 +120,132 @@ export async function exportInspectionExcel(project: ProjectState): Promise<void
       row.getCell(1).font = { bold: true }
       row.getCell(2).value = v
     })
-    const legend = sheet.getRow(8)
+    const legend = sheet.getRow(rows.length + 2)
     legend.getCell(1).value = '範例綠底'
     legend.getCell(2).value = '查驗完成'
     legend.getCell(2).fill = DONE_FILL
   }
 
+  // 2) 全案彙總（第二分頁）
+  {
+    const sheet = workbook.addWorksheet(sanitizeSheetName('全案彙總', usedNames))
+    const header = [
+      '棟別',
+      '樓層',
+      '戶別',
+      '未改善缺失',
+      '查驗狀態',
+      '已查大項',
+      '已查畢大項',
+      '大項總數',
+    ]
+    const head = sheet.addRow(header)
+    applyHeaderRow(head)
+    header.forEach((_, idx) => {
+      sheet.getColumn(idx + 1).width = [14, 10, 10, 12, 12, 10, 12, 10][idx]
+    })
+
+    const sortedUnits = [...project.units]
+      .filter((u) => u.active)
+      .sort((a, b) => {
+        const ba = project.buildings.find((x) => x.id === a.buildingId)?.name ?? ''
+        const bb = project.buildings.find((x) => x.id === b.buildingId)?.name ?? ''
+        if (ba !== bb) return ba.localeCompare(bb, 'zh-Hant')
+        const floorCmp = compareFloor(a.floor, b.floor)
+        if (floorCmp !== 0) return floorCmp
+        return a.code.localeCompare(b.code, 'zh-Hant', { numeric: true })
+      })
+
+    for (const unit of sortedUnits) {
+      const buildingName =
+        project.buildings.find((b) => b.id === unit.buildingId)?.name ?? unit.buildingName
+      const prog = unitCategoryProgress(unit.id, project)
+      const done = unitIsInspectionComplete(project, unit.id)
+      const statusText = done ? '查驗完成' : prog.started > 0 ? '進行中' : '未開始'
+      const row = sheet.addRow([
+        buildingName,
+        unit.floor,
+        unit.code,
+        openDefectCount(project.defects, unit.id),
+        statusText,
+        prog.started,
+        prog.done,
+        prog.total,
+      ])
+      row.eachCell((cell) => {
+        cell.border = THIN_BORDER
+        cell.alignment = { vertical: 'middle', horizontal: 'center' }
+      })
+      if (done) {
+        row.eachCell((cell) => {
+          cell.fill = DONE_FILL
+        })
+      }
+    }
+
+    enableSheetFilter(sheet, 1, header.length, Math.max(1, sheet.rowCount))
+  }
+
+  // 3) 缺失明細（第三分頁，含篩選）
+  {
+    const sheet = workbook.addWorksheet(sanitizeSheetName('缺失明細', usedNames))
+    const header = [
+      '棟別',
+      '樓層',
+      '戶別',
+      '編號',
+      '大項',
+      '區域',
+      '缺失說明',
+      '狀態',
+      '照片數',
+      '建立時間',
+    ]
+    const head = sheet.addRow(header)
+    applyHeaderRow(head)
+    const widths = [12, 8, 8, 8, 14, 12, 36, 10, 8, 20]
+    widths.forEach((w, idx) => {
+      sheet.getColumn(idx + 1).width = w
+    })
+
+    const defects = [...project.defects]
+      .filter((d) => d.status !== 'voided')
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+
+    for (const defect of defects) {
+      const row = sheet.addRow([
+        defect.buildingName,
+        defect.floor,
+        defect.unitCode,
+        defect.defectNumber,
+        defect.categoryName,
+        defect.area,
+        defect.description,
+        statusLabel(defect.status),
+        defect.photoDataUrls?.length ?? 0,
+        new Date(defect.createdAt).toLocaleString('zh-TW'),
+      ])
+      row.eachCell((cell, col) => {
+        cell.border = THIN_BORDER
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: col === 7 ? 'left' : 'center',
+          wrapText: col === 7,
+        }
+      })
+      if (defect.status === 'completed') {
+        row.getCell(8).fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFD9D9D9' },
+        }
+      }
+    }
+
+    enableSheetFilter(sheet, 1, header.length, Math.max(1, sheet.rowCount))
+  }
+
+  // 4+) 各棟矩陣
   for (const building of buildings) {
     const units = project.units
       .filter((u) => u.buildingId === building.id && u.active)
@@ -188,110 +319,6 @@ export async function exportInspectionExcel(project: ProjectState): Promise<void
       (sum, u) => sum + openDefectCount(project.defects, u.id),
       0,
     )
-  }
-
-  // 全案彙總
-  {
-    const sheet = workbook.addWorksheet(sanitizeSheetName('全案彙總', usedNames))
-    const header = ['棟別', '樓層', '戶別', '未改善缺失', '查驗狀態', '已查大項', '大項總數']
-    const head = sheet.addRow(header)
-    applyHeaderRow(head)
-    header.forEach((_, idx) => {
-      sheet.getColumn(idx + 1).width = [14, 10, 10, 12, 12, 10, 10][idx]
-    })
-
-    const sortedUnits = [...project.units]
-      .filter((u) => u.active)
-      .sort((a, b) => {
-        const ba = project.buildings.find((x) => x.id === a.buildingId)?.name ?? ''
-        const bb = project.buildings.find((x) => x.id === b.buildingId)?.name ?? ''
-        if (ba !== bb) return ba.localeCompare(bb, 'zh-Hant')
-        const floorCmp = compareFloor(a.floor, b.floor)
-        if (floorCmp !== 0) return floorCmp
-        return a.code.localeCompare(b.code, 'zh-Hant', { numeric: true })
-      })
-
-    for (const unit of sortedUnits) {
-      const buildingName =
-        project.buildings.find((b) => b.id === unit.buildingId)?.name ?? unit.buildingName
-      const prog = unitCategoryProgress(unit.id, project)
-      const done = unitIsInspectionComplete(project, unit.id)
-      const row = sheet.addRow([
-        buildingName,
-        unit.floor,
-        unit.code,
-        openDefectCount(project.defects, unit.id),
-        done ? '查驗完成' : '進行中',
-        prog.done,
-        prog.total,
-      ])
-      row.eachCell((cell) => {
-        cell.border = THIN_BORDER
-        cell.alignment = { vertical: 'middle', horizontal: 'center' }
-      })
-      if (done) {
-        row.eachCell((cell) => {
-          cell.fill = DONE_FILL
-        })
-      }
-    }
-  }
-
-  // 缺失明細
-  {
-    const sheet = workbook.addWorksheet(sanitizeSheetName('缺失明細', usedNames))
-    const header = [
-      '棟別',
-      '樓層',
-      '戶別',
-      '編號',
-      '大項',
-      '區域',
-      '缺失說明',
-      '狀態',
-      '照片數',
-      '建立時間',
-    ]
-    const head = sheet.addRow(header)
-    applyHeaderRow(head)
-    const widths = [12, 8, 8, 8, 14, 12, 36, 10, 8, 20]
-    widths.forEach((w, idx) => {
-      sheet.getColumn(idx + 1).width = w
-    })
-
-    const defects = [...project.defects]
-      .filter((d) => d.status !== 'voided')
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-
-    for (const defect of defects) {
-      const row = sheet.addRow([
-        defect.buildingName,
-        defect.floor,
-        defect.unitCode,
-        defect.defectNumber,
-        defect.categoryName,
-        defect.area,
-        defect.description,
-        statusLabel(defect.status),
-        defect.photoDataUrls?.length ?? 0,
-        new Date(defect.createdAt).toLocaleString('zh-TW'),
-      ])
-      row.eachCell((cell, col) => {
-        cell.border = THIN_BORDER
-        cell.alignment = {
-          vertical: 'middle',
-          horizontal: col === 7 ? 'left' : 'center',
-          wrapText: col === 7,
-        }
-      })
-      if (defect.status === 'completed') {
-        row.getCell(8).fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFD9D9D9' },
-        }
-      }
-    }
   }
 
   const stamp = new Date().toISOString().slice(0, 10)

@@ -249,7 +249,9 @@ export function HomePage({
       <div className="section-row">
         <h2>查驗大項</h2>
         <span className="link">
-          {catProg ? `${catProg.done}/${catProg.total} 已查畢` : '查看全部'}
+          {catProg
+            ? `已查 ${catProg.started}/${catProg.total}・查畢 ${catProg.done}`
+            : '查看全部'}
         </span>
       </div>
 
@@ -263,6 +265,7 @@ export function HomePage({
               cat={cat}
               defectCount={unitDefects.filter((d) => d.categoryId === cat.id).length}
               done={Boolean(catProg?.doneIds.includes(cat.id))}
+              started={Boolean(catProg?.startedIds.includes(cat.id))}
               onClick={() => onOpenCategory(cat.id)}
             />
           ))}
@@ -281,11 +284,13 @@ function CategoryCard({
   cat,
   defectCount,
   done,
+  started,
   onClick,
 }: {
   cat: ChecklistCategory
   defectCount: number
   done: boolean
+  started: boolean
   onClick: () => void
 }) {
   const Icon = CATEGORY_ICONS[cat.name] ?? Square
@@ -300,7 +305,12 @@ function CategoryCard({
               background: 'linear-gradient(180deg, #e8f8ec 0%, #d7f0de 100%)',
               boxShadow: 'inset 0 0 0 1px rgba(0,97,0,0.18)',
             }
-          : undefined
+          : started
+            ? {
+                background: 'linear-gradient(180deg, #fff8e8 0%, #f3e7c8 100%)',
+                boxShadow: 'inset 0 0 0 1px rgba(140,100,20,0.18)',
+              }
+            : undefined
       }
     >
       <span className={`badge ${defectCount > 0 ? 'warn' : 'zero'}`}>{defectCount}</span>
@@ -308,8 +318,15 @@ function CategoryCard({
         <Icon size={20} strokeWidth={1.8} />
       </div>
       <div className="serif" style={{ fontSize: 18, fontWeight: 700 }}>{cat.name}</div>
-      <div style={{ marginTop: 4, color: done ? '#006100' : 'var(--ink-soft)', fontSize: 12, fontWeight: 700 }}>
-        {done ? '已查畢' : `${cat.itemCount} 細項`}
+      <div
+        style={{
+          marginTop: 4,
+          color: done ? '#006100' : started ? '#8a5a00' : 'var(--ink-soft)',
+          fontSize: 12,
+          fontWeight: 700,
+        }}
+      >
+        {done ? '已查畢' : started ? '已查（有缺失）' : `${cat.itemCount} 細項`}
       </div>
     </button>
   )

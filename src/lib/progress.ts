@@ -30,19 +30,41 @@ export function activeCategories(state: ProjectState) {
   return state.categories.filter((c) => c.active).sort((a, b) => a.sortOrder - b.sortOrder)
 }
 
-/** 此戶已查畢大項數／應查大項數 */
+/**
+ * 此戶大項進度：
+ * - done：已標記「大項查畢」
+ * - started：已查畢，或該大項已有非作廢缺失（代表已實地查過，細項不必全勾）
+ */
 export function unitCategoryProgress(
   unitId: string,
   state: ProjectState,
-): { doneIds: string[]; done: number; total: number; complete: boolean } {
+): {
+  doneIds: string[]
+  done: number
+  startedIds: string[]
+  started: number
+  total: number
+  complete: boolean
+} {
   const cats = activeCategories(state)
   const doneIds = state.unitCategoryDone?.[unitId] ?? []
   const doneSet = new Set(doneIds)
+  const defectCatIds = new Set(
+    state.defects
+      .filter((d) => d.unitId === unitId && d.status !== 'voided')
+      .map((d) => d.categoryId),
+  )
+  const startedIds = cats
+    .filter((c) => doneSet.has(c.id) || defectCatIds.has(c.id))
+    .map((c) => c.id)
   const done = cats.filter((c) => doneSet.has(c.id)).length
+  const started = startedIds.length
   const total = cats.length
   return {
     doneIds,
     done,
+    startedIds,
+    started,
     total,
     complete: total > 0 && done >= total,
   }
@@ -72,7 +94,7 @@ export function unitProgress(
   // 進度以「大項查畢」為準；舊的 unitCheckedCount 僅作後援
   const legacyChecked = state.unitCheckedCount[unit.id] ?? 0
   const percentFromCats =
-    catProg.total === 0 ? 0 : Math.round((catProg.done / catProg.total) * 100)
+    catProg.total === 0 ? 0 : Math.round((catProg.started / catProg.total) * 100)
   const percentFromLegacy =
     itemTotal === 0 ? 0 : Math.round((Math.min(legacyChecked, itemTotal) / itemTotal) * 100)
   const percent = Math.max(percentFromCats, percentFromLegacy)
@@ -81,7 +103,7 @@ export function unitProgress(
   let status: CellStatus = 'not_started'
   if (complete) status = 'completed'
   else if (defectCount > 0) status = 'has_defects'
-  else if (catProg.done > 0 || legacyChecked > 0) status = 'in_progress'
+  else if (catProg.started > 0 || legacyChecked > 0) status = 'in_progress'
 
   return {
     checked: complete ? itemTotal : Math.min(legacyChecked, itemTotal),
