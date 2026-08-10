@@ -982,6 +982,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
 
           // 合併後再掛一次佇列，確保 data URL 不被雲端空欄位蓋掉
           await get().restorePendingMediaToMemory()
+          await get().healStuckMediaSyncStates()
 
           // 本機有、雲端缺的部分補推回去
           if (
@@ -996,6 +997,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         } catch (err) {
           console.warn('[hydrateFromCloud] failed', err)
           await get().restorePendingMediaToMemory()
+          await get().healStuckMediaSyncStates()
           return { ok: false, error: '從雲端同步失敗' }
         }
       },
