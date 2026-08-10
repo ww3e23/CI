@@ -108,7 +108,8 @@ async function uploadBufferToDrive(params: {
  */
 export const mirrorDefectPhotoToDrive = onObjectFinalized(
   {
-    region: 'asia-east1',
+    // 必須與 Storage bucket 區域一致（此專案 bucket 在 us-east1）
+    region: 'us-east1',
     memory: '512MiB',
     timeoutSeconds: 120,
   },
