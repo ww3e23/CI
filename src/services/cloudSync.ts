@@ -21,6 +21,8 @@ function stripHeavyPhotos(defect: Defect): Record<string, unknown> {
     // Firestore 不適合放大 base64；已上 Storage 的才保留 URL
     planPhotoDataUrl: plan?.startsWith('http') ? plan : plan ? '[local-pending-upload]' : null,
     photoDataUrls: photos.map((p) => (p.startsWith('http') ? p : '[local-pending-upload]')),
+    // 保留客戶端 ISO，供合併時可靠比較（serverTimestamp 拉回後曾被 String() 破壞）
+    clientUpdatedAt: defect.updatedAt,
     updatedAt: serverTimestamp(),
     createdAt: defect.createdAt,
   }
