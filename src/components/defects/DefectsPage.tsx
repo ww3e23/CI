@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react'
 import { ChevronRight, ListFilter, X } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
+import {
+  defectListTitle,
+  resolveDefectRemark,
+} from '../../lib/defectDisplay'
 import { defectsByStatus, statusLabel } from '../../lib/progress'
 import type { Defect, DefectStatus } from '../../types'
 import {
@@ -116,6 +120,8 @@ export function DefectsPage() {
       <div style={{ display: 'grid', gap: 10 }}>
         {filtered.map((d) => {
           const improved = d.status === 'completed'
+          const title = defectListTitle(d, items)
+          const remark = resolveDefectRemark(d, items)
           return (
             <button
               key={d.id}
@@ -136,11 +142,39 @@ export function DefectsPage() {
                 <Thumb label="現況" src={d.photoDataUrls[0]} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 800, fontSize: 14 }}>
-                  #{d.defectNumber} {d.area}｜{d.description}
+                <div
+                  style={{
+                    fontWeight: 800,
+                    fontSize: 14,
+                    lineHeight: 1.35,
+                    overflow: 'hidden',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                  }}
+                >
+                  {title}
                 </div>
-                <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-                  {d.categoryName} · {d.buildingName} {d.floor} {d.unitCode}戶 · {statusLabel(d.status)}
+                {remark ? (
+                  <div
+                    style={{
+                      marginTop: 4,
+                      color: 'var(--ink-soft)',
+                      fontSize: 12,
+                      fontWeight: 500,
+                      lineHeight: 1.4,
+                      overflow: 'hidden',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                    }}
+                  >
+                    {remark}
+                  </div>
+                ) : null}
+                <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 11, fontWeight: 600 }}>
+                  {d.categoryName} · {d.area} · {d.buildingName} {d.floor} {d.unitCode}戶 ·{' '}
+                  {statusLabel(d.status)}
                 </div>
               </div>
               <ChevronRight size={18} color="var(--stone)" />

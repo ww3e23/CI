@@ -93,9 +93,8 @@ export function AddDefectSheet({
       return
     }
 
-    const text =
-      description.trim() ||
-      `${cat.name}｜${area}${itemHint ? `｜${itemHint.description}` : ''}`
+    // 說明欄只存使用者備註；細項另以 checklistItemId 顯示，避免和細項混在一起
+    const text = description.trim()
 
     setSaving(true)
     setError('')
@@ -261,14 +260,14 @@ export function AddDefectSheet({
 
         <div className="field">
           <label>
-            <TitleHint as="span" hint="可留空，系統會帶入大項／區域。">
-              補充說明
+            <TitleHint as="span" hint="選填。列表會以小字顯示在細項下方，不會蓋過細項名稱。">
+              備註說明
             </TitleHint>
           </label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="例如：門鎖卡住，需施力才能開啟"
+            placeholder="例如：門鎖卡住，需施力才能開啟（可留空）"
           />
         </div>
 

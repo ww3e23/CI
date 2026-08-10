@@ -5,6 +5,7 @@ import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { fileToCompressedDataUrl } from '../../lib/imageCompress'
 import { getUnitAreas } from '../../lib/areas'
 import type { Defect } from '../../types'
+import { resolveDefectItemLabel, resolveDefectRemark } from '../../lib/defectDisplay'
 import { Modal } from '../ui/Modal'
 import { AnnotatePlanModal } from './AnnotatePlanModal'
 import { UnitAreasEditor } from '../settings/UnitAreasEditor'
@@ -19,12 +20,14 @@ export function EditDefectSheet({
   const categories = useProjectStore((s) => s.categories)
   const units = useProjectStore((s) => s.units)
   const projectAreas = useProjectStore((s) => s.areas)
+  const checklistItems = useProjectStore((s) => s.checklistItems)
   const updateDefect = useProjectStore((s) => s.updateDefect)
   const role = useCurrentRole()
   const user = useCurrentUser()
   const canEdit = role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
 
   const unit = units.find((u) => u.id === defect.unitId)
+  const itemLabel = resolveDefectItemLabel(defect, checklistItems)
   const areas = useMemo(() => {
     const list = getUnitAreas(unit, projectAreas)
     return list.includes(defect.area) ? list : [defect.area, ...list]
@@ -34,7 +37,9 @@ export function EditDefectSheet({
   const [catId, setCatId] = useState(defect.categoryId)
   const cat = activeCats.find((c) => c.id === catId) ?? activeCats[0]
   const [area, setArea] = useState(defect.area)
-  const [description, setDescription] = useState(defect.description)
+  const [description, setDescription] = useState(() =>
+    resolveDefectRemark(defect, useProjectStore.getState().checklistItems),
+  )
   const [planPhoto, setPlanPhoto] = useState<string | undefined>(defect.planPhotoDataUrl)
   const [planOriginal, setPlanOriginal] = useState<string | undefined>(defect.planPhotoDataUrl)
   const [photos, setPhotos] = useState<string[]>([...(defect.photoDataUrls ?? [])])
@@ -71,10 +76,6 @@ export function EditDefectSheet({
       return
     }
     const text = description.trim()
-    if (!text) {
-      setError('請填寫缺失說明')
-      return
-    }
 
     setSaving(true)
     setError('')
@@ -100,8 +101,14 @@ export function EditDefectSheet({
         <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>
           修改缺失 #{defect.defectNumber}
         </h3>
-        <p style={{ margin: '8px 0 12px', color: 'var(--ink-soft)', fontSize: 13 }}>
+        <p style={{ margin: '8px 0 12px', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.45 }}>
           {defect.buildingName}・{defect.floor}・{defect.unitCode}戶
+          {itemLabel ? (
+            <>
+              <br />
+              <strong style={{ color: 'var(--ink)' }}>細項：{itemLabel}</strong>
+            </>
+          ) : null}
         </p>
 
         {!canEdit && (
@@ -236,7 +243,7 @@ export function EditDefectSheet({
         </div>
 
         <div className="field">
-          <label>缺失說明</label>
+          <label>備註說明（小字顯示，可留空）</label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}

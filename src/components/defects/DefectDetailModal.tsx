@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { Download, ImageDown, Pencil, Trash2 } from 'lucide-react'
 import type { Defect, DefectStatus } from '../../types'
+import {
+  resolveDefectItemLabel,
+  resolveDefectRemark,
+} from '../../lib/defectDisplay'
 import { statusLabel } from '../../lib/progress'
 import { Modal } from '../ui/Modal'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
@@ -26,7 +30,10 @@ export function DefectDetailModal({
   const user = useCurrentUser()
   const deleteDefect = useProjectStore((s) => s.deleteDefect)
   const updateDefectStatus = useProjectStore((s) => s.updateDefectStatus)
+  const checklistItems = useProjectStore((s) => s.checklistItems)
   const live = useProjectStore((s) => s.defects.find((d) => d.id === defect.id) ?? defect)
+  const itemLabel = resolveDefectItemLabel(live, checklistItems)
+  const remark = resolveDefectRemark(live, checklistItems)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState(false)
   const [saveOpen, setSaveOpen] = useState(false)
@@ -65,7 +72,7 @@ export function DefectDetailModal({
   async function handleDelete() {
     if (
       !confirm(
-        `確定刪除缺失 #${live.defectNumber}「${live.area}｜${live.description}」？\n刪除後將從列表移除，且無法復原。`,
+        `確定刪除缺失 #${live.defectNumber}「${itemLabel || live.area}${remark ? `｜${remark}` : ''}」？\n刪除後將從列表移除，且無法復原。`,
       )
     ) {
       return
@@ -114,13 +121,36 @@ export function DefectDetailModal({
         className={improved ? 'defect-detail-improved' : undefined}
         style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}
       >
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div className="eyebrow">DEFECT #{live.defectNumber}</div>
-          <h2 className="serif" style={{ margin: '4px 0 0', fontSize: 22 }}>
-            {live.area}｜{live.description}
+          <h2 className="serif" style={{ margin: '4px 0 0', fontSize: 22, lineHeight: 1.3 }}>
+            {itemLabel || live.area || '未指定細項'}
           </h2>
-          <p style={{ margin: '8px 0 0', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.5 }}>
-            {live.categoryName} · {live.buildingName} {live.floor} {live.unitCode}戶
+          {remark ? (
+            <p
+              style={{
+                margin: '10px 0 0',
+                color: 'var(--ink)',
+                fontSize: 13,
+                fontWeight: 500,
+                lineHeight: 1.5,
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              <span style={{ display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--ink-soft)', marginBottom: 4 }}>
+                備註說明
+              </span>
+              {remark}
+            </p>
+          ) : (
+            <p style={{ margin: '8px 0 0', color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
+              無備註說明
+            </p>
+          )}
+          <p style={{ margin: '10px 0 0', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.5 }}>
+            {live.categoryName} · 區域 {live.area}
+            <br />
+            {live.buildingName} {live.floor} {live.unitCode}戶
             <br />
             狀態：{statusLabel(live.status)}
             {pendingUpload && (
