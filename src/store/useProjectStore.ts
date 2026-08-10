@@ -14,6 +14,7 @@ import { createEmptyProjectState, createProjectBundles } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
 import { cloudReady, syncDefect, syncProjectStructure } from '../services/cloudSync'
+import { computeNextDefectNumber } from '../services/projectSync'
 import {
   mergeProjectStates,
   pullProjectState,
@@ -265,6 +266,12 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         const unit = state.units.find((u) => u.id === unitId)
         if (!unit) return null
 
+        // 以「計數器」與「該戶既有最大編號」取較大者，避免重複 #1（不改寫既有編號）
+        const defectNumber = computeNextDefectNumber(
+          unitId,
+          unit.nextDefectNumber,
+          state.defects,
+        )
         const syncState: SyncState = cloudReady() ? 'pending' : 'demo'
         const defect: Defect = {
           id: createId('def'),
@@ -273,7 +280,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           buildingName: unit.buildingName,
           floor: unit.floor,
           unitCode: unit.code,
-          defectNumber: unit.nextDefectNumber,
+          defectNumber,
           categoryId,
           categoryName,
           checklistItemId,
@@ -290,7 +297,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         set({
           defects: [defect, ...state.defects],
           units: state.units.map((u) =>
-            u.id === unitId ? { ...u, nextDefectNumber: u.nextDefectNumber + 1 } : u,
+            u.id === unitId ? { ...u, nextDefectNumber: defectNumber + 1 } : u,
           ),
           activities: [
             {
@@ -341,15 +348,37 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               d.id === defect.id ? { ...d, syncState: 'syncing' } : d,
             ),
           })
-          void get()
-            .flushPendingMediaUploads()
-            .catch(() => {
-              set({
-                defects: get().defects.map((d) =>
-                  d.id === defect.id ? { ...d, syncState: 'failed' } : d,
-                ),
+          if (hasLocalMedia) {
+            void get()
+              .flushPendingMediaUploads()
+              .catch(() => {
+                set({
+                  defects: get().defects.map((d) =>
+                    d.id === defect.id ? { ...d, syncState: 'failed' } : d,
+                  ),
+                })
               })
-            })
+          } else {
+            // 無照片也要立刻寫入雲端，否則只靠本機、重開／合併時容易編號錯亂
+            void syncDefect(projectId, { ...defect, syncState: 'synced' })
+              .then(() => {
+                const latest = get().defects.find((d) => d.id === defect.id)
+                if (!latest || latest.status === 'voided') return
+                set({
+                  defects: get().defects.map((d) =>
+                    d.id === defect.id ? { ...d, syncState: 'synced' } : d,
+                  ),
+                })
+                scheduleCloudSync(get)
+              })
+              .catch(() => {
+                set({
+                  defects: get().defects.map((d) =>
+                    d.id === defect.id ? { ...d, syncState: 'failed' } : d,
+                  ),
+                })
+              })
+          }
         }
 
         return get().defects.find((d) => d.id === defect.id) ?? defect
@@ -951,10 +980,25 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
                 planPhotoDataUrl: withLocal.planPhotoDataUrl,
                 photoDataUrls: withLocal.photoDataUrls,
               })
+              // 上傳期間若使用者已刪除，絕不可把非作廢快照寫回雲端（會造成幽靈缺失復活）
+              const latest = get().defects.find((d) => d.id === entry.defectId)
+              if (!latest || latest.status === 'voided') {
+                await clearPendingDefectMedia(entry.defectId)
+                if (latest?.status === 'voided') {
+                  await syncDefect(projectId, {
+                    ...latest,
+                    planPhotoDataUrl: planUrl ?? latest.planPhotoDataUrl,
+                    photoDataUrls: photoUrls.length ? photoUrls : latest.photoDataUrls,
+                    status: 'voided',
+                    updatedAt: new Date().toISOString(),
+                  })
+                }
+                continue
+              }
               const synced: Defect = {
-                ...withLocal,
-                planPhotoDataUrl: planUrl ?? withLocal.planPhotoDataUrl,
-                photoDataUrls: photoUrls.length ? photoUrls : withLocal.photoDataUrls,
+                ...latest,
+                planPhotoDataUrl: planUrl ?? latest.planPhotoDataUrl,
+                photoDataUrls: photoUrls.length ? photoUrls : latest.photoDataUrls,
                 syncState: 'synced',
                 updatedAt: new Date().toISOString(),
               }

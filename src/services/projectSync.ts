@@ -85,11 +85,56 @@ function parseItem(id: string, data: Record<string, unknown>): ChecklistItem {
   }
 }
 
+/** 把 Firestore Timestamp／字串／秒數轉成可比較的 ISO（避免 String(Timestamp) 破壞合併） */
+export function parseFirestoreDate(value: unknown, fallbackIso?: string): string {
+  const fallback = fallbackIso ?? new Date().toISOString()
+  if (value == null || value === '') return fallback
+
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'toDate' in value &&
+    typeof (value as { toDate?: unknown }).toDate === 'function'
+  ) {
+    try {
+      return (value as { toDate: () => Date }).toDate().toISOString()
+    } catch {
+      /* fallthrough */
+    }
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    const o = value as Record<string, unknown>
+    const seconds = o.seconds ?? o._seconds
+    if (typeof seconds === 'number' && Number.isFinite(seconds)) {
+      const nanos = Number(o.nanoseconds ?? o._nanoseconds ?? 0)
+      return new Date(seconds * 1000 + nanos / 1e6).toISOString()
+    }
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value < 1e12 ? value * 1000 : value).toISOString()
+  }
+
+  if (typeof value === 'string') {
+    const ms = Date.parse(value)
+    if (Number.isFinite(ms)) return new Date(ms).toISOString()
+    // 舊版曾把 Timestamp 直接 String()，例如 Timestamp(seconds=1786..., nanoseconds=...)
+    const m = value.match(/seconds\s*=\s*(\d+)/i)
+    if (m) return new Date(Number(m[1]) * 1000).toISOString()
+    return fallback
+  }
+
+  return fallback
+}
+
 function parseDefect(id: string, data: Record<string, unknown>): Defect {
   const status = String(data.status ?? 'pending_repair') as DefectStatus
   const syncState = (String(data.syncState ?? 'synced') as SyncState) || 'synced'
   const plan = data.planPhotoDataUrl
   const photos = Array.isArray(data.photoDataUrls) ? data.photoDataUrls.map(String) : []
+  // 優先用客戶端寫入的 ISO，serverTimestamp 僅作後援
+  const updatedRaw = data.clientUpdatedAt ?? data.updatedAt
   return {
     id,
     unitId: String(data.unitId ?? ''),
@@ -108,9 +153,22 @@ function parseDefect(id: string, data: Record<string, unknown>): Defect {
       typeof plan === 'string' && plan.startsWith('http') ? plan : undefined,
     photoDataUrls: photos.filter((p) => p.startsWith('http')),
     syncState: syncState === 'demo' ? 'synced' : syncState,
-    createdAt: String(data.createdAt ?? new Date().toISOString()),
-    updatedAt: String(data.updatedAt ?? new Date().toISOString()),
+    createdAt: parseFirestoreDate(data.createdAt),
+    updatedAt: parseFirestoreDate(updatedRaw),
   }
+}
+
+/** 下一號 = max(既有計數, 該戶最大編號+1)；不改寫既有缺失編號 */
+export function computeNextDefectNumber(
+  unitId: string,
+  storedCounter: number,
+  defects: Array<{ unitId: string; defectNumber: number }>,
+): number {
+  let maxNum = 0
+  for (const d of defects) {
+    if (d.unitId === unitId) maxNum = Math.max(maxNum, Number(d.defectNumber) || 0)
+  }
+  return Math.max(Math.max(1, storedCounter || 1), maxNum + 1)
 }
 
 function unitNextMap(units: ProjectState['units']): Record<string, number> {
@@ -302,7 +360,11 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
 
     const units = expandUnitsFromBuildings(buildings).map((u) => ({
       ...u,
-      nextDefectNumber: Number(unitNext[u.id] ?? u.nextDefectNumber ?? 1),
+      nextDefectNumber: computeNextDefectNumber(
+        u.id,
+        Number(unitNext[u.id] ?? u.nextDefectNumber ?? 1),
+        defects,
+      ),
       areas: unitAreas[u.id]?.length ? unitAreas[u.id] : undefined,
     }))
 
@@ -343,7 +405,13 @@ function preferMediaUrl(a?: string, b?: string): string | undefined {
   return a || b
 }
 
-function mergeDefectPhotos(local: Defect, remote: Defect): Defect {
+function defectTimeMs(iso: string): number {
+  const ms = Date.parse(iso)
+  return Number.isFinite(ms) ? ms : Number.NaN
+}
+
+/** 合併單筆缺失：照片取聯集；作廢狀態具黏著性，避免雲端舊資料把已刪缺失「復活」 */
+export function mergeDefectPhotos(local: Defect, remote: Defect): Defect {
   const remotePhotos = remote.photoDataUrls ?? []
   const localPhotos = local.photoDataUrls ?? []
   const maxLen = Math.max(remotePhotos.length, localPhotos.length)
@@ -357,9 +425,26 @@ function mergeDefectPhotos(local: Defect, remote: Defect): Defect {
     photoDataUrls.push(...(localPhotos.length ? localPhotos : remotePhotos))
   }
 
-  const newer = remote.updatedAt >= local.updatedAt ? remote : local
-  const older = newer === remote ? local : remote
-  return {
+  const localMs = defectTimeMs(local.updatedAt)
+  const remoteMs = defectTimeMs(remote.updatedAt)
+  let newer: Defect
+  let older: Defect
+  if (Number.isFinite(localMs) && Number.isFinite(remoteMs)) {
+    newer = remoteMs >= localMs ? remote : local
+    older = newer === remote ? local : remote
+  } else if (Number.isFinite(localMs)) {
+    // 雲端時間無法解析時保留本機（避免舊版 Timestamp 字串永遠蓋過 ISO）
+    newer = local
+    older = remote
+  } else if (Number.isFinite(remoteMs)) {
+    newer = remote
+    older = local
+  } else {
+    newer = local
+    older = remote
+  }
+
+  const merged: Defect = {
     ...older,
     ...newer,
     planPhotoDataUrl: preferMediaUrl(remote.planPhotoDataUrl, local.planPhotoDataUrl),
@@ -370,6 +455,20 @@ function mergeDefectPhotos(local: Defect, remote: Defect): Defect {
         ? local.syncState
         : newer.syncState,
   }
+
+  // 無「復原作廢」流程：任一端已作廢，合併後必須維持作廢（不刪雲端文件、不改其他欄位）
+  if (local.status === 'voided' || remote.status === 'voided') {
+    merged.status = 'voided'
+    if (local.status === 'voided' && Number.isFinite(localMs)) {
+      if (!Number.isFinite(remoteMs) || localMs >= remoteMs || remote.status !== 'voided') {
+        merged.updatedAt = local.updatedAt
+      }
+    } else if (remote.status === 'voided' && Number.isFinite(remoteMs)) {
+      merged.updatedAt = remote.updatedAt
+    }
+  }
+
+  return merged
 }
 
 /** 合併本機與雲端：結構取較完整者，缺失逐筆合併並保留已有照片 */
@@ -404,6 +503,7 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
   }
 
   const buildings = [...buildingMap.values()].sort((a, b) => a.sortOrder - b.sortOrder)
+  const mergedDefects = [...defectMap.values()]
   const unitNext: Record<string, number> = {}
   const unitAreas: Record<string, string[]> = {}
   for (const u of local.units) {
@@ -419,7 +519,7 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
   }
   const units = expandUnitsFromBuildings(buildings).map((u) => ({
     ...u,
-    nextDefectNumber: unitNext[u.id] ?? 1,
+    nextDefectNumber: computeNextDefectNumber(u.id, unitNext[u.id] ?? 1, mergedDefects),
     areas: unitAreas[u.id]?.length ? unitAreas[u.id] : undefined,
   }))
 
@@ -429,7 +529,7 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
     units,
     categories: [...catMap.values()].sort((a, b) => a.sortOrder - b.sortOrder),
     checklistItems: [...itemMap.values()].sort((a, b) => a.sortOrder - b.sortOrder),
-    defects: [...defectMap.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+    defects: mergedDefects.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
     unitCheckedCount: { ...local.unitCheckedCount, ...remote.unitCheckedCount },
     activities: (remote.activities.length >= local.activities.length
       ? remote.activities
