@@ -122,6 +122,48 @@ export async function ensureDefectFolderPath(
   return ensureChildFolder(drive, categoryId, parts.itemFolderName || '00_未指定細項')
 }
 
+/** 只查找、不建立：回傳葉層資料夾 id（找不到則 null） */
+export async function findDefectFolderPath(
+  drive: DriveClient,
+  rootFolderId: string,
+  parts: {
+    buildingName: string
+    floor: string
+    unitCode: string
+    categoryName: string
+    /** 可能的葉層名稱（含舊版命名） */
+    itemFolderNames: string[]
+  },
+): Promise<string | null> {
+  const buildingId = await findChildFolder(drive, rootFolderId, parts.buildingName || '未指定棟別')
+  if (!buildingId) return null
+  const floorId = await findChildFolder(drive, buildingId, parts.floor || '未指定樓層')
+  if (!floorId) return null
+  const unitId = await findChildFolder(drive, floorId, parts.unitCode || '未指定戶別')
+  if (!unitId) return null
+  const categoryId = await findChildFolder(drive, unitId, parts.categoryName || '未指定大項')
+  if (!categoryId) return null
+
+  const tried = new Set<string>()
+  for (const raw of parts.itemFolderNames) {
+    const name = sanitizeDriveName(raw || '')
+    if (!name || tried.has(name)) continue
+    tried.add(name)
+    const leafId = await findChildFolder(drive, categoryId, name)
+    if (leafId) return leafId
+  }
+  return null
+}
+
+/** 移到雲端硬碟垃圾桶（支援共用碟） */
+export async function trashDriveItem(drive: DriveClient, fileId: string): Promise<void> {
+  await drive.files.update({
+    fileId,
+    requestBody: { trashed: true },
+    supportsAllDrives: true,
+  })
+}
+
 export async function listFolderFiles(
   drive: DriveClient,
   folderId: string,
@@ -162,6 +204,29 @@ export function buildItemFolderName(input: {
   const fallback = (input.defectDescription || '未命名缺失').trim().slice(0, 60)
   const title = itemLabel || fallback
   return sanitizeDriveName(`#${input.defectNumber} ${title}`)
+}
+
+/** 含現行與舊版命名，供刪除時查找 */
+export function buildItemFolderNameCandidates(input: {
+  itemSortOrder?: number | null
+  itemDescription?: string | null
+  defectNumber: number
+  defectDescription: string
+}): string[] {
+  const current = buildItemFolderName(input)
+  const out = [current]
+  const itemLabel = (input.itemDescription || '').trim()
+  if (itemLabel) {
+    const num =
+      typeof input.itemSortOrder === 'number' && Number.isFinite(input.itemSortOrder)
+        ? String(input.itemSortOrder + 1).padStart(2, '0')
+        : '00'
+    out.push(sanitizeDriveName(`${num}_${itemLabel}`))
+  }
+  const n = String(input.defectNumber || 0).padStart(3, '0')
+  const desc = (input.defectDescription || '未命名缺失').slice(0, 40)
+  out.push(sanitizeDriveName(`${n}_${desc}`))
+  return [...new Set(out.filter(Boolean))]
 }
 
 export function buildDriveFileName(defectNumber: number, storageFileName: string): string {

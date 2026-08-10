@@ -127,3 +127,64 @@ export async function autoSyncDefectPhotosToDrive(params: {
     console.warn('[drive-auto] 自動同步失敗', res.error)
   }
 }
+
+export type DriveDeleteResult = {
+  ok: boolean
+  skipped?: boolean
+  reason?: string
+  trashedFolder?: boolean
+  trashedFiles?: number
+}
+
+/**
+ * 刪除缺失後，同步把雲端硬碟對應資料夾移到垃圾桶。
+ * 先靜默授權；若無快取則彈窗請使用者授權（為了資料正確）。
+ */
+export async function deleteDefectPhotosFromDrive(params: {
+  projectId: string
+  defectId: string
+}): Promise<{ ok: boolean; result?: DriveDeleteResult; error?: string }> {
+  const project = useAuthStore.getState().projects.find((p) => p.id === params.projectId)
+  if (!project?.driveFolderId) {
+    return { ok: true, result: { ok: true, skipped: true, reason: 'no-drive-folder' } }
+  }
+  if (!getGoogleOAuthClientId()) {
+    return { ok: false, error: '尚未設定 Google OAuth，無法同步刪除雲端硬碟' }
+  }
+
+  const ready = await ensureFirebaseUser()
+  if (!ready.ok) return ready
+
+  let accessToken = await requestGoogleDriveAccessTokenSilent()
+  if (!accessToken) {
+    try {
+      accessToken = await requestGoogleDriveAccessToken()
+    } catch (err) {
+      const anyErr = err as { message?: string }
+      return {
+        ok: false,
+        error:
+          anyErr.message ||
+          '需要 Google 授權才能同步刪除雲端硬碟資料。請同意授權後再刪一次，或至後台先完成「用我的 Google 帳號同步」。',
+      }
+    }
+  }
+
+  try {
+    const functions = getFunctions(ready.app, 'asia-east1')
+    const callable = httpsCallable<
+      { projectId: string; defectId: string; accessToken: string },
+      DriveDeleteResult
+    >(functions, 'deleteDefectPhotosFromDriveAsUser', { timeout: 120_000 })
+    const res = await callable({
+      projectId: params.projectId,
+      defectId: params.defectId,
+      accessToken,
+    })
+    return { ok: true, result: res.data }
+  } catch (err) {
+    const anyErr = err as { message?: string }
+    const message = anyErr.message || String(err)
+    return { ok: false, error: message.replace(/^Firebase:\s*/i, '').replace(/\s*\(.*\)$/, '') }
+  }
+}

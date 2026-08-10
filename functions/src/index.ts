@@ -10,9 +10,12 @@ import {
   assertSharedDriveFolder,
   buildDriveFileName,
   buildItemFolderName,
+  buildItemFolderNameCandidates,
   ensureDefectFolderPath,
+  findDefectFolderPath,
   getDriveClient,
   listFolderFiles,
+  trashDriveItem,
   type DriveClient,
 } from './driveFolders'
 
@@ -38,6 +41,8 @@ type DefectRow = {
   description?: string
   planPhotoDataUrl?: string
   photoDataUrls?: string[]
+  driveLeafFolderId?: string
+  driveLastFileId?: string
 }
 
 async function loadChecklistItems(projectId: string): Promise<Map<string, ChecklistItemRow>> {
@@ -75,6 +80,73 @@ async function resolveLeafFolder(
     categoryName: String(defect.categoryName ?? '未指定大項'),
     itemFolderName,
   })
+}
+
+async function trashDefectDriveData(params: {
+  drive: DriveClient
+  rootFolderId: string
+  defect: DefectRow
+  items: Map<string, ChecklistItemRow>
+}): Promise<{ trashedFolder: boolean; trashedFiles: number }> {
+  const { drive, rootFolderId, defect, items } = params
+  let trashedFolder = false
+  let trashedFiles = 0
+
+  const knownFolderId = String(defect.driveLeafFolderId || '').trim()
+  let folderId = knownFolderId || null
+
+  if (!folderId) {
+    const item = defect.checklistItemId ? items.get(defect.checklistItemId) : undefined
+    folderId = await findDefectFolderPath(drive, rootFolderId, {
+      buildingName: String(defect.buildingName ?? '未指定棟別'),
+      floor: String(defect.floor ?? '未指定樓層'),
+      unitCode: String(defect.unitCode ?? '未指定戶別'),
+      categoryName: String(defect.categoryName ?? '未指定大項'),
+      itemFolderNames: buildItemFolderNameCandidates({
+        itemSortOrder: item?.sortOrder,
+        itemDescription: item?.description,
+        defectNumber: Number(defect.defectNumber ?? 0),
+        defectDescription: String(defect.description ?? ''),
+      }),
+    })
+  }
+
+  if (folderId) {
+    try {
+      const files = await listFolderFiles(drive, folderId)
+      for (const f of files) {
+        try {
+          await trashDriveItem(drive, f.id)
+          trashedFiles += 1
+        } catch (err) {
+          logger.warn('trash file failed', { fileId: f.id, err })
+        }
+      }
+      await trashDriveItem(drive, folderId)
+      trashedFolder = true
+    } catch (err) {
+      logger.warn('trash folder failed', { folderId, err })
+      // 再試一次：至少丟掉已知的最後一個檔
+      const lastFile = String(defect.driveLastFileId || '').trim()
+      if (lastFile) {
+        try {
+          await trashDriveItem(drive, lastFile)
+          trashedFiles += 1
+        } catch {
+          /* ignore */
+        }
+      }
+      throw err
+    }
+  } else {
+    const lastFile = String(defect.driveLastFileId || '').trim()
+    if (lastFile) {
+      await trashDriveItem(drive, lastFile)
+      trashedFiles += 1
+    }
+  }
+
+  return { trashedFolder, trashedFiles }
 }
 
 async function uploadBufferToDrive(params: {
@@ -179,6 +251,7 @@ export const mirrorDefectPhotoToDrive = onObjectFinalized(
     await getFirestore().doc(`projects/${projectId}/defects/${defectId}`).set(
       {
         driveLastFileId: fileId,
+        driveLeafFolderId: folderId,
         driveSyncedAt: new Date().toISOString(),
       },
       { merge: true },
@@ -305,6 +378,7 @@ async function runPhotoSync(params: {
         await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
           {
             driveLastFileId: fileId,
+            driveLeafFolderId: folderId,
             driveSyncedAt: new Date().toISOString(),
           },
           { merge: true },
@@ -438,5 +512,91 @@ export const syncProjectPhotosToDriveAsUser = onCall(
       requireSharedDrive: false,
       defectIds,
     })
+  },
+)
+
+/** 刪除缺失時，把對應雲端硬碟葉層資料夾（與檔案）移到垃圾桶 */
+export const deleteDefectPhotosFromDriveAsUser = onCall(
+  {
+    region: 'asia-east1',
+    memory: '512MiB',
+    timeoutSeconds: 120,
+    cors: true,
+    invoker: 'public',
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', '請先登入後再同步刪除雲端硬碟')
+    }
+
+    const projectId = String(request.data?.projectId ?? '').trim()
+    const defectId = String(request.data?.defectId ?? '').trim()
+    const accessToken = String(request.data?.accessToken ?? '').trim()
+    if (!projectId) throw new HttpsError('invalid-argument', '缺少 projectId')
+    if (!defectId) throw new HttpsError('invalid-argument', '缺少 defectId')
+    if (!accessToken) throw new HttpsError('invalid-argument', '缺少 Google 授權')
+
+    const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
+    if (!projectSnap.exists) throw new HttpsError('not-found', '找不到此專案')
+    const driveFolderId = projectSnap.get('driveFolderId') as string | undefined
+    if (!driveFolderId) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: 'project-has-no-drive-folder',
+        trashedFolder: false,
+        trashedFiles: 0,
+      }
+    }
+
+    const defectSnap = await getFirestore().doc(`projects/${projectId}/defects/${defectId}`).get()
+    if (!defectSnap.exists) throw new HttpsError('not-found', '找不到此缺失')
+    const defect = { id: defectId, ...(defectSnap.data() as Omit<DefectRow, 'id'>) }
+
+    const oauth2 = new google.auth.OAuth2()
+    oauth2.setCredentials({ access_token: accessToken })
+    const drive = google.drive({ version: 'v3', auth: oauth2 })
+
+    try {
+      await drive.files.get({
+        fileId: driveFolderId,
+        fields: 'id,name',
+        supportsAllDrives: true,
+      })
+    } catch (err) {
+      throw new HttpsError(
+        'permission-denied',
+        `無法存取綁定的雲端硬碟資料夾，無法同步刪除。（${String((err as Error)?.message ?? err)}）`,
+      )
+    }
+
+    const items = await loadChecklistItems(projectId)
+    const result = await trashDefectDriveData({
+      drive,
+      rootFolderId: driveFolderId,
+      defect,
+      items,
+    })
+
+    await getFirestore().doc(`projects/${projectId}/defects/${defectId}`).set(
+      {
+        driveLeafFolderId: null,
+        driveLastFileId: null,
+        driveDeletedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    )
+
+    logger.info('trashed defect drive folder', {
+      projectId,
+      defectId,
+      ...result,
+    })
+
+    return {
+      ok: true,
+      skipped: false,
+      ...result,
+    }
   },
 )

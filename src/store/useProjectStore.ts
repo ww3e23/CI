@@ -21,7 +21,10 @@ import {
   pushProjectState,
 } from '../services/projectSync'
 import { uploadDefectImages } from '../services/storageUpload'
-import { autoSyncDefectPhotosToDrive } from '../services/driveSync'
+import {
+  autoSyncDefectPhotosToDrive,
+  deleteDefectPhotosFromDrive,
+} from '../services/driveSync'
 import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
 import { statusLabel } from '../lib/progress'
@@ -432,6 +435,24 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           } catch (err) {
             console.warn('[deleteDefect] sync failed', err)
             return { ok: true, error: '已本機刪除，雲端同步失敗' }
+          }
+          try {
+            const driveDel = await deleteDefectPhotosFromDrive({
+              projectId,
+              defectId,
+            })
+            if (!driveDel.ok) {
+              return {
+                ok: true,
+                error: `已刪除缺失紀錄，但雲端硬碟同步刪除失敗：${driveDel.error || '未知錯誤'}`,
+              }
+            }
+          } catch (err) {
+            console.warn('[deleteDefect] drive trash failed', err)
+            return {
+              ok: true,
+              error: '已刪除缺失紀錄，但雲端硬碟同步刪除失敗',
+            }
           }
         }
         return { ok: true }

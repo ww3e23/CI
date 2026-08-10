@@ -72,7 +72,7 @@ export function DefectDetailModal({
   async function handleDelete() {
     if (
       !confirm(
-        `確定刪除缺失 #${live.defectNumber}「${itemLabel || live.area}${remark ? `｜${remark}` : ''}」？\n刪除後將從列表移除，且無法復原。`,
+        `確定刪除缺失 #${live.defectNumber}「${itemLabel || live.area}${remark ? `｜${remark}` : ''}」？\n刪除後將從列表移除，並把雲端硬碟對應資料夾移到垃圾桶。`,
       )
     ) {
       return
@@ -85,7 +85,10 @@ export function DefectDetailModal({
       setError(result.error || '刪除失敗')
       return
     }
-    if (result.error) console.warn(result.error)
+    if (result.error) {
+      // 本機已刪，但 Drive 同步刪除失敗：先關閉並提示
+      window.alert(result.error)
+    }
     onClose()
   }
 
