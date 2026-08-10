@@ -14,17 +14,22 @@ type QuickStatus = 'all' | DefectStatus
 
 export function UnitDefectsSheet({
   unitId,
+  categoryId,
   initialStatus = 'all',
   onClose,
 }: {
   unitId: string
+  /** 若指定則只顯示該大項缺失 */
+  categoryId?: string
   initialStatus?: QuickStatus
   onClose: () => void
 }) {
   const units = useProjectStore((s) => s.units)
+  const categories = useProjectStore((s) => s.categories)
   const defects = useProjectStore((s) => s.defects)
   const items = useProjectStore((s) => s.checklistItems)
   const unit = units.find((u) => u.id === unitId)
+  const category = categoryId ? categories.find((c) => c.id === categoryId) : undefined
 
   const [quickStatus, setQuickStatus] = useState<QuickStatus>(initialStatus)
   const [selectedDefect, setSelectedDefect] = useState<Defect | null>(null)
@@ -32,14 +37,18 @@ export function UnitDefectsSheet({
   const unitDefects = useMemo(
     () =>
       defects
-        .filter((d) => d.unitId === unitId && d.status !== 'voided')
+        .filter((d) => {
+          if (d.unitId !== unitId || d.status === 'voided') return false
+          if (categoryId && d.categoryId !== categoryId) return false
+          return true
+        })
         .sort((a, b) => {
           const aDone = a.status === 'completed' ? 1 : 0
           const bDone = b.status === 'completed' ? 1 : 0
           if (aDone !== bDone) return aDone - bDone
           return b.defectNumber - a.defectNumber
         }),
-    [defects, unitId],
+    [defects, unitId, categoryId],
   )
 
   const filtered = useMemo(
@@ -76,12 +85,14 @@ export function UnitDefectsSheet({
   ]
 
   const title = unit
-    ? `${unit.buildingName} ${unit.floor} ${unit.code}戶`
+    ? category
+      ? `${unit.code}戶・${category.name}`
+      : `${unit.buildingName} ${unit.floor} ${unit.code}戶`
     : '本戶缺失'
 
   return (
     <>
-      <Modal variant="bottom" aria-label="本戶缺失紀錄" onClose={onClose}>
+      <Modal variant="bottom" aria-label="缺失預覽" onClose={onClose}>
         <div
           style={{
             display: 'flex',
@@ -92,12 +103,14 @@ export function UnitDefectsSheet({
           }}
         >
           <div style={{ minWidth: 0 }}>
-            <div className="eyebrow">UNIT DEFECTS</div>
+            <div className="eyebrow">{category ? 'CATEGORY DEFECTS' : 'UNIT DEFECTS'}</div>
             <div className="serif" style={{ fontWeight: 700, fontSize: 20, lineHeight: 1.25 }}>
               {title}缺失
             </div>
             <div style={{ marginTop: 4, fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>
-              僅顯示此戶，共 {unitDefects.length} 筆
+              {category
+                ? `僅此大項，共 ${unitDefects.length} 筆`
+                : `僅此戶，共 ${unitDefects.length} 筆`}
             </div>
           </div>
           <button

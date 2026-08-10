@@ -1,10 +1,16 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronRight } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
+import {
+  defectListTitle,
+  resolveDefectRemark,
+} from '../../lib/defectDisplay'
 import { statusLabel } from '../../lib/progress'
 import { AddDefectSheet } from '../defects/AddDefectSheet'
-import type { DefectStatus } from '../../types'
+import { DefectDetailModal } from '../defects/DefectDetailModal'
+import { UnitDefectsSheet } from '../defects/UnitDefectsSheet'
+import type { Defect, DefectStatus } from '../../types'
 
 const statusClass: Record<DefectStatus, string> = {
   pending_repair: 'amber',
@@ -32,6 +38,8 @@ export function CategoryPage({
 
   const cat = categories.find((c) => c.id === categoryId)
   const [addFor, setAddFor] = useState<string | null>(null)
+  const [selectedDefect, setSelectedDefect] = useState<Defect | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const categoryDone = Boolean(
     unit && cat && (unitCategoryDone[unit.id] ?? []).includes(cat.id),
   )
@@ -44,8 +52,15 @@ export function CategoryPage({
     [items, categoryId],
   )
 
-  const unitDefects = defects.filter(
-    (d) => d.unitId === unit?.id && d.categoryId === categoryId && d.status !== 'voided',
+  const unitDefects = useMemo(
+    () =>
+      defects
+        .filter(
+          (d) =>
+            d.unitId === unit?.id && d.categoryId === categoryId && d.status !== 'voided',
+        )
+        .sort((a, b) => b.defectNumber - a.defectNumber),
+    [defects, unit?.id, categoryId],
   )
 
   if (!cat || !unit) {
@@ -75,9 +90,90 @@ export function CategoryPage({
         <ArrowLeft size={18} /> {unit.code}戶 ＞ {cat.name}
       </button>
 
-      <h1 className="serif" style={{ margin: '0 0 14px', fontSize: 32, fontWeight: 700 }}>
+      <h1 className="serif" style={{ margin: '0 0 10px', fontSize: 28, fontWeight: 700 }}>
         {cat.name}
       </h1>
+
+      {unitDefects.length > 0 && (
+        <section className="glass" style={{ padding: 12, marginBottom: 12 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              marginBottom: 8,
+            }}
+          >
+            <div style={{ fontWeight: 800, fontSize: 14 }}>
+              本大項缺失（{unitDefects.length}）
+            </div>
+            <button
+              type="button"
+              className="link"
+              style={{ fontSize: 12, fontWeight: 700, color: 'var(--green-deep)' }}
+              onClick={() => setPreviewOpen(true)}
+            >
+              全部預覽
+            </button>
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {unitDefects.slice(0, 5).map((d) => {
+              const title = defectListTitle(d, items)
+              const remark = resolveDefectRemark(d, items)
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  className="defect-row"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '8px 10px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(34,41,31,0.08)',
+                    background: 'rgba(255,255,255,0.72)',
+                  }}
+                  onClick={() => setSelectedDefect(d)}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontWeight: 800,
+                        fontSize: 13,
+                        lineHeight: 1.35,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {title}
+                    </div>
+                    <div style={{ marginTop: 2, fontSize: 11, fontWeight: 600, color: 'var(--ink-soft)' }}>
+                      {d.area} · {statusLabel(d.status)}
+                      {remark ? ` · ${remark}` : ''}
+                    </div>
+                  </div>
+                  <ChevronRight size={16} color="var(--stone)" />
+                </button>
+              )
+            })}
+            {unitDefects.length > 5 && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ minHeight: 36, width: '100%' }}
+                onClick={() => setPreviewOpen(true)}
+              >
+                還有 {unitDefects.length - 5} 筆，點此看全部
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
       <button
         type="button"
@@ -111,15 +207,22 @@ export function CategoryPage({
                     尚無缺失
                   </span>
                 )}
-                {related.map((d) => (
-                  <span
-                    key={d.id}
-                    className={`chip on ${statusClass[d.status]}`}
-                    style={{ minHeight: 32 }}
-                  >
-                    #{d.defectNumber} {statusLabel(d.status)}
-                  </span>
-                ))}
+                {related.map((d) => {
+                  const remark = resolveDefectRemark(d, items)
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      className={`chip on ${statusClass[d.status]}`}
+                      style={{ minHeight: 32, maxWidth: '100%' }}
+                      onClick={() => setSelectedDefect(d)}
+                      title={remark || statusLabel(d.status)}
+                    >
+                      #{d.defectNumber} {statusLabel(d.status)}
+                      {remark ? ` · ${remark}` : ''}
+                    </button>
+                  )
+                })}
               </div>
               <button
                 type="button"
@@ -139,6 +242,21 @@ export function CategoryPage({
           categoryId={cat.id}
           checklistItemId={addFor || undefined}
           onClose={() => setAddFor(null)}
+        />
+      )}
+
+      {selectedDefect && (
+        <DefectDetailModal
+          defect={selectedDefect}
+          onClose={() => setSelectedDefect(null)}
+        />
+      )}
+
+      {previewOpen && (
+        <UnitDefectsSheet
+          unitId={unit.id}
+          categoryId={cat.id}
+          onClose={() => setPreviewOpen(false)}
         />
       )}
 

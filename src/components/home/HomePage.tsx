@@ -19,7 +19,7 @@ import { TitleHint } from '../ui/TitleHint'
 import { UnitAreasEditor } from '../settings/UnitAreasEditor'
 import { UnitDefectsSheet } from '../defects/UnitDefectsSheet'
 import { getUnitAreas } from '../../lib/areas'
-import type { ChecklistCategory, DefectStatus } from '../../types'
+import type { ChecklistCategory } from '../../types'
 
 const CATEGORY_ICONS: Record<string, ComponentType<LucideProps>> = {
   門: DoorOpen,
@@ -39,8 +39,7 @@ export function HomePage({
   const [switchOpen, setSwitchOpen] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
   const [areasOpen, setAreasOpen] = useState(false)
-  const [unitDefectsOpen, setUnitDefectsOpen] = useState(false)
-  const [unitDefectsStatus, setUnitDefectsStatus] = useState<'all' | DefectStatus>('all')
+  const [previewCategoryId, setPreviewCategoryId] = useState<string | null>(null)
   const projectName = useProjectStore((s) => s.projectName)
   const currentProject = useCurrentProject()
   const units = useProjectStore((s) => s.units)
@@ -60,7 +59,6 @@ export function HomePage({
   void unitCategoryDone
   void unitCheckedCount
 
-  // 舊專案若沒有範本，自動套用預設查驗清單
   useEffect(() => {
     if (!categories.some((c) => c.active)) {
       useProjectStore.getState().applyDefaultChecklist('fill-if-empty')
@@ -97,7 +95,7 @@ export function HomePage({
     )
   }
 
-  const ring = 2 * Math.PI * 42
+  const ring = 2 * Math.PI * 34
   const offset = ring - (progress.percent / 100) * ring
 
   return (
@@ -136,34 +134,34 @@ export function HomePage({
         </button>
       </header>
 
-      <div className="hero-stack">
+      <div className="hero-stack hero-stack-compact">
         <div className="hero-layer hero-layer-b" aria-hidden />
         <div className="hero-layer hero-layer-a" aria-hidden />
         <section className="glass-green hero-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 700 }}>目前查驗戶別</div>
-              <div className="serif" style={{ fontSize: 34, fontWeight: 700, lineHeight: 1.1, marginTop: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, opacity: 0.85, fontWeight: 700 }}>目前查驗戶別</div>
+              <div className="serif" style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1, marginTop: 2 }}>
                 {unit.code} 戶
               </div>
-              <div style={{ marginTop: 4, opacity: 0.9, fontWeight: 600 }}>
+              <div style={{ marginTop: 2, opacity: 0.9, fontWeight: 600, fontSize: 13 }}>
                 {unit.buildingName} {unit.floor}
               </div>
             </div>
-            <div style={{ position: 'relative', width: 104, height: 104 }}>
-              <svg width="104" height="104" viewBox="0 0 104 104">
-                <circle cx="52" cy="52" r="42" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="8" />
+            <div style={{ position: 'relative', width: 84, height: 84, flexShrink: 0 }}>
+              <svg width="84" height="84" viewBox="0 0 84 84">
+                <circle cx="42" cy="42" r="34" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="7" />
                 <circle
-                  cx="52"
-                  cy="52"
-                  r="42"
+                  cx="42"
+                  cy="42"
+                  r="34"
                   fill="none"
                   stroke="#fff"
-                  strokeWidth="8"
+                  strokeWidth="7"
                   strokeLinecap="round"
                   strokeDasharray={ring}
                   strokeDashoffset={offset}
-                  transform="rotate(-90 52 52)"
+                  transform="rotate(-90 42 42)"
                   style={{ transition: 'stroke-dashoffset 0.4s ease' }}
                 />
               </svg>
@@ -177,123 +175,81 @@ export function HomePage({
                 }}
               >
                 <div>
-                  <div className="nums" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>
+                  <div className="nums" style={{ fontSize: 18, fontWeight: 800, lineHeight: 1 }}>
                     {progress.percent}%
                   </div>
-                  <div style={{ fontSize: 10, opacity: 0.85, fontWeight: 700 }}>完成率</div>
+                  <div style={{ fontSize: 9, opacity: 0.85, fontWeight: 700 }}>完成率</div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginTop: 14 }}>
-            <button
-              type="button"
-              className="status-pill status-pill-amber"
-              onClick={() => {
-                setUnitDefectsStatus('pending_repair')
-                setUnitDefectsOpen(true)
-              }}
-            >
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginTop: 10 }}>
+            <div className="status-pill status-pill-amber status-pill-compact">
               <span className="n nums">{stats.repair}</span>
               <span className="l">待改善</span>
-            </button>
-            <button
-              type="button"
-              className="status-pill status-pill-slate"
-              onClick={() => {
-                setUnitDefectsStatus('pending_reinspection')
-                setUnitDefectsOpen(true)
-              }}
-            >
+            </div>
+            <div className="status-pill status-pill-slate status-pill-compact">
               <span className="n nums">{stats.reinspect}</span>
               <span className="l">待複驗</span>
-            </button>
-            <button
-              type="button"
-              className="status-pill status-pill-terra"
-              onClick={() => {
-                setUnitDefectsStatus('returned')
-                setUnitDefectsOpen(true)
-              }}
-            >
+            </div>
+            <div className="status-pill status-pill-terra status-pill-compact">
               <span className="n nums">{stats.returned}</span>
               <span className="l">退回</span>
+            </div>
+            <div className="status-pill status-pill-done status-pill-compact">
+              <span className="n nums">{stats.done}</span>
+              <span className="l">已改善</span>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 8,
+              marginTop: 10,
+            }}
+          >
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{
+                minHeight: 36,
+                fontSize: 12,
+                padding: '0 8px',
+                background: 'rgba(255,255,255,0.14)',
+                color: '#fff',
+                borderColor: 'rgba(255,255,255,0.28)',
+              }}
+              onClick={() => setAreasOpen(true)}
+            >
+              區域 {getUnitAreas(unit, projectAreas).length}
             </button>
             <button
               type="button"
-              className="status-pill status-pill-done"
+              className="btn btn-ghost"
+              style={{
+                minHeight: 36,
+                fontSize: 12,
+                padding: '0 8px',
+                background: unitComplete ? 'rgba(198,239,206,0.95)' : 'rgba(255,255,255,0.14)',
+                color: unitComplete ? '#006100' : '#fff',
+                borderColor: unitComplete ? 'rgba(0,97,0,0.35)' : 'rgba(255,255,255,0.28)',
+                fontWeight: 800,
+              }}
               onClick={() => {
-                setUnitDefectsStatus('completed')
-                setUnitDefectsOpen(true)
+                const next = !unitComplete
+                const msg = next
+                  ? `確認標記「${unit.code}戶」全部大項查驗完成？完成後報表會以綠底標示，避免重複查驗。`
+                  : `確認清除「${unit.code}戶」的查驗完成標記？`
+                if (!window.confirm(msg)) return
+                setUnitInspectionComplete(unit.id, next)
               }}
             >
-              <span className="n nums">{stats.done}</span>
-              <span className="l">已改善</span>
+              {unitComplete ? '✓ 已完成' : `完成 ${catProg?.done ?? 0}/${catProg?.total ?? 0}`}
             </button>
           </div>
-
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{
-              width: '100%',
-              marginTop: 12,
-              minHeight: 40,
-              background: 'rgba(255,255,255,0.14)',
-              color: '#fff',
-              borderColor: 'rgba(255,255,255,0.28)',
-              fontWeight: 800,
-            }}
-            onClick={() => {
-              setUnitDefectsStatus('all')
-              setUnitDefectsOpen(true)
-            }}
-          >
-            預覽本戶缺失（{unitDefects.length}）
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{
-              width: '100%',
-              marginTop: 8,
-              minHeight: 40,
-              background: 'rgba(255,255,255,0.14)',
-              color: '#fff',
-              borderColor: 'rgba(255,255,255,0.28)',
-            }}
-            onClick={() => setAreasOpen(true)}
-          >
-            查驗區域 {getUnitAreas(unit, projectAreas).length} 項・點此增刪改
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{
-              width: '100%',
-              marginTop: 8,
-              minHeight: 40,
-              background: unitComplete ? 'rgba(198,239,206,0.95)' : 'rgba(255,255,255,0.14)',
-              color: unitComplete ? '#006100' : '#fff',
-              borderColor: unitComplete ? 'rgba(0,97,0,0.35)' : 'rgba(255,255,255,0.28)',
-              fontWeight: 800,
-            }}
-            onClick={() => {
-              const next = !unitComplete
-              const msg = next
-                ? `確認標記「${unit.code}戶」全部大項查驗完成？完成後報表會以綠底標示，避免重複查驗。`
-                : `確認清除「${unit.code}戶」的查驗完成標記？`
-              if (!window.confirm(msg)) return
-              setUnitInspectionComplete(unit.id, next)
-            }}
-          >
-            {unitComplete
-              ? '✓ 本戶查驗完成（點此取消）'
-              : `標記本戶查驗完成（${catProg?.done ?? 0}/${catProg?.total ?? 0} 大項）`}
-          </button>
         </section>
       </div>
 
@@ -318,6 +274,11 @@ export function HomePage({
               done={Boolean(catProg?.doneIds.includes(cat.id))}
               started={Boolean(catProg?.startedIds.includes(cat.id))}
               onClick={() => onOpenCategory(cat.id)}
+              onPreviewDefects={
+                unitDefects.some((d) => d.categoryId === cat.id)
+                  ? () => setPreviewCategoryId(cat.id)
+                  : undefined
+              }
             />
           ))}
       </div>
@@ -327,11 +288,11 @@ export function HomePage({
       {areasOpen && unit && (
         <UnitAreasEditor unitId={unit.id} onClose={() => setAreasOpen(false)} />
       )}
-      {unitDefectsOpen && unit && (
+      {previewCategoryId && unit && (
         <UnitDefectsSheet
           unitId={unit.id}
-          initialStatus={unitDefectsStatus}
-          onClose={() => setUnitDefectsOpen(false)}
+          categoryId={previewCategoryId}
+          onClose={() => setPreviewCategoryId(null)}
         />
       )}
     </div>
@@ -344,12 +305,14 @@ function CategoryCard({
   done,
   started,
   onClick,
+  onPreviewDefects,
 }: {
   cat: ChecklistCategory
   defectCount: number
   done: boolean
   started: boolean
   onClick: () => void
+  onPreviewDefects?: () => void
 }) {
   const Icon = CATEGORY_ICONS[cat.name] ?? Square
   return (
@@ -371,7 +334,30 @@ function CategoryCard({
             : undefined
       }
     >
-      <span className={`badge ${defectCount > 0 ? 'warn' : 'zero'}`}>{defectCount}</span>
+      {onPreviewDefects ? (
+        <span
+          role="button"
+          tabIndex={0}
+          className={`badge warn`}
+          title="預覽此大項缺失"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onPreviewDefects()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              e.stopPropagation()
+              onPreviewDefects()
+            }
+          }}
+        >
+          {defectCount}
+        </span>
+      ) : (
+        <span className={`badge ${defectCount > 0 ? 'warn' : 'zero'}`}>{defectCount}</span>
+      )}
       <div className="cat-icon" aria-hidden>
         <Icon size={20} strokeWidth={1.8} />
       </div>
