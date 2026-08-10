@@ -87,12 +87,33 @@ async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: string) {
   }
 }
 
+/** 避免把 proj_xxxx 這類內部 ID 顯示在報表標題 */
+function resolveExportProjectLabel(
+  project: ProjectState,
+  displayName?: string,
+): string {
+  const isInternalId = (v: string) =>
+    /^proj[_-]/i.test(v.trim()) || /^[a-z0-9]{16,}$/i.test(v.trim())
+  for (const candidate of [displayName, project.projectName]) {
+    const name = candidate?.trim()
+    if (!name) continue
+    if (isInternalId(name)) continue
+    if (name === '未選擇專案' || name === '未命名專案') continue
+    return name
+  }
+  return ''
+}
+
 /** 分棟／分層／分戶缺失數量矩陣 + 查驗完成綠底 + 缺失明細 */
-export async function exportInspectionExcel(project: ProjectState): Promise<void> {
+export async function exportInspectionExcel(
+  project: ProjectState,
+  options?: { displayName?: string },
+): Promise<void> {
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'CI 現場查驗'
   workbook.created = new Date()
 
+  const projectLabel = resolveExportProjectLabel(project, options?.displayName)
   const usedNames = new Set<string>()
   const activeCats = project.categories.filter((c) => c.active).sort((a, b) => a.sortOrder - b.sortOrder)
   const buildings = [...project.buildings]
@@ -105,7 +126,7 @@ export async function exportInspectionExcel(project: ProjectState): Promise<void
     sheet.getColumn(1).width = 22
     sheet.getColumn(2).width = 64
     const rows: Array<[string, string]> = [
-      ['專案', project.projectName],
+      ['專案', projectLabel || '（未命名專案）'],
       ['匯出時間', new Date().toLocaleString('zh-TW')],
       ['分頁順序', '說明 → 全案彙總 → 缺失明細 → 各棟矩陣'],
       ['全案彙總／缺失明細', '表頭已開篩選器，可依棟別、樓層、戶別、大項等快速篩選。'],
@@ -261,7 +282,9 @@ export async function exportInspectionExcel(project: ProjectState): Promise<void
     )
 
     const sheet = workbook.addWorksheet(sanitizeSheetName(building.name, usedNames))
-    sheet.getCell(1, 1).value = `${project.projectName}｜${building.name}｜分層分戶缺失數量`
+    sheet.getCell(1, 1).value = projectLabel
+      ? `${projectLabel}｜${building.name}｜分層分戶缺失數量`
+      : `${building.name}｜分層分戶缺失數量`
     sheet.getCell(1, 1).font = { bold: true, size: 13 }
     sheet.mergeCells(1, 1, 1, Math.max(2, codes.length + 1))
 
@@ -322,6 +345,6 @@ export async function exportInspectionExcel(project: ProjectState): Promise<void
   }
 
   const stamp = new Date().toISOString().slice(0, 10)
-  const filename = `${project.projectName || '查驗專案'}_分層分戶缺失_${stamp}.xlsx`
+  const filename = `${projectLabel || '查驗專案'}_分層分戶缺失_${stamp}.xlsx`
   await downloadWorkbook(workbook, filename)
 }

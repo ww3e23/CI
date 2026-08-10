@@ -384,8 +384,13 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
       ? (meta.activities as ActivityLog[])
       : []
 
+    // 專案顯示名稱優先用後台建案名稱，避免把 proj_xxx 內部 ID 寫進報表
+    const readableName = [projectData.name, meta.projectName]
+      .map((v) => (typeof v === 'string' ? v.trim() : ''))
+      .find((v) => v && !/^proj[_-]/i.test(v))
+
     return {
-      projectName: String(meta.projectName ?? projectData.name ?? projectId),
+      projectName: String(readableName || projectData.name || meta.projectName || '未命名專案'),
       buildings,
       units,
       categories,

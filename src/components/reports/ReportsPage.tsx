@@ -29,7 +29,9 @@ export function ReportsPage() {
     if (excelBusy) return
     setExcelBusy(true)
     try {
-      await exportInspectionExcel(useProjectStore.getState())
+      await exportInspectionExcel(useProjectStore.getState(), {
+        displayName: reportName,
+      })
     } catch (err) {
       console.error('[excel] export failed', err)
       window.alert('Excel 匯出失敗，請稍後再試')
