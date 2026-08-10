@@ -21,6 +21,7 @@ import {
   pushProjectState,
 } from '../services/projectSync'
 import { uploadDefectImages } from '../services/storageUpload'
+import { autoSyncDefectPhotosToDrive } from '../services/driveSync'
 import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
 import { statusLabel } from '../lib/progress'
@@ -1104,6 +1105,10 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               afterProjectChange(get, set, { syncCloud: false })
               await clearPendingDefectMedia(entry.defectId)
               uploaded += 1
+              void autoSyncDefectPhotosToDrive({
+                projectId,
+                defectId: entry.defectId,
+              }).catch((err) => console.warn('[drive-auto]', err))
             } catch (err) {
               console.warn('[flushPendingMediaUploads] one failed', entry.defectId, err)
               set({

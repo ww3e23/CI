@@ -194,8 +194,12 @@ async function runPhotoSync(params: {
   drive: DriveClient
   actorLabel?: string | null
   requireSharedDrive?: boolean
+  /** 若指定則只同步這些缺失（拍照後自動上傳用） */
+  defectIds?: string[]
 }) {
-  const { projectId, driveFolderId, drive, actorLabel, requireSharedDrive } = params
+  const { projectId, driveFolderId, drive, actorLabel, requireSharedDrive, defectIds } = params
+  const defectIdFilter =
+    defectIds && defectIds.length > 0 ? new Set(defectIds.map((id) => String(id))) : null
 
   if (requireSharedDrive) {
     try {
@@ -220,6 +224,7 @@ async function runPhotoSync(params: {
   const folderCache = new Map<string, string>()
 
   for (const doc of defectsSnap.docs) {
+    if (defectIdFilter && !defectIdFilter.has(doc.id)) continue
     const defect: DefectRow = { id: doc.id, ...(doc.data() as Omit<DefectRow, 'id'>) }
     if (defect.status === 'voided') continue
 
@@ -397,6 +402,10 @@ export const syncProjectPhotosToDriveAsUser = onCall(
     const accessToken = String(request.data?.accessToken ?? '').trim()
     if (!projectId) throw new HttpsError('invalid-argument', '缺少 projectId')
     if (!accessToken) throw new HttpsError('invalid-argument', '缺少 Google 授權')
+    const rawDefectIds = request.data?.defectIds
+    const defectIds = Array.isArray(rawDefectIds)
+      ? rawDefectIds.map((id: unknown) => String(id ?? '').trim()).filter(Boolean)
+      : undefined
 
     const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
     if (!projectSnap.exists) throw new HttpsError('not-found', '找不到此專案')
@@ -427,6 +436,7 @@ export const syncProjectPhotosToDriveAsUser = onCall(
       drive,
       actorLabel: 'user-oauth',
       requireSharedDrive: false,
+      defectIds,
     })
   },
 )
