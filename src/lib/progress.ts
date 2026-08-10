@@ -16,26 +16,80 @@ export function totalChecklistItems(state: ProjectState): number {
     .reduce((sum, c) => sum + c.itemCount, 0)
 }
 
+/** 未改善缺失（不含已改善、作廢） */
+export function openDefectCount(defects: Defect[], unitId: string): number {
+  return defects.filter(
+    (d) =>
+      d.unitId === unitId &&
+      d.status !== 'voided' &&
+      d.status !== 'completed',
+  ).length
+}
+
+export function activeCategories(state: ProjectState) {
+  return state.categories.filter((c) => c.active).sort((a, b) => a.sortOrder - b.sortOrder)
+}
+
+/** 此戶已查畢大項數／應查大項數 */
+export function unitCategoryProgress(
+  unitId: string,
+  state: ProjectState,
+): { doneIds: string[]; done: number; total: number; complete: boolean } {
+  const cats = activeCategories(state)
+  const doneIds = state.unitCategoryDone?.[unitId] ?? []
+  const doneSet = new Set(doneIds)
+  const done = cats.filter((c) => doneSet.has(c.id)).length
+  const total = cats.length
+  return {
+    doneIds,
+    done,
+    total,
+    complete: total > 0 && done >= total,
+  }
+}
+
+/** 該戶是否所有大項皆已查畢（Excel 綠底／避免重複查驗） */
+export function unitIsInspectionComplete(state: ProjectState, unitId: string): boolean {
+  const catProg = unitCategoryProgress(unitId, state)
+  if (catProg.complete) return true
+  const itemTotal = totalChecklistItems(state)
+  const legacyChecked = state.unitCheckedCount[unitId] ?? 0
+  return itemTotal > 0 && legacyChecked >= itemTotal
+}
+
 export function unitProgress(
   unit: Unit,
   state: ProjectState,
 ): { checked: number; total: number; percent: number; defectCount: number; status: CellStatus } {
-  const total = totalChecklistItems(state)
+  const itemTotal = totalChecklistItems(state)
   if (!unit.active) {
-    return { checked: 0, total, percent: 0, defectCount: 0, status: 'na' }
+    return { checked: 0, total: itemTotal, percent: 0, defectCount: 0, status: 'na' }
   }
-  const checked = state.unitCheckedCount[unit.id] ?? 0
-  const defectCount = state.defects.filter(
-    (d) => d.unitId === unit.id && d.status !== 'voided',
-  ).length
-  const percent = total === 0 ? 0 : Math.round((Math.min(checked, total) / total) * 100)
+
+  const catProg = unitCategoryProgress(unit.id, state)
+  const defectCount = openDefectCount(state.defects, unit.id)
+
+  // 進度以「大項查畢」為準；舊的 unitCheckedCount 僅作後援
+  const legacyChecked = state.unitCheckedCount[unit.id] ?? 0
+  const percentFromCats =
+    catProg.total === 0 ? 0 : Math.round((catProg.done / catProg.total) * 100)
+  const percentFromLegacy =
+    itemTotal === 0 ? 0 : Math.round((Math.min(legacyChecked, itemTotal) / itemTotal) * 100)
+  const percent = Math.max(percentFromCats, percentFromLegacy)
+  const complete = catProg.complete || (itemTotal > 0 && legacyChecked >= itemTotal)
 
   let status: CellStatus = 'not_started'
-  if (percent >= 100) status = 'completed'
+  if (complete) status = 'completed'
   else if (defectCount > 0) status = 'has_defects'
-  else if (checked > 0) status = 'in_progress'
+  else if (catProg.done > 0 || legacyChecked > 0) status = 'in_progress'
 
-  return { checked: Math.min(checked, total), total, percent, defectCount, status }
+  return {
+    checked: complete ? itemTotal : Math.min(legacyChecked, itemTotal),
+    total: itemTotal,
+    percent,
+    defectCount,
+    status,
+  }
 }
 
 export function buildMatrix(state: ProjectState): {

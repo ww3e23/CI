@@ -102,6 +102,11 @@ export interface ProjectState {
   checklistItems: ChecklistItem[]
   defects: Defect[]
   unitCheckedCount: Record<string, number>
+  /**
+   * 各戶已查畢的大項 ID 列表。
+   * 當啟用中的大項全部列入時，該戶視為「查驗完成」（Excel 綠底）。
+   */
+  unitCategoryDone: Record<string, string[]>
   activities: ActivityLog[]
   currentUnitId: string | null
   recentUnitIds: string[]

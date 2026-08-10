@@ -13,6 +13,7 @@ export function createEmptyProjectState(name = '未命名專案'): ProjectState 
     checklistItems,
     defects: [],
     unitCheckedCount: {},
+    unitCategoryDone: {},
     activities: [],
     currentUnitId: '',
     recentUnitIds: [],

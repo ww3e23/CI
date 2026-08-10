@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentProject } from '../../store/useAuthStore'
-import { unitProgress } from '../../lib/progress'
+import { unitCategoryProgress, unitIsInspectionComplete, unitProgress } from '../../lib/progress'
 import { UnitSwitcher } from '../UnitSwitcher'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { TitleHint } from '../ui/TitleHint'
@@ -45,10 +45,17 @@ export function HomePage({
   const defects = useProjectStore((s) => s.defects)
   const projectAreas = useProjectStore((s) => s.areas)
   const currentUnitId = useProjectStore((s) => s.currentUnitId)
+  const unitCategoryDone = useProjectStore((s) => s.unitCategoryDone)
+  const unitCheckedCount = useProjectStore((s) => s.unitCheckedCount)
+  const setUnitInspectionComplete = useProjectStore((s) => s.setUnitInspectionComplete)
 
   const unit = units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active)
   const state = useProjectStore.getState()
   const progress = unit ? unitProgress(unit, state) : null
+  const catProg = unit ? unitCategoryProgress(unit.id, state) : null
+  const unitComplete = unit ? unitIsInspectionComplete(state, unit.id) : false
+  void unitCategoryDone
+  void unitCheckedCount
 
   // 舊專案若沒有範本，自動套用預設查驗清單
   useEffect(() => {
@@ -210,12 +217,40 @@ export function HomePage({
           >
             查驗區域 {getUnitAreas(unit, projectAreas).length} 項・點此增刪改
           </button>
+
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{
+              width: '100%',
+              marginTop: 8,
+              minHeight: 40,
+              background: unitComplete ? 'rgba(198,239,206,0.95)' : 'rgba(255,255,255,0.14)',
+              color: unitComplete ? '#006100' : '#fff',
+              borderColor: unitComplete ? 'rgba(0,97,0,0.35)' : 'rgba(255,255,255,0.28)',
+              fontWeight: 800,
+            }}
+            onClick={() => {
+              const next = !unitComplete
+              const msg = next
+                ? `確認標記「${unit.code}戶」全部大項查驗完成？完成後報表會以綠底標示，避免重複查驗。`
+                : `確認清除「${unit.code}戶」的查驗完成標記？`
+              if (!window.confirm(msg)) return
+              setUnitInspectionComplete(unit.id, next)
+            }}
+          >
+            {unitComplete
+              ? '✓ 本戶查驗完成（點此取消）'
+              : `標記本戶查驗完成（${catProg?.done ?? 0}/${catProg?.total ?? 0} 大項）`}
+          </button>
         </section>
       </div>
 
       <div className="section-row">
         <h2>查驗大項</h2>
-        <span className="link">查看全部</span>
+        <span className="link">
+          {catProg ? `${catProg.done}/${catProg.total} 已查畢` : '查看全部'}
+        </span>
       </div>
 
       <div className="grid-2">
@@ -227,6 +262,7 @@ export function HomePage({
               key={cat.id}
               cat={cat}
               defectCount={unitDefects.filter((d) => d.categoryId === cat.id).length}
+              done={Boolean(catProg?.doneIds.includes(cat.id))}
               onClick={() => onOpenCategory(cat.id)}
             />
           ))}
@@ -244,22 +280,36 @@ export function HomePage({
 function CategoryCard({
   cat,
   defectCount,
+  done,
   onClick,
 }: {
   cat: ChecklistCategory
   defectCount: number
+  done: boolean
   onClick: () => void
 }) {
   const Icon = CATEGORY_ICONS[cat.name] ?? Square
   return (
-    <button type="button" className="glass cat-card" onClick={onClick}>
+    <button
+      type="button"
+      className="glass cat-card"
+      onClick={onClick}
+      style={
+        done
+          ? {
+              background: 'linear-gradient(180deg, #e8f8ec 0%, #d7f0de 100%)',
+              boxShadow: 'inset 0 0 0 1px rgba(0,97,0,0.18)',
+            }
+          : undefined
+      }
+    >
       <span className={`badge ${defectCount > 0 ? 'warn' : 'zero'}`}>{defectCount}</span>
       <div className="cat-icon" aria-hidden>
         <Icon size={20} strokeWidth={1.8} />
       </div>
       <div className="serif" style={{ fontSize: 18, fontWeight: 700 }}>{cat.name}</div>
-      <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-        {cat.itemCount} 細項
+      <div style={{ marginTop: 4, color: done ? '#006100' : 'var(--ink-soft)', fontSize: 12, fontWeight: 700 }}>
+        {done ? '已查畢' : `${cat.itemCount} 細項`}
       </div>
     </button>
   )

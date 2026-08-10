@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { FileDown } from 'lucide-react'
+import { FileDown, FileSpreadsheet } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentProject } from '../../store/useAuthStore'
 import { buildMatrix, formatActivity } from '../../lib/progress'
+import { exportInspectionExcel } from '../../lib/excelReport'
 import type { ProgressCell } from '../../types'
 import { ReportPreview } from './ReportPreview'
 import { TitleHint } from '../ui/TitleHint'
@@ -13,6 +14,7 @@ export function ReportsPage() {
   const matrix = useMemo(() => buildMatrix(state), [state])
   const [selected, setSelected] = useState<ProgressCell | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [excelBusy, setExcelBusy] = useState(false)
   const setCurrentUnit = useProjectStore((s) => s.setCurrentUnit)
 
   const cellMap = useMemo(() => {
@@ -23,6 +25,19 @@ export function ReportsPage() {
 
   const reportName = project?.name ?? state.projectName
 
+  const handleExportExcel = async () => {
+    if (excelBusy) return
+    setExcelBusy(true)
+    try {
+      await exportInspectionExcel(useProjectStore.getState())
+    } catch (err) {
+      console.error('[excel] export failed', err)
+      window.alert('Excel 匯出失敗，請稍後再試')
+    } finally {
+      setExcelBusy(false)
+    }
+  }
+
   return (
     <div className="rise">
       <header style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
@@ -32,19 +47,29 @@ export function ReportsPage() {
             as="h1"
             className="serif"
             style={{ margin: '4px 0 0', fontSize: 24, fontWeight: 700 }}
-            hint="棟別 × 樓層 × 戶別一次看完全案；可預覽並匯出質感報告。"
+            hint="棟別 × 樓層 × 戶別一次看完全案；可預覽報告，或匯出分層分戶缺失 Excel。"
           >
             查驗進度矩陣
           </TitleHint>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          style={{ flexShrink: 0 }}
-          onClick={() => setPreviewOpen(true)}
-        >
-          <FileDown size={16} /> 匯出報告
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setPreviewOpen(true)}
+          >
+            <FileDown size={16} /> 匯出報告
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={excelBusy}
+            onClick={() => void handleExportExcel()}
+            title="分層分戶缺失數量 Excel；查驗完成戶別以綠底標示"
+          >
+            <FileSpreadsheet size={16} /> {excelBusy ? '匯出中…' : '匯出 Excel'}
+          </button>
+        </div>
       </header>
 
       <section className="glass-green" style={{ padding: 14, marginBottom: 12 }}>

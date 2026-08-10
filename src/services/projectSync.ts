@@ -127,6 +127,17 @@ function unitAreasMap(units: ProjectState['units']): Record<string, string[]> {
   return map
 }
 
+function parseUnitCategoryDone(raw: unknown): Record<string, string[]> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, string[]> = {}
+  for (const [unitId, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(value)) continue
+    const ids = value.map(String).filter(Boolean)
+    if (ids.length) out[unitId] = ids
+  }
+  return out
+}
+
 function parseUnitAreasMap(raw: unknown): Record<string, string[]> {
   if (!raw || typeof raw !== 'object') return {}
   const out: Record<string, string[]> = {}
@@ -234,6 +245,7 @@ export async function pushProjectState(
       projectName: state.projectName,
       areas: state.areas,
       unitCheckedCount: state.unitCheckedCount,
+      unitCategoryDone: state.unitCategoryDone ?? {},
       activities: state.activities.slice(0, 40),
       unitNextDefect: unitNextMap(state.units),
       unitAreas: unitAreasMap(state.units),
@@ -321,6 +333,7 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
         meta.unitCheckedCount && typeof meta.unitCheckedCount === 'object'
           ? (meta.unitCheckedCount as Record<string, number>)
           : {},
+      unitCategoryDone: parseUnitCategoryDone(meta.unitCategoryDone),
       activities,
       currentUnitId: meta.currentUnitId ? String(meta.currentUnitId) : units[0]?.id ?? null,
       recentUnitIds: Array.isArray(meta.recentUnitIds)
@@ -431,6 +444,10 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
     checklistItems: [...itemMap.values()].sort((a, b) => a.sortOrder - b.sortOrder),
     defects: [...defectMap.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
     unitCheckedCount: { ...local.unitCheckedCount, ...remote.unitCheckedCount },
+    unitCategoryDone: mergeUnitCategoryDone(
+      local.unitCategoryDone ?? {},
+      remote.unitCategoryDone ?? {},
+    ),
     activities: (remote.activities.length >= local.activities.length
       ? remote.activities
       : local.activities
@@ -441,4 +458,17 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
       : remote.recentUnitIds,
     areas: local.areas.length ? local.areas : remote.areas,
   }
+}
+
+function mergeUnitCategoryDone(
+  local: Record<string, string[]>,
+  remote: Record<string, string[]>,
+): Record<string, string[]> {
+  const ids = new Set([...Object.keys(local), ...Object.keys(remote)])
+  const out: Record<string, string[]> = {}
+  for (const id of ids) {
+    const merged = new Set([...(local[id] ?? []), ...(remote[id] ?? [])])
+    if (merged.size) out[id] = [...merged]
+  }
+  return out
 }

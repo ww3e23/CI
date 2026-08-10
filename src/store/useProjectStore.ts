@@ -80,6 +80,10 @@ interface ProjectActions {
   /** 更新專案預設查驗區域（尚未自訂的戶別會沿用） */
   setProjectAreas: (areas: string[]) => { ok: boolean; error?: string }
   markUnitChecked: (unitId: string, checked: number) => void
+  /** 標記／取消此戶某大項已查畢 */
+  setUnitCategoryDone: (unitId: string, categoryId: string, done: boolean) => void
+  /** 一次標記此戶全部大項查畢（或清除） */
+  setUnitInspectionComplete: (unitId: string, complete: boolean) => void
   resetDemoData: () => void
   pushStructureToCloud: () => Promise<{ ok: boolean; mode: string }>
   /** 從雲端拉取並與本機合併（登入／切專案／開 App） */
@@ -208,6 +212,7 @@ function snapshotProject(state: ProjectState): ProjectState {
     checklistItems: state.checklistItems,
     defects: state.defects,
     unitCheckedCount: state.unitCheckedCount,
+    unitCategoryDone: state.unitCategoryDone ?? {},
     activities: state.activities,
     currentUnitId: state.currentUnitId,
     recentUnitIds: state.recentUnitIds,
@@ -657,6 +662,96 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         afterProjectChange(get, set)
       },
 
+      setUnitCategoryDone: (unitId, categoryId, done) => {
+        const state = get()
+        const unit = state.units.find((u) => u.id === unitId)
+        const cat = state.categories.find((c) => c.id === categoryId)
+        if (!unit || !cat) return
+
+        const prev = state.unitCategoryDone?.[unitId] ?? []
+        const setIds = new Set(prev)
+        if (done) setIds.add(categoryId)
+        else setIds.delete(categoryId)
+        const nextIds = [...setIds]
+
+        const activeIds = state.categories.filter((c) => c.active).map((c) => c.id)
+        const allDone =
+          activeIds.length > 0 && activeIds.every((id) => nextIds.includes(id))
+        const itemTotal = state.categories
+          .filter((c) => c.active)
+          .reduce((sum, c) => sum + c.itemCount, 0)
+
+        set({
+          unitCategoryDone: {
+            ...(state.unitCategoryDone ?? {}),
+            [unitId]: nextIds,
+          },
+          unitCheckedCount: {
+            ...state.unitCheckedCount,
+            [unitId]: allDone ? itemTotal : Math.min(state.unitCheckedCount[unitId] ?? 0, itemTotal),
+          },
+          activities: [
+            {
+              id: createId('act'),
+              at: new Date().toLocaleString('zh-TW', {
+                month: 'numeric',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+              buildingName: unit.buildingName,
+              floor: unit.floor,
+              unitCode: unit.code,
+              summary: done
+                ? `標記大項「${cat.name}」已查畢`
+                : `取消大項「${cat.name}」查畢`,
+              actorName: '現場查驗',
+            },
+            ...state.activities,
+          ].slice(0, 40),
+        })
+        afterProjectChange(get, set)
+      },
+
+      setUnitInspectionComplete: (unitId, complete) => {
+        const state = get()
+        const unit = state.units.find((u) => u.id === unitId)
+        if (!unit) return
+        const activeIds = state.categories.filter((c) => c.active).map((c) => c.id)
+        const itemTotal = state.categories
+          .filter((c) => c.active)
+          .reduce((sum, c) => sum + c.itemCount, 0)
+
+        set({
+          unitCategoryDone: {
+            ...(state.unitCategoryDone ?? {}),
+            [unitId]: complete ? activeIds : [],
+          },
+          unitCheckedCount: {
+            ...state.unitCheckedCount,
+            [unitId]: complete ? itemTotal : 0,
+          },
+          activities: [
+            {
+              id: createId('act'),
+              at: new Date().toLocaleString('zh-TW', {
+                month: 'numeric',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+              buildingName: unit.buildingName,
+              floor: unit.floor,
+              unitCode: unit.code,
+              summary: complete ? '標記本戶全部大項查驗完成' : '清除本戶查驗完成標記',
+              actorName: '現場查驗',
+            },
+            ...state.activities,
+          ].slice(0, 40),
+        })
+        afterProjectChange(get, set)
+      },
+
       resetDemoData: () => {
         const id = get().activeProjectId
         const name = get().projectName || '未命名專案'
@@ -1095,7 +1190,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
     }),
     {
       name: 'site-inspection-v5',
-      version: 6,
+      version: 7,
       // 大圖 base64 不寫入 localStorage，避免配額爆掉（QuotaExceededError）
       partialize: (state) => ({
         ...lightenProjectState(state),
@@ -1110,16 +1205,29 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
       migrate: (persisted) => {
         const s = persisted as (ProjectState & BundleState) | null
         if (!s || typeof s !== 'object') return s as never
-        return {
+        const withCategoryDone = {
           ...s,
-          ...lightenProjectState(s),
+          unitCategoryDone: s.unitCategoryDone ?? {},
           bundles: Object.fromEntries(
             Object.entries(s.bundles ?? {}).map(([id, bundle]) => [
+              id,
+              {
+                ...bundle,
+                unitCategoryDone: bundle.unitCategoryDone ?? {},
+              },
+            ]),
+          ),
+        }
+        return {
+          ...withCategoryDone,
+          ...lightenProjectState(withCategoryDone),
+          bundles: Object.fromEntries(
+            Object.entries(withCategoryDone.bundles ?? {}).map(([id, bundle]) => [
               id,
               lightenProjectState(bundle),
             ]),
           ),
-          activeProjectId: s.activeProjectId ?? null,
+          activeProjectId: withCategoryDone.activeProjectId ?? null,
         } as never
       },
       storage: createJSONStorage(() => ({

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { statusLabel } from '../../lib/progress'
 import { AddDefectSheet } from '../defects/AddDefectSheet'
@@ -26,10 +26,15 @@ export function CategoryPage({
   const defects = useProjectStore((s) => s.defects)
   const units = useProjectStore((s) => s.units)
   const currentUnitId = useProjectStore((s) => s.currentUnitId)
+  const unitCategoryDone = useProjectStore((s) => s.unitCategoryDone)
+  const setUnitCategoryDone = useProjectStore((s) => s.setUnitCategoryDone)
   const unit = units.find((u) => u.id === currentUnitId)
 
   const cat = categories.find((c) => c.id === categoryId)
   const [addFor, setAddFor] = useState<string | null>(null)
+  const categoryDone = Boolean(
+    unit && cat && (unitCategoryDone[unit.id] ?? []).includes(cat.id),
+  )
 
   const catItems = useMemo(
     () =>
@@ -73,6 +78,24 @@ export function CategoryPage({
       <h1 className="serif" style={{ margin: '0 0 14px', fontSize: 32, fontWeight: 700 }}>
         {cat.name}
       </h1>
+
+      <button
+        type="button"
+        className="btn"
+        style={{
+          width: '100%',
+          marginBottom: 14,
+          minHeight: 44,
+          fontWeight: 800,
+          background: categoryDone ? '#C6EFCE' : 'var(--surface, #fff)',
+          color: categoryDone ? '#006100' : 'var(--ink)',
+          border: categoryDone ? '1px solid rgba(0,97,0,0.28)' : '1px solid rgba(34,41,31,0.12)',
+        }}
+        onClick={() => setUnitCategoryDone(unit.id, cat.id, !categoryDone)}
+      >
+        <CheckCircle2 size={18} />
+        {categoryDone ? '此大項已查畢（點此取消）' : '標記此大項已查畢'}
+      </button>
 
       <div style={{ display: 'grid', gap: 10 }}>
         {catItems.map((item) => {

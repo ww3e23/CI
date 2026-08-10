@@ -11,6 +11,7 @@
     "deploy:pages": "VITE_BASE_PATH=/CI/ npm run build && gh-pages -d dist"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "firebase": "^12.17.1",
     "idb": "^8.0.3",
     "lucide-react": "^1.30.0",
