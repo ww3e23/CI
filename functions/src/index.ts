@@ -415,7 +415,7 @@ export const syncProjectPhotosToDriveAsUser = onCall(
     } catch (err) {
       throw new HttpsError(
         'permission-denied',
-        `無法存取綁定的雲端硬碟資料夾。請用有該資料夾權限的 Google 帳號授權。（${String(
+        `無法存取綁定的雲端硬碟資料夾。請確認：① 授權的是「擁有／可編輯該資料夾」的同一個 Google 帳號；② OAuth 範圍含完整 Drive（非僅 drive.file）。（${String(
           (err as Error)?.message ?? err,
         )}）`,
       )
