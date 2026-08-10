@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { Download, ImageDown, Pencil, Trash2 } from 'lucide-react'
 import type { Defect, DefectStatus } from '../../types'
 import { statusLabel } from '../../lib/progress'
-import { downloadImage, downloadImages } from '../../lib/download'
 import { Modal } from '../ui/Modal'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { EditDefectSheet } from './EditDefectSheet'
+import { SavePhotosSheet } from './SavePhotosSheet'
 
 const STATUS_OPTIONS: { key: DefectStatus; label: string; cls: string }[] = [
   { key: 'pending_repair', label: '待改善', cls: 'amber' },
@@ -29,9 +29,11 @@ export function DefectDetailModal({
   const live = useProjectStore((s) => s.defects.find((d) => d.id === defect.id) ?? defect)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [downloading, setDownloading] = useState(false)
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [savePhotos, setSavePhotos] = useState<
+    { src: string; filename: string; kind: string }[]
+  >([])
   const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
 
   const canManage =
     role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
@@ -80,42 +82,9 @@ export function DefectDetailModal({
     onClose()
   }
 
-  async function handleDownloadOne(src: string, filename: string) {
-    setDownloading(true)
-    setError(null)
-    setInfo(null)
-    try {
-      await downloadImage(src, filename)
-      setInfo('已觸發下載／分享，若未出現請改用「下載照片」或長按圖片儲存')
-    } catch (err) {
-      console.warn(err)
-      setError(err instanceof Error ? err.message : '下載失敗')
-    } finally {
-      setDownloading(false)
-    }
-  }
-
-  async function handleDownloadAll() {
-    setDownloading(true)
-    setError(null)
-    setInfo(null)
-    try {
-      const result = await downloadImages(photos)
-      if (result.failed > 0) {
-        setInfo(`已處理 ${result.ok} 張，${result.failed} 張失敗`)
-      } else {
-        setInfo(
-          /iPad|iPhone|iPod/.test(navigator.userAgent)
-            ? '已開啟分享／預覽，請選「儲存影像」'
-            : `已下載 ${result.ok} 張照片`,
-        )
-      }
-    } catch (err) {
-      console.warn(err)
-      setError(err instanceof Error ? err.message : '下載失敗')
-    } finally {
-      setDownloading(false)
-    }
+  function openSave(list: { src: string; filename: string; kind: string }[]) {
+    setSavePhotos(list)
+    setSaveOpen(true)
   }
 
   if (editing) {
@@ -123,6 +92,18 @@ export function DefectDetailModal({
       <EditDefectSheet
         defect={live}
         onClose={() => setEditing(false)}
+      />
+    )
+  }
+
+  if (saveOpen) {
+    return (
+      <SavePhotosSheet
+        photos={savePhotos}
+        onClose={() => {
+          setSaveOpen(false)
+          setSavePhotos([])
+        }}
       />
     )
   }
@@ -179,11 +160,6 @@ export function DefectDetailModal({
           {error}
         </p>
       )}
-      {info && !error && (
-        <p style={{ margin: '10px 0 0', color: 'var(--green-deep)', fontWeight: 700, fontSize: 13 }}>
-          {info}
-        </p>
-      )}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
         {canManage && (
@@ -198,10 +174,10 @@ export function DefectDetailModal({
         <button
           type="button"
           className="btn btn-ghost"
-          disabled={photos.length === 0 || downloading}
-          onClick={() => void handleDownloadAll()}
+          disabled={photos.length === 0}
+          onClick={() => openSave(photos)}
         >
-          <ImageDown size={16} /> {downloading ? '處理中…' : '下載照片'}
+          <ImageDown size={16} /> 下載照片
         </button>
         {canManage && (
           <button
@@ -240,7 +216,14 @@ export function DefectDetailModal({
             <img
               src={p.src}
               alt={p.kind}
-              style={{ width: '100%', maxHeight: 280, objectFit: 'contain', display: 'block', background: '#1c211d' }}
+              style={{
+                width: '100%',
+                maxHeight: 280,
+                objectFit: 'contain',
+                display: 'block',
+                background: '#1c211d',
+                WebkitTouchCallout: 'default',
+              }}
             />
             <figcaption
               style={{
@@ -256,10 +239,9 @@ export function DefectDetailModal({
                 type="button"
                 className="btn btn-ghost"
                 style={{ minHeight: 36, padding: '0 12px' }}
-                disabled={downloading}
-                onClick={() => void handleDownloadOne(p.src, p.filename)}
+                onClick={() => openSave([p])}
               >
-                <Download size={15} /> {downloading ? '…' : '下載'}
+                <Download size={15} /> 下載
               </button>
             </figcaption>
           </figure>

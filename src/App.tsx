@@ -9,6 +9,7 @@ import { AddDefectSheet } from './components/defects/AddDefectSheet'
 import { LoginPage } from './components/auth/LoginPage'
 import { AdminApp } from './components/admin/AdminApp'
 import { InstallBanner } from './components/pwa/InstallBanner'
+import { UpdateAppBanner } from './components/pwa/UpdateAppBanner'
 import { useAuthStore } from './store/useAuthStore'
 import { TitleHint } from './components/ui/TitleHint'
 import { useProjectStore } from './store/useProjectStore'
@@ -191,6 +192,7 @@ export default function App() {
       </main>
       <BottomNav active={tab} onChange={handleNav} />
       {addOpen && <AddDefectSheet onClose={() => setAddOpen(false)} />}
+      <UpdateAppBanner />
       <InstallBanner />
     </div>
   )

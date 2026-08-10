@@ -1,6 +1,14 @@
 import { getBlob, ref } from 'firebase/storage'
 import { getFirebaseStorage } from './firebase'
 
+export type PreparedImage = {
+  blob: Blob
+  file: File
+  filename: string
+  objectUrl: string
+  kind?: string
+}
+
 function guessExt(src: string, mime?: string): string {
   if (mime?.includes('png') || src.startsWith('data:image/png') || src.includes('.png')) {
     return 'png'
@@ -30,7 +38,6 @@ function isFirebaseStorageUrl(src: string): boolean {
   )
 }
 
-/** 從 Firebase download URL 解析 object path */
 function storagePathFromUrl(src: string): string | null {
   try {
     const u = new URL(src)
@@ -72,7 +79,8 @@ async function blobFromImageElement(src: string): Promise<Blob> {
   return blob
 }
 
-async function resolveBlob(src: string): Promise<Blob> {
+export async function resolveImageBlob(src: string): Promise<Blob> {
+  if (!src) throw new Error('沒有可下載的圖片')
   if (src.startsWith('data:')) return dataUrlToBlob(src)
   if (src.startsWith('blob:')) {
     const res = await fetch(src)
@@ -80,7 +88,6 @@ async function resolveBlob(src: string): Promise<Blob> {
     return res.blob()
   }
 
-  // 1) Firebase Storage SDK：不依賴 bucket CORS
   if (isFirebaseStorageUrl(src)) {
     const storage = getFirebaseStorage()
     const path = storagePathFromUrl(src)
@@ -93,7 +100,6 @@ async function resolveBlob(src: string): Promise<Blob> {
     }
   }
 
-  // 2) 一般 fetch
   try {
     const res = await fetch(src, { mode: 'cors', credentials: 'omit', cache: 'no-cache' })
     if (res.ok) return await res.blob()
@@ -102,22 +108,45 @@ async function resolveBlob(src: string): Promise<Blob> {
     console.warn('[download] fetch failed', err)
   }
 
-  // 3) 畫布匯出
   return blobFromImageElement(src)
 }
 
-async function saveBlob(blob: Blob, filename: string): Promise<'shared' | 'downloaded' | 'opened'> {
-  const file = new File([blob], filename, { type: blob.type || 'image/jpeg' })
+export function safeFilename(filename: string, src: string, mime?: string): string {
+  const ext = guessExt(src, mime)
+  const safeName = filename.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '-')
+  return safeName.includes('.') ? safeName : `${safeName}.${ext}`
+}
 
-  // 手機優先：系統分享／存到相簿（Safari／PWA 對 <a download> 常無效）
+/** 先準備檔案，讓 UI 再用「新的點擊」觸發分享（iOS 才穩） */
+export async function prepareImageDownload(
+  src: string,
+  filename: string,
+  kind?: string,
+): Promise<PreparedImage> {
+  const blob = await resolveImageBlob(src)
+  const full = safeFilename(filename, src, blob.type)
+  const file = new File([blob], full, { type: blob.type || 'image/jpeg' })
+  const objectUrl = URL.createObjectURL(blob)
+  return { blob, file, filename: full, objectUrl, kind }
+}
+
+export function revokePrepared(image: PreparedImage | null | undefined) {
+  if (image?.objectUrl) URL.revokeObjectURL(image.objectUrl)
+}
+
+/** 必須在使用者剛點擊的同步／微任務鏈中呼叫，手機才會跳出分享 */
+export async function shareOrDownloadPrepared(
+  image: PreparedImage,
+): Promise<'shared' | 'downloaded'> {
   const nav = navigator as Navigator & {
     canShare?: (data?: ShareData) => boolean
     share?: (data: ShareData) => Promise<void>
   }
+
   if (typeof nav.canShare === 'function' && typeof nav.share === 'function') {
     try {
-      if (nav.canShare({ files: [file] })) {
-        await nav.share({ files: [file], title: filename })
+      if (nav.canShare({ files: [image.file] })) {
+        await nav.share({ files: [image.file], title: image.filename })
         return 'shared'
       }
     } catch (err) {
@@ -126,37 +155,26 @@ async function saveBlob(blob: Blob, filename: string): Promise<'shared' | 'downl
     }
   }
 
-  const url = URL.createObjectURL(blob)
-  try {
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.rel = 'noopener'
-    a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    // 延後釋放，避免部分瀏覽器還沒開始下載就失效
-    setTimeout(() => URL.revokeObjectURL(url), 15_000)
-    return 'downloaded'
-  } catch (err) {
-    console.warn('[download] anchor failed', err)
-    // 最後手段：導向 blob（同一分頁），使用者可長按儲存
-    window.location.assign(url)
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    return 'opened'
-  }
+  const a = document.createElement('a')
+  a.href = image.objectUrl
+  a.download = image.filename
+  a.rel = 'noopener'
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  return 'downloaded'
 }
 
-/** 下載圖片（支援 data URL、Firebase Storage、http(s)；手機改走分享） */
+/** 舊介面相容：桌面可直接下載；手機建議改走 SavePhotosSheet */
 export async function downloadImage(src: string, filename: string): Promise<void> {
-  if (!src) throw new Error('沒有可下載的圖片')
-
-  const blob = await resolveBlob(src)
-  const ext = guessExt(src, blob.type)
-  const safeName = filename.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '-')
-  const full = safeName.includes('.') ? safeName : `${safeName}.${ext}`
-  await saveBlob(blob, full)
+  const prepared = await prepareImageDownload(src, filename)
+  try {
+    await shareOrDownloadPrepared(prepared)
+  } finally {
+    // 分享後稍晚再釋放
+    setTimeout(() => revokePrepared(prepared), 20_000)
+  }
 }
 
 export async function downloadImages(
@@ -179,4 +197,11 @@ export async function downloadImages(
     throw new Error('照片下載失敗，請確認已登入且網路正常後再試')
   }
   return { ok, failed }
+}
+
+export function isLikelyMobile(): boolean {
+  return (
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 0 && window.matchMedia('(max-width: 900px)').matches)
+  )
 }

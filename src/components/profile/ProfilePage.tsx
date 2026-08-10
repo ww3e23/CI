@@ -8,8 +8,10 @@ import {
   useCurrentUser,
 } from '../../store/useAuthStore'
 import { firebaseModeLabel, isFirebaseConfigured } from '../../lib/firebase'
+import { APP_VERSION } from '../../lib/appVersion'
 import { SettingsPage } from '../settings/SettingsPage'
 import { ProjectSwitcher } from '../home/ProjectSwitcher'
+import { forceReloadApp } from '../pwa/UpdateAppBanner'
 import { ROLE_LABEL } from '../../types/auth'
 import { TitleHint } from '../ui/TitleHint'
 
@@ -201,6 +203,24 @@ export function ProfilePage() {
           {msg && <div className="sync-hint">{msg}</div>}
         </section>
       )}
+
+      <section className="glass" style={{ padding: 14, marginBottom: 14 }}>
+        <TitleHint
+          as="div"
+          style={{ fontWeight: 800 }}
+          hint="若功能看起來是舊的（例如下載沒反應），請按下方按鈕清快取並重載最新版。"
+        >
+          App 版本 {APP_VERSION}
+        </TitleHint>
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ width: '100%', marginTop: 12 }}
+          onClick={() => forceReloadApp()}
+        >
+          <RefreshCw size={16} /> 重新載入最新版
+        </button>
+      </section>
 
       <section className="glass" style={{ padding: 14, marginBottom: 14 }}>
         <TitleHint
