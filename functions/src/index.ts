@@ -5,6 +5,7 @@ import { onObjectFinalized } from 'firebase-functions/v2/storage'
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { logger } from 'firebase-functions'
 import { Readable } from 'node:stream'
+import { google } from 'googleapis'
 import {
   assertSharedDriveFolder,
   buildDriveFileName,
@@ -109,7 +110,6 @@ async function uploadBufferToDrive(params: {
  */
 export const mirrorDefectPhotoToDrive = onObjectFinalized(
   {
-    // 必須與 Storage bucket 區域一致（此專案 bucket 在 us-east1）
     region: 'us-east1',
     memory: '512MiB',
     timeoutSeconds: 120,
@@ -159,9 +159,7 @@ export const mirrorDefectPhotoToDrive = onObjectFinalized(
 
     const existing = await listFolderFiles(drive, folderId)
     const driveFileName = buildDriveFileName(Number(defect.defectNumber ?? 0), storageFileName)
-    if (
-      existing.some((f) => f.sourcePath === filePath || f.name === driveFileName)
-    ) {
+    if (existing.some((f) => f.sourcePath === filePath || f.name === driveFileName)) {
       logger.info('already on drive', filePath)
       return
     }
@@ -190,11 +188,199 @@ export const mirrorDefectPhotoToDrive = onObjectFinalized(
   },
 )
 
-/**
- * 手動同步：把 Storage 既有照片補進 Drive（只上傳尚未存在的）
- * 資料夾：棟別 / 樓層 / 戶別 / 大項 / {編號}_小項
- */
+async function runPhotoSync(params: {
+  projectId: string
+  driveFolderId: string
+  drive: DriveClient
+  actorLabel?: string | null
+  requireSharedDrive?: boolean
+}) {
+  const { projectId, driveFolderId, drive, actorLabel, requireSharedDrive } = params
+
+  if (requireSharedDrive) {
+    try {
+      await assertSharedDriveFolder(drive, driveFolderId, actorLabel ?? null)
+    } catch (err) {
+      const msg = String((err as Error)?.message ?? err)
+      throw new HttpsError(
+        'failed-precondition',
+        `${msg}\n\n若公司無法使用共用雲端硬碟，請改按「用我的 Google 帳號同步」。`,
+      )
+    }
+  }
+
+  const items = await loadChecklistItems(projectId)
+  const defectsSnap = await getFirestore().collection(`projects/${projectId}/defects`).get()
+  const bucket = getStorage().bucket()
+
+  let uploaded = 0
+  let skipped = 0
+  let scanned = 0
+  const errors: string[] = []
+  const folderCache = new Map<string, string>()
+
+  for (const doc of defectsSnap.docs) {
+    const defect: DefectRow = { id: doc.id, ...(doc.data() as Omit<DefectRow, 'id'>) }
+    if (defect.status === 'voided') continue
+
+    const prefix = `projects/${projectId}/defects/${defect.id}/`
+    let files: Array<{ name: string; contentType?: string }> = []
+    try {
+      const [listed] = await bucket.getFiles({ prefix })
+      files = listed
+        .filter((f) => f.name && !f.name.endsWith('/'))
+        .map((f) => ({
+          name: f.name,
+          contentType: f.metadata?.contentType,
+        }))
+    } catch (err) {
+      errors.push(`讀取 Storage 失敗 ${defect.id}: ${String(err)}`)
+      continue
+    }
+
+    if (files.length === 0) continue
+
+    const cacheKey = [
+      defect.buildingName,
+      defect.floor,
+      defect.unitCode,
+      defect.categoryName,
+      defect.checklistItemId || defect.defectNumber,
+    ].join('|')
+
+    let folderId = folderCache.get(cacheKey)
+    if (!folderId) {
+      try {
+        folderId = await resolveLeafFolder(drive, driveFolderId, defect, items)
+        folderCache.set(cacheKey, folderId)
+      } catch (err) {
+        const msg = String((err as Error)?.message ?? err)
+        errors.push(`建立資料夾失敗（#${defect.defectNumber}）: ${msg}`)
+        if (/storage quota/i.test(msg)) {
+          throw new HttpsError(
+            'failed-precondition',
+            '無法寫入此雲端硬碟資料夾（服務帳戶無個人容量）。請改按「用我的 Google 帳號同步」。',
+          )
+        }
+        continue
+      }
+    }
+
+    let existing: Awaited<ReturnType<typeof listFolderFiles>>
+    try {
+      existing = await listFolderFiles(drive, folderId)
+    } catch (err) {
+      errors.push(`讀取 Drive 資料夾失敗: ${String(err)}`)
+      continue
+    }
+    const bySource = new Set(existing.map((f) => f.sourcePath).filter(Boolean) as string[])
+    const byName = new Set(existing.map((f) => f.name))
+
+    for (const file of files) {
+      scanned += 1
+      const storageFileName = file.name.slice(prefix.length) || file.name
+      const driveFileName = buildDriveFileName(Number(defect.defectNumber ?? 0), storageFileName)
+      if (bySource.has(file.name) || byName.has(driveFileName)) {
+        skipped += 1
+        continue
+      }
+      try {
+        const [buffer] = await bucket.file(file.name).download()
+        const fileId = await uploadBufferToDrive({
+          drive,
+          folderId,
+          fileName: driveFileName,
+          sourcePath: file.name,
+          buffer,
+          contentType: file.contentType || 'image/jpeg',
+        })
+        bySource.add(file.name)
+        byName.add(driveFileName)
+        uploaded += 1
+        await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
+          {
+            driveLastFileId: fileId,
+            driveSyncedAt: new Date().toISOString(),
+          },
+          { merge: true },
+        )
+      } catch (err) {
+        const msg = String((err as Error)?.message ?? err)
+        if (/storage quota/i.test(msg)) {
+          throw new HttpsError(
+            'failed-precondition',
+            '服務帳戶無法寫入「我的雲端硬碟」。請改按「用我的 Google 帳號同步」（使用你自己的 Google 容量）。',
+          )
+        }
+        errors.push(`上傳失敗 ${driveFileName}: ${msg}`)
+      }
+    }
+  }
+
+  logger.info('manual drive sync done', {
+    projectId,
+    uploaded,
+    skipped,
+    scanned,
+    errorCount: errors.length,
+    actorLabel,
+  })
+
+  return {
+    ok: true,
+    projectId,
+    uploaded,
+    skipped,
+    scanned,
+    errors: errors.slice(0, 12),
+    clientEmail: actorLabel ?? null,
+    folderLayout: '棟別 / 樓層 / 戶別 / 大項 / 編號_小項',
+  }
+}
+
+function requireDriveFolderId(value: unknown): string {
+  if (!value || typeof value !== 'string') {
+    throw new HttpsError(
+      'failed-precondition',
+      '此專案尚未綁定 Google 雲端硬碟資料夾，請先在後台貼上資料夾網址並儲存',
+    )
+  }
+  return value
+}
+
+/** 服務帳戶同步：僅適用共用雲端硬碟 */
 export const syncProjectPhotosToDrive = onCall(
+  {
+    region: 'asia-east1',
+    memory: '1GiB',
+    timeoutSeconds: 540,
+    cors: true,
+    invoker: 'public',
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', '請先登入後再同步雲端硬碟')
+    }
+    const projectId = String(request.data?.projectId ?? '').trim()
+    if (!projectId) throw new HttpsError('invalid-argument', '缺少 projectId')
+
+    const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
+    if (!projectSnap.exists) throw new HttpsError('not-found', '找不到此專案')
+    const driveFolderId = requireDriveFolderId(projectSnap.get('driveFolderId'))
+
+    const { drive, clientEmail } = await getDriveClient()
+    return runPhotoSync({
+      projectId,
+      driveFolderId,
+      drive,
+      actorLabel: clientEmail,
+      requireSharedDrive: true,
+    })
+  },
+)
+
+/** 使用者 OAuth 同步：適用「我的雲端硬碟」 */
+export const syncProjectPhotosToDriveAsUser = onCall(
   {
     region: 'asia-east1',
     memory: '1GiB',
@@ -208,167 +394,39 @@ export const syncProjectPhotosToDrive = onCall(
     }
 
     const projectId = String(request.data?.projectId ?? '').trim()
-    if (!projectId) {
-      throw new HttpsError('invalid-argument', '缺少 projectId')
-    }
+    const accessToken = String(request.data?.accessToken ?? '').trim()
+    if (!projectId) throw new HttpsError('invalid-argument', '缺少 projectId')
+    if (!accessToken) throw new HttpsError('invalid-argument', '缺少 Google 授權')
 
     const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
-    if (!projectSnap.exists) {
-      throw new HttpsError('not-found', '找不到此專案')
-    }
-    const driveFolderId = projectSnap.get('driveFolderId') as string | undefined
-    if (!driveFolderId) {
-      throw new HttpsError(
-        'failed-precondition',
-        '此專案尚未綁定 Google 雲端硬碟資料夾，請先在後台貼上資料夾網址並儲存',
-      )
-    }
+    if (!projectSnap.exists) throw new HttpsError('not-found', '找不到此專案')
+    const driveFolderId = requireDriveFolderId(projectSnap.get('driveFolderId'))
 
-    const { drive, clientEmail } = await getDriveClient()
+    const oauth2 = new google.auth.OAuth2()
+    oauth2.setCredentials({ access_token: accessToken })
+    const drive = google.drive({ version: 'v3', auth: oauth2 })
+
     try {
-      await assertSharedDriveFolder(drive, driveFolderId, clientEmail)
+      await drive.files.get({
+        fileId: driveFolderId,
+        fields: 'id,name',
+        supportsAllDrives: true,
+      })
     } catch (err) {
-      const msg = String((err as Error)?.message ?? err)
-      if (/storage quota|shared drives|共用雲端硬碟/i.test(msg)) {
-        throw new HttpsError('failed-precondition', msg)
-      }
       throw new HttpsError(
-        'failed-precondition',
-        `${msg}${clientEmail ? `（服務帳戶：${clientEmail}）` : ''}`,
+        'permission-denied',
+        `無法存取綁定的雲端硬碟資料夾。請用有該資料夾權限的 Google 帳號授權。（${String(
+          (err as Error)?.message ?? err,
+        )}）`,
       )
     }
 
-    const items = await loadChecklistItems(projectId)
-    const defectsSnap = await getFirestore().collection(`projects/${projectId}/defects`).get()
-    const bucket = getStorage().bucket()
-
-    let uploaded = 0
-    let skipped = 0
-    let scanned = 0
-    const errors: string[] = []
-    const folderCache = new Map<string, string>()
-
-    for (const doc of defectsSnap.docs) {
-      const defect: DefectRow = { id: doc.id, ...(doc.data() as Omit<DefectRow, 'id'>) }
-      if (defect.status === 'voided') continue
-
-      const prefix = `projects/${projectId}/defects/${defect.id}/`
-      let files: Array<{ name: string; contentType?: string }> = []
-      try {
-        const [listed] = await bucket.getFiles({ prefix })
-        files = listed
-          .filter((f) => f.name && !f.name.endsWith('/'))
-          .map((f) => ({
-            name: f.name,
-            contentType: f.metadata?.contentType,
-          }))
-      } catch (err) {
-        errors.push(`讀取 Storage 失敗 ${defect.id}: ${String(err)}`)
-        continue
-      }
-
-      if (files.length === 0) continue
-
-      const cacheKey = [
-        defect.buildingName,
-        defect.floor,
-        defect.unitCode,
-        defect.categoryName,
-        defect.checklistItemId || defect.defectNumber,
-      ].join('|')
-
-      let folderId = folderCache.get(cacheKey)
-      if (!folderId) {
-        try {
-          folderId = await resolveLeafFolder(drive, driveFolderId, defect, items)
-          folderCache.set(cacheKey, folderId)
-        } catch (err) {
-          const msg = String((err as Error)?.message ?? err)
-          errors.push(`建立資料夾失敗（#${defect.defectNumber}）: ${msg}`)
-          if (/insufficient|permission|not found|404|403/i.test(msg) && clientEmail) {
-            throw new HttpsError(
-              'permission-denied',
-              `雲端硬碟沒有寫入權限。請把資料夾（或共用雲端硬碟）共用給服務帳戶「${clientEmail}」，權限選「內容管理員」後再試。`,
-            )
-          }
-          continue
-        }
-      }
-
-      let existing: Awaited<ReturnType<typeof listFolderFiles>>
-      try {
-        existing = await listFolderFiles(drive, folderId)
-      } catch (err) {
-        errors.push(`讀取 Drive 資料夾失敗: ${String(err)}`)
-        continue
-      }
-      const bySource = new Set(existing.map((f) => f.sourcePath).filter(Boolean) as string[])
-      const byName = new Set(existing.map((f) => f.name))
-
-      for (const file of files) {
-        scanned += 1
-        const storageFileName = file.name.slice(prefix.length) || file.name
-        const driveFileName = buildDriveFileName(
-          Number(defect.defectNumber ?? 0),
-          storageFileName,
-        )
-        if (bySource.has(file.name) || byName.has(driveFileName)) {
-          skipped += 1
-          continue
-        }
-        try {
-          const [buffer] = await bucket.file(file.name).download()
-          const fileId = await uploadBufferToDrive({
-            drive,
-            folderId,
-            fileName: driveFileName,
-            sourcePath: file.name,
-            buffer,
-            contentType: file.contentType || 'image/jpeg',
-          })
-          bySource.add(file.name)
-          byName.add(driveFileName)
-          uploaded += 1
-          await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
-            {
-              driveLastFileId: fileId,
-              driveSyncedAt: new Date().toISOString(),
-            },
-            { merge: true },
-          )
-        } catch (err) {
-          const msg = String((err as Error)?.message ?? err)
-          if (/storage quota/i.test(msg)) {
-            throw new HttpsError(
-              'failed-precondition',
-              `服務帳戶沒有個人雲端容量，無法寫入「我的雲端硬碟」。` +
-                `請改用「共用雲端硬碟」，並把 ${clientEmail || '服務帳戶'} 加成該共用雲端硬碟的「內容管理員」` +
-                `（不是只共用資料夾），然後重新貼上資料夾網址再同步。`,
-            )
-          }
-          errors.push(`上傳失敗 ${driveFileName}: ${msg}`)
-        }
-      }
-    }
-
-    logger.info('manual drive sync done', {
+    return runPhotoSync({
       projectId,
-      uploaded,
-      skipped,
-      scanned,
-      errorCount: errors.length,
-      clientEmail,
+      driveFolderId,
+      drive,
+      actorLabel: 'user-oauth',
+      requireSharedDrive: false,
     })
-
-    return {
-      ok: true,
-      projectId,
-      uploaded,
-      skipped,
-      scanned,
-      errors: errors.slice(0, 12),
-      clientEmail,
-      folderLayout: '棟別 / 樓層 / 戶別 / 大項 / 編號_小項',
-    }
   },
 )

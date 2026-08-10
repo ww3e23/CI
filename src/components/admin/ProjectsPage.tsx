@@ -4,7 +4,8 @@ import { useAuthStore } from '../../store/useAuthStore'
 import { createId } from '../../lib/id'
 import { nextProjectCode } from '../../lib/projectCode'
 import { driveFolderUrl, parseDriveFolderId } from '../../lib/driveFolder'
-import { syncProjectPhotosToDrive } from '../../services/driveSync'
+import { syncProjectPhotosToDrive, syncProjectPhotosToDriveAsUser } from '../../services/driveSync'
+import { getGoogleOAuthClientId } from '../../lib/googleDriveAuth'
 import {
   ROLE_LABEL,
   type MemberRole,
@@ -105,23 +106,39 @@ export function ProjectsPage() {
     )
   }
 
-  async function runDriveSync() {
+  async function runDriveSync(mode: 'service' | 'user') {
     if (!selected?.driveFolderId) {
       setDriveMsg('請先貼上並儲存雲端硬碟資料夾網址')
       return
     }
     if (driveSyncing) return
+
+    if (mode === 'user' && !getGoogleOAuthClientId()) {
+      setDriveMsg(
+        '「用我的 Google 帳號同步」尚未啟用：請先在 GCP 建立 OAuth 網頁用戶端，並設定 VITE_GOOGLE_OAUTH_CLIENT_ID 後重新部署。\n' +
+          '建立頁面：https://console.cloud.google.com/auth/clients/create?project=ci-inspection',
+      )
+      return
+    }
+
     const okConfirm = window.confirm(
-      `要把「${selected.name}」已上傳的照片同步到雲端硬碟嗎？\n\n` +
-        '只會補「硬碟裡還沒有」的照片，不會刪除或覆蓋既有檔案。\n' +
-        '資料夾結構：棟別／樓層／戶別／大項／編號_小項',
+      mode === 'user'
+        ? `將以「你的 Google 帳號」把「${selected.name}」照片同步到雲端硬碟。\n會跳出 Google 授權視窗，請選有該資料夾權限的帳號。\n\n只會補還沒有的照片，不會刪除既有檔案。`
+        : `將以「服務帳戶」同步「${selected.name}」。\n此方式只適用「共用雲端硬碟」。\n若公司未開放共用雲端硬碟，請改用「用我的 Google 帳號同步」。`,
     )
     if (!okConfirm) return
 
     setDriveSyncing(true)
-    setDriveMsg('同步中，照片多時可能需要幾分鐘，請勿關閉頁面…')
+    setDriveMsg(
+      mode === 'user'
+        ? '請在跳出的 Google 視窗完成授權，授權後開始同步…'
+        : '同步中，照片多時可能需要幾分鐘，請勿關閉頁面…',
+    )
     try {
-      const res = await syncProjectPhotosToDrive(selected.id)
+      const res =
+        mode === 'user'
+          ? await syncProjectPhotosToDriveAsUser(selected.id)
+          : await syncProjectPhotosToDrive(selected.id)
       if (!res.ok || !res.result) {
         setDriveMsg(res.error || '同步失敗')
         return
@@ -131,7 +148,7 @@ export function ProjectsPage() {
         r.errors.length > 0 ? `；部分失敗 ${r.errors.length} 筆（見下方）` : ''
       setDriveMsg(
         `同步完成：新增 ${r.uploaded} 張、略過已存在 ${r.skipped} 張、掃描 ${r.scanned} 張${errHint}` +
-          (r.clientEmail ? `\n服務帳戶：${r.clientEmail}` : '') +
+          (r.clientEmail ? `\n執行身分：${r.clientEmail}` : '') +
           (r.errors[0] ? `\n${r.errors.slice(0, 3).join('\n')}` : ''),
       )
     } finally {
@@ -271,17 +288,26 @@ export function ProjectsPage() {
                   type="button"
                   className="btn btn-primary"
                   disabled={!selected.driveFolderId || driveSyncing}
-                  onClick={() => void runDriveSync()}
-                  title="把 Firebase 已有、但雲端硬碟還沒有的照片補同步進去"
+                  onClick={() => void runDriveSync('user')}
+                  title="用你的 Google 帳號寫入「我的雲端硬碟」（公司未開共用雲端硬碟時用這個）"
                 >
                   <CloudUpload size={16} />
-                  {driveSyncing ? '同步中…' : '同步既有照片到雲端硬碟'}
+                  {driveSyncing ? '同步中…' : '用我的 Google 帳號同步'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={!selected.driveFolderId || driveSyncing}
+                  onClick={() => void runDriveSync('service')}
+                  title="服務帳戶同步，僅適用共用雲端硬碟"
+                >
+                  服務帳戶同步（共用雲端硬碟）
                 </button>
               </div>
               <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, lineHeight: 1.5 }}>
                 同步後資料夾：棟別 → 樓層 → 戶別 → 大項 → <code>01_小項名稱</code>
                 <br />
-                重要：必須使用「共用雲端硬碟」內的資料夾，並把服務帳戶加成共用雲端硬碟成員（內容管理員），不能只用「我的雲端硬碟」共用。
+                公司若未開放「共用雲端硬碟」，請用綠色按鈕「用我的 Google 帳號同步」（寫進你自己的雲端容量）。
               </div>
               {driveMsg && (
                 <div
