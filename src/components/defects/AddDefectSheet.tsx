@@ -224,8 +224,8 @@ export function AddDefectSheet({
         <div className="field" style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
             <TitleHint
-              as="label"
-              style={{ margin: 0 }}
+              as="div"
+              style={{ margin: 0, fontWeight: 700, fontSize: 13 }}
               hint="預設自動取「目前最大號 + 1」。若中間缺號，可自行輸入補上；不會改動已有缺失的編號。"
             >
               缺失編號
