@@ -41,6 +41,12 @@ function cellColor(status: string): string {
   }
 }
 
+/** SVG 色塊：列印時比 CSS background 更穩定會帶色 */
+function colorSwatch(color: string, w = 14, h = 12): string {
+  const stroke = color === '#f7f3ea' || color === '#d9d5cb' ? '#b8b3a8' : color
+  return `<svg class="swatch" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" rx="3" fill="${color}" stroke="${stroke}" stroke-width="1"/></svg>`
+}
+
 export function buildInspectionReportHtml(input: ReportInput): string {
   const { state, projectName, projectCode, location, mode = 'window' } = input
   const matrix = buildMatrix(state)
@@ -63,7 +69,12 @@ export function buildInspectionReportHtml(input: ReportInput): string {
       (b) => `
       <div class="bar-row">
         <div class="bar-label">${escapeHtml(b.name)}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${b.percent}%"></div></div>
+        <div class="bar-track" aria-hidden="true">
+          <svg class="bar-svg" width="100%" height="10" viewBox="0 0 100 10" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0" y="0" width="100" height="10" rx="5" fill="#e8e4da"/>
+            <rect x="0" y="0" width="${Math.max(0, Math.min(100, b.percent))}" height="10" rx="5" fill="#2f5d4c"/>
+          </svg>
+        </div>
         <div class="bar-num">${b.percent}%</div>
       </div>`,
     )
@@ -79,7 +90,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
             )
             const status = cell?.status ?? 'na'
             const title = `${b.name} ${floor} ${code}`
-            return `<td title="${escapeHtml(title)}"><span class="dot" style="background:${cellColor(status)}"></span></td>`
+            return `<td title="${escapeHtml(title)}">${colorSwatch(cellColor(status))}</td>`
           }),
         )
         .join('')
@@ -116,7 +127,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
             <h3>${escapeHtml(d.area)}｜${escapeHtml(d.description)}</h3>
             <p>${escapeHtml(d.buildingName)} · ${escapeHtml(d.floor)} · ${escapeHtml(d.unitCode)}戶 · ${escapeHtml(d.categoryName)}</p>
           </div>
-          <span class="badge" style="background:${statusTone(d.status)}">${escapeHtml(statusLabel(d.status))}</span>
+          <span class="badge" style="color:${statusTone(d.status)};border-color:${statusTone(d.status)}">${escapeHtml(statusLabel(d.status))}</span>
         </header>
         ${imgs ? `<div class="photos">${imgs}</div>` : '<div class="no-photo">無附圖</div>'}
       </article>`
@@ -205,28 +216,37 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     }
     .bar-row { display: grid; grid-template-columns: 72px 1fr 48px; gap: 10px; align-items: center; margin: 8px 0; }
     .bar-label { font-weight: 700; font-size: 13px; }
-    .bar-track { height: 10px; border-radius: 999px; background: rgba(34,41,31,0.08); overflow: hidden; }
-    .bar-fill { height: 100%; background: linear-gradient(90deg, #3a6f5c, #2f5d4c); border-radius: 999px; }
+    .bar-track { height: 10px; border-radius: 999px; overflow: hidden; position: relative; line-height: 0; }
+    .bar-svg { display: block; width: 100%; height: 10px; }
     .bar-num { font-weight: 800; font-size: 13px; text-align: right; }
     table.matrix { width: 100%; border-collapse: collapse; font-size: 11px; }
-    table.matrix th, table.matrix td { padding: 4px; text-align: center; }
+    table.matrix th, table.matrix td { padding: 4px; text-align: center; vertical-align: middle; }
     table.matrix th { color: var(--soft); font-weight: 700; }
     table.matrix th.unit { font-size: 10px; }
-    .dot { display: inline-block; width: 14px; height: 12px; border-radius: 4px; border: 1px solid rgba(34,41,31,0.08); }
+    .swatch { display: inline-block; vertical-align: middle; }
     .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
     .legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--soft); font-weight: 700; }
+    html, body, .page, .swatch, .bar-svg, .badge, .defect-no, .stat .n, svg, svg * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
     .defect {
       break-inside: avoid; margin-bottom: 14px; padding: 16px;
       border-radius: 18px; background: var(--card); border: 1px solid var(--line);
     }
     .defect header { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; }
     .defect-no {
-      width: 44px; height: 44px; border-radius: 12px; background: var(--green); color: #fff;
+      width: 44px; height: 44px; border-radius: 12px;
+      border: 2px solid var(--green); color: var(--green); background: transparent;
       display: grid; place-items: center; font-weight: 800;
     }
     .defect h3 { margin: 0; font-size: 16px; }
     .defect p { margin: 4px 0 0; color: var(--soft); font-size: 12px; }
-    .badge { color: #fff; border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
+    .badge {
+      color: var(--green); border: 1.5px solid currentColor; background: transparent;
+      border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 700;
+    }
     .photos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
     .photos figure { margin: 0; }
     .photos img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; background: #eee; }
@@ -252,8 +272,11 @@ export function buildInspectionReportHtml(input: ReportInput): string {
         padding-bottom: 8px;
       }
       .cover, .ring { display: none !important; }
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
+      *, *::before, *::after {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
     }
   </style>
 </head>
@@ -300,11 +323,11 @@ export function buildInspectionReportHtml(input: ReportInput): string {
       <h2>進度矩陣</h2>
       <p class="lead">綠＝完成、紅＝有缺失、琥珀＝進行中、米白＝未開始、灰＝不適用。</p>
       <div class="legend">
-        <span><i class="dot" style="background:#2f5d4c"></i>已完成</span>
-        <span><i class="dot" style="background:#ae4c3b"></i>有缺失</span>
-        <span><i class="dot" style="background:#c97b2e"></i>進行中</span>
-        <span><i class="dot" style="background:#f7f3ea"></i>未開始</span>
-        <span><i class="dot" style="background:#d9d5cb"></i>不適用</span>
+        <span>${colorSwatch('#2f5d4c')}已完成</span>
+        <span>${colorSwatch('#ae4c3b')}有缺失</span>
+        <span>${colorSwatch('#c97b2e')}進行中</span>
+        <span>${colorSwatch('#f7f3ea')}未開始</span>
+        <span>${colorSwatch('#d9d5cb')}不適用</span>
       </div>
       <div class="panel" style="overflow:auto">
         <table class="matrix">
@@ -323,7 +346,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
       ${defectCards || '<div class="panel no-photo">目前沒有缺失紀錄</div>'}
     </section>
 
-    <div class="footer">現場驗屋查驗系統 · ${escapeHtml(projectName)} · 本報告由系統自動產生 · v2</div>
+    <div class="footer">現場驗屋查驗系統 · ${escapeHtml(projectName)} · 本報告由系統自動產生 · v3</div>
   </div>
 </body>
 </html>`
