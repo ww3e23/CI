@@ -25,6 +25,7 @@ import { uploadDefectImages, uploadUnitPlanImage } from '../services/storageUplo
 import {
   autoSyncDefectPhotosToDrive,
   deleteDefectPhotosFromDrive,
+  quietBackfillProjectDrive,
 } from '../services/driveSync'
 import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
@@ -1290,6 +1291,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           const remote = await pullProjectState(projectId)
           if (!remote) {
             void get().flushPendingMediaUploads()
+            void quietBackfillProjectDrive(projectId)
             return { ok: true }
           }
 
@@ -1321,6 +1323,8 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           }
 
           void get().flushPendingMediaUploads()
+          // 背景自動補齊雲端硬碟（含粉刷／窗戶等舊資料），不必手動按同步
+          void quietBackfillProjectDrive(projectId)
           return { ok: true }
         } catch (err) {
           console.warn('[hydrateFromCloud] failed', err)

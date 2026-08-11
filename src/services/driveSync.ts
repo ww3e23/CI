@@ -228,7 +228,7 @@ export type DriveReconcileResult = {
 
 /**
  * 單筆缺失即時對齊雲端硬碟（新增／編輯／刪除後用）。
- * 已綁定擁有者時不彈 Google：改名、搬資料夾、補傳、清掉已刪照片。
+ * 不依前端 driveOwnerConnected 旗標擋下——改由後端判斷，避免本機快取過舊而略過自動同步。
  */
 export async function reconcileDefectOnDrive(params: {
   projectId: string
@@ -237,9 +237,6 @@ export async function reconcileDefectOnDrive(params: {
   const project = useAuthStore.getState().projects.find((p) => p.id === params.projectId)
   if (!project?.driveFolderId) {
     return { ok: true, result: { ok: true, skipped: true, reason: 'no-drive-folder' } }
-  }
-  if (!project.driveOwnerConnected) {
-    return { ok: true, result: { ok: true, skipped: true, reason: 'drive-owner-not-connected' } }
   }
 
   const ready = await ensureFirebaseUser()
@@ -263,7 +260,7 @@ export async function reconcileDefectOnDrive(params: {
 
 /**
  * 拍照上傳／編輯後背景自動同步。
- * 已綁定擁有者時：對齊該筆缺失的 Drive 資料夾（不彈 Google）。
+ * 後端已綁定擁有者時會對齊該筆缺失資料夾；未綁定則略過。
  */
 export async function autoSyncDefectPhotosToDrive(params: {
   projectId: string
@@ -272,14 +269,39 @@ export async function autoSyncDefectPhotosToDrive(params: {
   const project = useAuthStore.getState().projects.find((p) => p.id === params.projectId)
   if (!project?.driveFolderId) return
 
-  if (project.driveOwnerConnected) {
-    const res = await reconcileDefectOnDrive(params)
-    if (!res.ok) console.warn('[drive-auto] 即時對齊失敗', res.error)
+  const res = await reconcileDefectOnDrive(params)
+  if (!res.ok) {
+    console.warn('[drive-auto] 即時對齊失敗', res.error)
     return
   }
+  if (res.result?.skipped) {
+    console.info('[drive-auto] 略過', res.result.reason)
+  }
+}
 
-  // 尚未綁定擁有者：略過（避免現場每人被逼登 Google）
-  console.info('[drive-auto] 專案尚未綁定雲端硬碟擁有者，略過自動同步')
+const quietBackfillDone = new Set<string>()
+
+/**
+ * 開啟專案後背景補齊雲端硬碟（舊資料／漏同步），不需使用者按按鈕。
+ * 每個專案每個瀏覽器工作階段只跑一次。
+ */
+export async function quietBackfillProjectDrive(projectId: string): Promise<void> {
+  if (!projectId || quietBackfillDone.has(projectId)) return
+  const project = useAuthStore.getState().projects.find((p) => p.id === projectId)
+  if (!project?.driveFolderId) return
+  quietBackfillDone.add(projectId)
+  try {
+    const res = await syncProjectPhotosToDrive(projectId)
+    if (!res.ok) {
+      quietBackfillDone.delete(projectId)
+      console.warn('[drive-auto] 背景補齊失敗', res.error)
+      return
+    }
+    console.info('[drive-auto] 背景補齊完成', res.result)
+  } catch (err) {
+    quietBackfillDone.delete(projectId)
+    console.warn('[drive-auto] 背景補齊例外', err)
+  }
 }
 
 export type DriveDeleteResult = {

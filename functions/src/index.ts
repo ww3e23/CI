@@ -2,9 +2,11 @@ import { initializeApp } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 import { getStorage } from 'firebase-admin/storage'
 import { onObjectFinalized } from 'firebase-functions/v2/storage'
+import { onDocumentWritten } from 'firebase-functions/v2/firestore'
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { logger } from 'firebase-functions'
+import type { DocumentData } from 'firebase-admin/firestore'
 import { Readable } from 'node:stream'
 import { google } from 'googleapis'
 import {
@@ -59,6 +61,7 @@ type DefectRow = {
   photoDataUrls?: string[]
   driveLeafFolderId?: string
   driveLastFileId?: string
+  driveSyncedAt?: string
 }
 
 async function loadChecklistItems(projectId: string): Promise<Map<string, ChecklistItemRow>> {
@@ -1120,6 +1123,94 @@ async function reconcileOneDefectOnDrive(params: {
   }
 }
 
+/** 僅 drive 中繼欄位變更時略過，避免 reconcile 寫回後無限迴圈 */
+function onlyDriveMetaChanged(
+  before: DocumentData | undefined,
+  after: DocumentData | undefined,
+): boolean {
+  if (!before || !after) return false
+  const ignore = new Set([
+    'driveLeafFolderId',
+    'driveLastFileId',
+    'driveSyncedAt',
+    'driveDeletedAt',
+  ])
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+  for (const k of keys) {
+    if (ignore.has(k)) continue
+    if (JSON.stringify(before[k] ?? null) !== JSON.stringify(after[k] ?? null)) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * 缺失文件一有新增／修改／作廢，後端自動對齊雲端硬碟（現場不必手動按同步）。
+ */
+export const onDefectWrittenAutoDrive = onDocumentWritten(
+  {
+    document: 'projects/{projectId}/defects/{defectId}',
+    region: 'asia-east1',
+    memory: '512MiB',
+    timeoutSeconds: 180,
+    secrets: [googleOAuthClientSecret],
+  },
+  async (event) => {
+    const projectId = String(event.params.projectId || '')
+    const defectId = String(event.params.defectId || '')
+    if (!projectId || !defectId) return
+
+    const before = event.data?.before.exists ? event.data.before.data() : undefined
+    const after = event.data?.after.exists ? event.data.after.data() : undefined
+    if (!after && !before) return
+    if (after && before && onlyDriveMetaChanged(before, after)) return
+
+    const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
+    if (!projectSnap.exists) return
+    const driveFolderId = String(projectSnap.get('driveFolderId') || '').trim()
+    if (!driveFolderId) {
+      logger.info('auto-drive skip: no folder', { projectId, defectId })
+      return
+    }
+    if (!projectSnap.get('driveOwnerConnected')) {
+      logger.info('auto-drive skip: owner not connected', { projectId, defectId })
+      return
+    }
+
+    const ownerDrive = await tryGetDriveClientFromOwner({
+      projectId,
+      clientSecret: googleOAuthClientSecret.value(),
+    })
+    if (!ownerDrive) {
+      logger.warn('auto-drive skip: owner token unavailable', { projectId, defectId })
+      return
+    }
+
+    const row = after ?? before!
+    const defect: DefectRow = {
+      id: defectId,
+      ...(row as Omit<DefectRow, 'id'>),
+      // 文件被硬刪時視為作廢清 Drive
+      status: after ? String(row.status ?? '') : 'voided',
+    }
+    const items = await loadChecklistItems(projectId)
+    try {
+      const result = await reconcileOneDefectOnDrive({
+        projectId,
+        driveFolderId,
+        drive: ownerDrive.drive,
+        defect,
+        items,
+      })
+      logger.info('auto-drive reconcile', { projectId, defectId, ...result })
+    } catch (err) {
+      logger.error('auto-drive reconcile failed', { projectId, defectId, err })
+      throw err
+    }
+  },
+)
+
 /** 編輯／刪除後即時對齊單筆缺失的雲端硬碟資料夾 */
 export const reconcileDefectOnDrive = onCall(
   {
@@ -1172,12 +1263,12 @@ export const reconcileDefectOnDrive = onCall(
   },
 )
 
-/** 每 15 分鐘掃一次：清掉已作廢但仍留在 Drive 的資料夾 */
+/** 每 15 分鐘：清作廢殘留，並補齊尚未同步到 Drive 的缺失（免手動按同步） */
 export const cleanupVoidedDefectDrives = onSchedule(
   {
     region: 'asia-east1',
     schedule: 'every 15 minutes',
-    memory: '512MiB',
+    memory: '1GiB',
     timeoutSeconds: 540,
     secrets: [googleOAuthClientSecret],
   },
@@ -1188,6 +1279,7 @@ export const cleanupVoidedDefectDrives = onSchedule(
       .get()
 
     let cleaned = 0
+    let backfilled = 0
     for (const projectDoc of projectsSnap.docs) {
       const projectId = projectDoc.id
       const driveFolderId = String(projectDoc.get('driveFolderId') || '').trim()
@@ -1199,14 +1291,13 @@ export const cleanupVoidedDefectDrives = onSchedule(
       })
       if (!ownerDrive) continue
 
+      const items = await loadChecklistItems(projectId)
+
       const voidedSnap = await getFirestore()
         .collection(`projects/${projectId}/defects`)
         .where('status', '==', 'voided')
         .limit(80)
         .get()
-
-      if (voidedSnap.empty) continue
-      const items = await loadChecklistItems(projectId)
 
       for (const doc of voidedSnap.docs) {
         const defect = { id: doc.id, ...(doc.data() as Omit<DefectRow, 'id'>) }
@@ -1236,8 +1327,37 @@ export const cleanupVoidedDefectDrives = onSchedule(
           logger.warn('scheduled void cleanup failed', { projectId, defectId: doc.id, err })
         }
       }
+
+      // 補齊尚未寫入 Drive 的有效缺失（例如早期只有預設位置圖）
+      const pendingSnap = await getFirestore()
+        .collection(`projects/${projectId}/defects`)
+        .limit(120)
+        .get()
+      for (const doc of pendingSnap.docs) {
+        const defect = { id: doc.id, ...(doc.data() as Omit<DefectRow, 'id'>) }
+        if (defect.status === 'voided') continue
+        if (String(defect.driveSyncedAt || '').trim()) continue
+        try {
+          const result = await reconcileOneDefectOnDrive({
+            projectId,
+            driveFolderId,
+            drive: ownerDrive.drive,
+            defect,
+            items,
+          })
+          if (result.action === 'synced' && (result.uploaded ?? 0) >= 0) {
+            backfilled += 1
+          }
+        } catch (err) {
+          logger.warn('scheduled drive backfill failed', { projectId, defectId: doc.id, err })
+        }
+      }
     }
 
-    logger.info('cleanupVoidedDefectDrives done', { cleaned, projects: projectsSnap.size })
+    logger.info('cleanupVoidedDefectDrives done', {
+      cleaned,
+      backfilled,
+      projects: projectsSnap.size,
+    })
   },
 )

@@ -56,7 +56,7 @@ export function ProfilePage() {
     }
     if (driveSyncing) return
     const ok = window.confirm(
-      `將把「${project.name}」照片同步到已綁定的雲端硬碟。\n不必登入 Google（使用管理者已授權的帳號）。\n\n只會補還沒有的照片，不會刪除既有檔案。`,
+      `將補齊「${project.name}」尚未寫入雲端硬碟的照片。\n平常新增／修改會自動存檔，不必每次按這裡。\n\n只會補還沒有的檔案，不會刪除既有資料。`,
     )
     if (!ok) return
 
@@ -224,15 +224,15 @@ export function ProfilePage() {
               <TitleHint
                 as="div"
                 style={{ fontWeight: 800 }}
-                hint="用後台已綁定的雲端硬碟擁有者同步照片；現場不必登入 Google。"
+                hint="查驗新增／修改／刪除會自動寫入雲端硬碟。此按鈕僅供強制補齊或排查用。"
               >
-                同步到雲端硬碟
+                雲端硬碟自動存檔
               </TitleHint>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', marginTop: 4 }}>
                 {!project?.driveFolderId
                   ? '尚未綁定資料夾（請後台管理者先設定）'
                   : project.driveOwnerConnected
-                    ? `已綁定擁有者${project.driveOwnerEmail ? `（${project.driveOwnerEmail}）` : ''}，按下方即可同步（免登 Google）`
+                    ? `已綁定擁有者${project.driveOwnerEmail ? `（${project.driveOwnerEmail}）` : ''}：新增／修改會自動存檔，下方可強制補齊`
                     : '資料夾已設，但後台尚未綁定擁有者（請管理者先授權一次）'}
               </div>
             </div>
@@ -250,7 +250,7 @@ export function ProfilePage() {
             onClick={() => void runDriveSync()}
           >
             <CloudUpload size={16} />
-            {driveSyncing ? '同步中…' : '同步照片到雲端硬碟'}
+            {driveSyncing ? '同步中…' : '強制補齊雲端硬碟'}
           </button>
           {project?.driveFolderUrl && (
             <a
