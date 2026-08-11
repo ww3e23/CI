@@ -9,6 +9,7 @@ import { statusLabel } from '../../lib/progress'
 import { useProjectStore } from '../../store/useProjectStore'
 import { Modal } from '../ui/Modal'
 import { DefectDetailModal } from './DefectDetailModal'
+import { PackUnitPhotosButton } from './PackUnitPhotosButton'
 
 type QuickStatus = 'all' | DefectStatus
 
@@ -118,6 +119,12 @@ export function UnitDefectsSheet({
             <X size={18} />
           </button>
         </div>
+
+        {!categoryId && (
+          <div style={{ marginBottom: 12 }}>
+            <PackUnitPhotosButton unitId={unitId} style={{ width: '100%' }} />
+          </div>
+        )}
 
         <div className="status-chip-row" role="tablist" aria-label="本戶狀態篩選">
           {tabs.map((t) => (

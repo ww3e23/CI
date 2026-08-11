@@ -9,6 +9,7 @@ import { defectsByStatus, statusLabel } from '../../lib/progress'
 import type { Defect, DefectStatus } from '../../types'
 import { UnitSwitcher } from '../UnitSwitcher'
 import { DefectDetailModal } from './DefectDetailModal'
+import { PackUnitPhotosButton } from './PackUnitPhotosButton'
 
 type QuickStatus = 'all' | DefectStatus
 
@@ -81,6 +82,12 @@ export function DefectsPage() {
           切換戶別 <ChevronDown size={16} />
         </button>
       </header>
+
+      {unit && (
+        <div style={{ marginBottom: 12 }}>
+          <PackUnitPhotosButton unitId={unit.id} style={{ width: '100%' }} />
+        </div>
+      )}
 
       <div className="status-chip-row" role="tablist" aria-label="本戶狀態快捷篩選">
         {tabs.map((t) => (
