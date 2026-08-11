@@ -56,14 +56,14 @@ export function ProfilePage() {
     }
     if (driveSyncing) return
     const ok = window.confirm(
-      `將補齊「${project.name}」尚未寫入雲端硬碟的照片。\n平常新增／修改會自動存檔，不必每次按這裡。\n\n只會補還沒有的檔案，不會刪除既有資料。`,
+      `將強制掃描並補齊「${project.name}」雲端硬碟照片。\n會實際檢查雲端硬碟現況（你手動刪掉的會重傳），不會只信「已同步」標記。\n\n只會補還沒有的檔案，不會刪除既有資料。`,
     )
     if (!ok) return
 
     setDriveSyncing(true)
     setDriveMsg('同步中，照片多時可能需要幾分鐘，請勿關閉頁面…')
     try {
-      const res = await syncProjectPhotosToDrive(project.id)
+      const res = await syncProjectPhotosToDrive(project.id, { force: true })
       if (!res.ok || !res.result) {
         setDriveMsg(res.error || '同步失敗')
         return
@@ -74,6 +74,7 @@ export function ProfilePage() {
       setDriveMsg(
         `同步完成：新增 ${r.uploaded} 張、略過已存在 ${r.skipped} 張、掃描 ${r.scanned} 張` +
           (r.cleanedVoided ? `、清除已刪除 ${r.cleanedVoided} 筆` : '') +
+          (r.cleanedDupFolders ? `、清除重複資料夾 ${r.cleanedDupFolders} 個` : '') +
           errHint,
       )
     } catch (err) {
@@ -224,7 +225,7 @@ export function ProfilePage() {
               <TitleHint
                 as="div"
                 style={{ fontWeight: 800 }}
-                hint="儲存缺失後會即時寫入雲端硬碟；另每 5 分鐘只掃近 5 分鐘有動作的專案做兜底。此按鈕僅供強制補齊。"
+                hint="儲存缺失後會即時寫入雲端硬碟；此按鈕會真實掃描雲端硬碟現況並補齊（含你手動刪掉的）。"
               >
                 雲端硬碟即時存檔
               </TitleHint>

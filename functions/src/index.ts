@@ -434,8 +434,21 @@ async function runPhotoSync(params: {
   requireSharedDrive?: boolean
   /** 若指定則只同步這些缺失（拍照後自動上傳用） */
   defectIds?: string[]
+  /**
+   * 強制補齊：忽略 Firestore「已同步」捷徑，真的對 Drive 掃描／補檔。
+   * 手動按鈕應傳 true；背景安靜補齊可 false（但仍會驗證葉層資料夾是否還在）。
+   */
+  force?: boolean
 }) {
-  const { projectId, driveFolderId, drive, actorLabel, requireSharedDrive, defectIds } = params
+  const {
+    projectId,
+    driveFolderId,
+    drive,
+    actorLabel,
+    requireSharedDrive,
+    defectIds,
+    force = false,
+  } = params
   const defectIdFilter =
     defectIds && defectIds.length > 0 ? new Set(defectIds.map((id) => String(id))) : null
 
@@ -459,6 +472,7 @@ async function runPhotoSync(params: {
   let skipped = 0
   let scanned = 0
   let cleanedVoided = 0
+  let cleanedDupFolders = 0
   const errors: string[] = []
   const folderCache = new Map<string, string>()
 
@@ -481,6 +495,8 @@ async function runPhotoSync(params: {
             {
               driveLeafFolderId: null,
               driveLastFileId: null,
+              driveContentKey: null,
+              driveSyncedAt: null,
               driveDeletedAt: new Date().toISOString(),
             },
             { merge: true },
@@ -496,15 +512,36 @@ async function runPhotoSync(params: {
       continue
     }
 
-    // 內容未變且已同步 → 略過，不要重複存
     const contentKey = buildDriveContentKey(defect)
+    const knownLeafId = String(defect.driveLeafFolderId || '').trim()
+
+    // 非強制：內容指紋相同且葉層資料夾「真的還在 Drive」才可略過。
+    // 不可只信 Firestore 標記——使用者手動清空雲端硬碟後標記仍在。
     if (
+      !force &&
+      knownLeafId &&
       String(defect.driveContentKey || '') === contentKey &&
-      String(defect.driveSyncedAt || '') &&
-      String(defect.driveLeafFolderId || '')
+      String(defect.driveSyncedAt || '')
     ) {
-      skipped += 1
-      continue
+      const meta = await getDriveItemMeta(drive, knownLeafId)
+      if (meta) {
+        skipped += 1
+        continue
+      }
+      // 葉層已刪／在垃圾桶 → 清掉假標記，下面重建並重傳
+      await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
+        {
+          driveLeafFolderId: null,
+          driveLastFileId: null,
+          driveContentKey: null,
+          driveSyncedAt: null,
+        },
+        { merge: true },
+      )
+      defect.driveLeafFolderId = undefined
+      defect.driveLastFileId = undefined
+      defect.driveContentKey = undefined
+      defect.driveSyncedAt = undefined
     }
 
     const prefix = `projects/${projectId}/defects/${defect.id}/`
@@ -539,8 +576,57 @@ async function runPhotoSync(params: {
     let folderId = folderCache.get(cacheKey)
     if (!folderId) {
       try {
+        // 強制：若舊葉層 ID 還在，先確認；已刪則走重建路徑
+        if (force && knownLeafId) {
+          const meta = await getDriveItemMeta(drive, knownLeafId)
+          if (!meta) {
+            await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
+              {
+                driveLeafFolderId: null,
+                driveLastFileId: null,
+                driveContentKey: null,
+                driveSyncedAt: null,
+              },
+              { merge: true },
+            )
+          }
+        }
         folderId = await resolveLeafFolder(drive, driveFolderId, defect, items, projectId)
         folderCache.set(cacheKey, folderId)
+
+        // 強制補齊時清掉同編號／舊名（如「#8 未命名缺失」）重複葉層
+        if (force) {
+          try {
+            const item = defect.checklistItemId ? items.get(defect.checklistItemId) : undefined
+            const extras = await findAllDefectLeafFolders(drive, driveFolderId, {
+              buildingName: String(defect.buildingName ?? '未指定棟別'),
+              floor: String(defect.floor ?? '未指定樓層'),
+              unitCode: String(defect.unitCode ?? '未指定戶別'),
+              categoryName: String(defect.categoryName ?? '未指定大項'),
+              itemFolderNames: buildItemFolderNameCandidates({
+                itemSortOrder: item?.sortOrder,
+                itemDescription: item?.description,
+                defectNumber: Number(defect.defectNumber ?? 0),
+                defectDescription: String(defect.description ?? ''),
+                categoryName: String(defect.categoryName ?? ''),
+                area: String(defect.area ?? ''),
+              }),
+              defectId: defect.id,
+              defectNumber: Number(defect.defectNumber ?? 0),
+            })
+            for (const extraId of extras) {
+              if (extraId === folderId) continue
+              try {
+                await trashDriveItem(drive, extraId)
+                cleanedDupFolders += 1
+              } catch (err) {
+                logger.warn('trash duplicate leaf on force sync failed', { extraId, err })
+              }
+            }
+          } catch (err) {
+            logger.warn('dedupe on force sync failed', { defectId: defect.id, err })
+          }
+        }
       } catch (err) {
         const msg = String((err as Error)?.message ?? err)
         errors.push(`建立資料夾失敗（#${defect.defectNumber}）: ${msg}`)
@@ -558,7 +644,18 @@ async function runPhotoSync(params: {
     try {
       existing = await listFolderFiles(drive, folderId)
     } catch (err) {
+      // 葉層剛被刪／權限異常：清標記後下輪再試；本輪記錯
       errors.push(`讀取 Drive 資料夾失敗: ${String(err)}`)
+      await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
+        {
+          driveLeafFolderId: null,
+          driveLastFileId: null,
+          driveContentKey: null,
+          driveSyncedAt: null,
+        },
+        { merge: true },
+      )
+      folderCache.delete(cacheKey)
       continue
     }
     const bySource = new Set(existing.map((f) => f.sourcePath).filter(Boolean) as string[])
@@ -670,10 +767,12 @@ async function runPhotoSync(params: {
 
   logger.info('manual drive sync done', {
     projectId,
+    force,
     uploaded,
     skipped,
     scanned,
     cleanedVoided,
+    cleanedDupFolders,
     errorCount: errors.length,
     actorLabel,
   })
@@ -685,6 +784,8 @@ async function runPhotoSync(params: {
     skipped,
     scanned,
     cleanedVoided,
+    cleanedDupFolders,
+    force,
     errors: errors.slice(0, 12),
     clientEmail: actorLabel ?? null,
     folderLayout: '棟別 / 樓層 / 戶別 / 大項 / #編號 小項名稱 備註',
@@ -725,6 +826,7 @@ export const syncProjectPhotosToDrive = onCall(
     const defectIds = Array.isArray(rawDefectIds)
       ? rawDefectIds.map((id: unknown) => String(id ?? '').trim()).filter(Boolean)
       : undefined
+    const force = Boolean(request.data?.force)
 
     const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
     if (!projectSnap.exists) throw new HttpsError('not-found', '找不到此專案')
@@ -742,6 +844,7 @@ export const syncProjectPhotosToDrive = onCall(
         actorLabel: ownerDrive.email ? `owner:${ownerDrive.email}` : 'owner-oauth',
         requireSharedDrive: false,
         defectIds,
+        force,
       })
     }
 
@@ -753,6 +856,7 @@ export const syncProjectPhotosToDrive = onCall(
       actorLabel: clientEmail,
       requireSharedDrive: true,
       defectIds,
+      force,
     })
   },
 )
@@ -883,6 +987,7 @@ export const syncProjectPhotosToDriveAsUser = onCall(
     const defectIds = Array.isArray(rawDefectIds)
       ? rawDefectIds.map((id: unknown) => String(id ?? '').trim()).filter(Boolean)
       : undefined
+    const force = Boolean(request.data?.force)
 
     const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
     if (!projectSnap.exists) throw new HttpsError('not-found', '找不到此專案')
@@ -914,6 +1019,7 @@ export const syncProjectPhotosToDriveAsUser = onCall(
       actorLabel: 'user-oauth',
       requireSharedDrive: false,
       defectIds,
+      force,
     })
   },
 )
@@ -1582,14 +1688,7 @@ export const cleanupVoidedDefectDrives = onSchedule(
         if (!recent && !neverSynced) continue
         // 無近期動作時，neverSynced 舊資料不在此排程狂掃（改由開 App 背景補／強制補齊）
         if (!recent && neverSynced) continue
-        // 內容指紋相同 → 已存過，不重存
-        if (
-          String(defect.driveContentKey || '') === buildDriveContentKey(defect) &&
-          String(defect.driveSyncedAt || '') &&
-          String(defect.driveLeafFolderId || '')
-        ) {
-          continue
-        }
+        // 內容指紋捷徑交給 reconcile（會驗證葉層是否仍在 Drive）
         try {
           const result = await reconcileOneDefectOnDrive({
             projectId,

@@ -16,9 +16,17 @@ export type DriveSyncResult = {
   skipped: number
   scanned: number
   cleanedVoided?: number
+  cleanedDupFolders?: number
+  force?: boolean
   errors: string[]
   clientEmail?: string | null
   folderLayout?: string
+}
+
+export type DriveSyncOptions = {
+  defectIds?: string[]
+  /** 強制對 Drive 真實掃描／補檔（手動「強制補齊」用） */
+  force?: boolean
 }
 
 /** 同步 Drive 前，先把本機已刪除（作廢）的缺失寫回 Firestore，避免幽靈缺失又被上傳 */
@@ -141,8 +149,11 @@ export async function disconnectProjectDriveOwner(
  */
 export async function syncProjectPhotosToDrive(
   projectId: string,
-  defectIds?: string[],
+  options?: string[] | DriveSyncOptions,
 ): Promise<{ ok: boolean; result?: DriveSyncResult; error?: string }> {
+  const opts: DriveSyncOptions = Array.isArray(options)
+    ? { defectIds: options }
+    : options ?? {}
   const ready = await ensureFirebaseUser()
   if (!ready.ok) return ready
 
@@ -152,12 +163,13 @@ export async function syncProjectPhotosToDrive(
 
     const functions = getFunctions(ready.app, 'asia-east1')
     const callable = httpsCallable<
-      { projectId: string; defectIds?: string[] },
+      { projectId: string; defectIds?: string[]; force?: boolean },
       DriveSyncResult
     >(functions, 'syncProjectPhotosToDrive', { timeout: 540_000 })
     const res = await callable({
       projectId,
-      ...(defectIds && defectIds.length ? { defectIds } : {}),
+      ...(opts.defectIds && opts.defectIds.length ? { defectIds: opts.defectIds } : {}),
+      ...(opts.force ? { force: true } : {}),
     })
     return { ok: true, result: res.data }
   } catch (err) {
@@ -168,7 +180,7 @@ export async function syncProjectPhotosToDrive(
 async function callUserDriveSync(
   projectId: string,
   accessToken: string,
-  defectIds?: string[],
+  options?: DriveSyncOptions,
 ): Promise<{ ok: boolean; result?: DriveSyncResult; error?: string }> {
   const ready = await ensureFirebaseUser()
   if (!ready.ok) return ready
@@ -176,13 +188,16 @@ async function callUserDriveSync(
   try {
     const functions = getFunctions(ready.app, 'asia-east1')
     const callable = httpsCallable<
-      { projectId: string; accessToken: string; defectIds?: string[] },
+      { projectId: string; accessToken: string; defectIds?: string[]; force?: boolean },
       DriveSyncResult
     >(functions, 'syncProjectPhotosToDriveAsUser', { timeout: 540_000 })
     const res = await callable({
       projectId,
       accessToken,
-      ...(defectIds && defectIds.length ? { defectIds } : {}),
+      ...(options?.defectIds && options.defectIds.length
+        ? { defectIds: options.defectIds }
+        : {}),
+      ...(options?.force ? { force: true } : {}),
     })
     return { ok: true, result: res.data }
   } catch (err) {
@@ -196,6 +211,7 @@ async function callUserDriveSync(
  */
 export async function syncProjectPhotosToDriveAsUser(
   projectId: string,
+  options?: DriveSyncOptions,
 ): Promise<{ ok: boolean; result?: DriveSyncResult; error?: string }> {
   if (!getGoogleOAuthClientId()) {
     return {
@@ -208,7 +224,7 @@ export async function syncProjectPhotosToDriveAsUser(
   try {
     await pushLocalVoidedDefects(projectId)
     const accessToken = await requestGoogleDriveAccessToken()
-    return await callUserDriveSync(projectId, accessToken)
+    return await callUserDriveSync(projectId, accessToken, { force: true, ...options })
   } catch (err) {
     return { ok: false, error: cleanError(err) }
   }
@@ -282,7 +298,7 @@ export async function autoSyncDefectPhotosToDrive(params: {
 const quietBackfillDone = new Set<string>()
 
 /**
- * 開啟專案後背景補齊雲端硬碟（只補漏的；已存過的後端會偵測略過）。
+ * 開啟專案後背景補齊雲端硬碟（只補漏的；已存過且葉層仍在 Drive 才略過）。
  * 每個專案每個瀏覽器工作階段只跑一次。
  */
 export async function quietBackfillProjectDrive(projectId: string): Promise<void> {
@@ -291,7 +307,7 @@ export async function quietBackfillProjectDrive(projectId: string): Promise<void
   if (!project?.driveFolderId) return
   quietBackfillDone.add(projectId)
   try {
-    // 後端會用 driveContentKey 跳過已同步內容，不會重複存檔
+    // 非 force：後端會驗證葉層資料夾仍在；已刪的會重建重傳
     const res = await syncProjectPhotosToDrive(projectId)
     if (!res.ok) {
       quietBackfillDone.delete(projectId)

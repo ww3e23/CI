@@ -201,8 +201,8 @@ export function ProjectsPage() {
     try {
       const res =
         mode === 'user'
-          ? await syncProjectPhotosToDriveAsUser(selected.id)
-          : await syncProjectPhotosToDrive(selected.id)
+          ? await syncProjectPhotosToDriveAsUser(selected.id, { force: true })
+          : await syncProjectPhotosToDrive(selected.id, { force: true })
       if (!res.ok || !res.result) {
         setDriveMsg(res.error || '同步失敗')
         return
@@ -213,6 +213,7 @@ export function ProjectsPage() {
       setDriveMsg(
         `同步完成：新增 ${r.uploaded} 張、略過已存在 ${r.skipped} 張、掃描 ${r.scanned} 張` +
           (r.cleanedVoided ? `、清除已刪除 ${r.cleanedVoided} 筆` : '') +
+          (r.cleanedDupFolders ? `、清除重複資料夾 ${r.cleanedDupFolders} 個` : '') +
           errHint +
           (r.clientEmail ? `\n執行身分：${r.clientEmail}` : '') +
           (r.errors[0] ? `\n${r.errors.slice(0, 3).join('\n')}` : ''),
