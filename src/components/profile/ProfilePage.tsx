@@ -192,11 +192,13 @@ export function ProfilePage() {
           </button>
         </section>
       )}
+      <SettingsPage embedded />
+
       {cloud && (
         <button
           type="button"
           className="btn btn-ghost"
-          style={{ width: '100%', marginBottom: 14, minHeight: 40 }}
+          style={{ width: '100%', marginTop: 14, marginBottom: 14, minHeight: 40 }}
           onClick={() => {
             void (async () => {
               setBusy(true)
@@ -360,8 +362,6 @@ export function ProfilePage() {
           開啟驗屋後台（桌面版）
         </a>
       )}
-
-      <SettingsPage embedded />
 
       <button
         type="button"
