@@ -30,6 +30,8 @@ export interface Unit {
   nextDefectNumber: number
   /** 此戶專屬查驗區域（客廳／臥室等）；未設定時沿用專案預設 areas */
   areas?: string[]
+  /** 此戶預設位置圖（圖面）網址；新增缺失時自動帶入供標註 */
+  defaultPlanPhotoUrl?: string
 }
 
 export interface ChecklistItem {

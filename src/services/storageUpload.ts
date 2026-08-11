@@ -53,6 +53,35 @@ export async function uploadDataUrl(params: {
   return { url, path }
 }
 
+/** 上傳某戶預設位置圖（圖面） */
+export async function uploadUnitPlanImage(params: {
+  projectId: string
+  unitId: string
+  dataUrl: string
+}): Promise<{ url: string; path: string } | null> {
+  if (!isFirebaseConfigured()) return null
+  const storage = getFirebaseStorage()
+  if (!storage) return null
+  if (!params.dataUrl.startsWith('data:')) {
+    return { url: params.dataUrl, path: '' }
+  }
+
+  const ext = guessExt(params.dataUrl)
+  const path = `projects/${params.projectId}/units/${params.unitId}/plan.${ext}`
+  const storageRef = ref(storage, path)
+  const blob = dataUrlToBlob(params.dataUrl)
+  await uploadBytes(storageRef, blob, {
+    contentType: blob.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+    customMetadata: {
+      projectId: params.projectId,
+      unitId: params.unitId,
+      kind: 'unit-plan',
+    },
+  })
+  const url = await getDownloadURL(storageRef)
+  return { url, path }
+}
+
 /** 平行上傳多張圖 */
 export async function uploadDefectImages(params: {
   projectId: string

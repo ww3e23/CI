@@ -150,7 +150,7 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
             disabled={!currentUnit}
             onClick={() => setUnitAreasOpen(true)}
           >
-            編輯此戶區域
+            編輯此戶區域／位置圖
           </button>
         </article>
         <article className="glass" style={{ padding: 14 }}>

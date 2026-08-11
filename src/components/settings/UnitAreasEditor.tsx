@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { GripVertical, Plus, Trash2 } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { getUnitAreas, normalizeAreaName } from '../../lib/areas'
+import { fileToCompressedDataUrl } from '../../lib/imageCompress'
 import { createId } from '../../lib/id'
 import { Modal } from '../ui/Modal'
 import { TitleHint } from '../ui/TitleHint'
@@ -19,6 +20,7 @@ export function UnitAreasEditor({
   const units = useProjectStore((s) => s.units)
   const defects = useProjectStore((s) => s.defects)
   const setUnitAreas = useProjectStore((s) => s.setUnitAreas)
+  const setUnitDefaultPlan = useProjectStore((s) => s.setUnitDefaultPlan)
   const resetUnitAreasToProjectDefault = useProjectStore(
     (s) => s.resetUnitAreasToProjectDefault,
   )
@@ -40,7 +42,21 @@ export function UnitAreasEditor({
   })
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
+  const [planBusy, setPlanBusy] = useState(false)
+  const [planMsg, setPlanMsg] = useState('')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
+
+  const liveUnit = useProjectStore((s) => s.units.find((u) => u.id === unitId))
+  const planUrl = liveUnit?.defaultPlanPhotoUrl
+
+  const usedAreas = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const d of defects) {
+      if (d.unitId !== unitId || d.status === 'voided') continue
+      map.set(d.area, (map.get(d.area) ?? 0) + 1)
+    }
+    return map
+  }, [defects, unitId])
 
   if (!unit) {
     return (
@@ -53,14 +69,39 @@ export function UnitAreasEditor({
     )
   }
 
-  const usedAreas = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const d of defects) {
-      if (d.unitId !== unitId || d.status === 'voided') continue
-      map.set(d.area, (map.get(d.area) ?? 0) + 1)
+  async function onPickPlan(file: File | undefined) {
+    if (!file || !canEdit) return
+    setPlanBusy(true)
+    setPlanMsg('')
+    setError('')
+    try {
+      const dataUrl = await fileToCompressedDataUrl(file, {
+        maxEdge: 2048,
+        quality: 0.9,
+      })
+      const result = await setUnitDefaultPlan(unitId, dataUrl)
+      if (!result.ok) {
+        setError(result.error || '位置圖儲存失敗')
+      } else {
+        setPlanMsg('已設定此戶預設位置圖；新增缺失時會自動帶入')
+      }
+    } catch {
+      setError('讀取圖片失敗，請換一張再試')
+    } finally {
+      setPlanBusy(false)
     }
-    return map
-  }, [defects, unitId])
+  }
+
+  async function clearPlan() {
+    if (!canEdit) return
+    if (!confirm('確定清除此戶預設位置圖？')) return
+    setPlanBusy(true)
+    setError('')
+    const result = await setUnitDefaultPlan(unitId, null)
+    setPlanBusy(false)
+    if (!result.ok) setError(result.error || '清除失敗')
+    else setPlanMsg('已清除預設位置圖')
+  }
 
   function addRow() {
     const name = normalizeAreaName(draft)
@@ -132,26 +173,92 @@ export function UnitAreasEditor({
   }
 
   return (
-    <Modal onClose={onClose} aria-label="編輯查驗區域" variant="bottom">
+    <Modal onClose={onClose} aria-label="此戶設定" variant="bottom">
       <TitleHint
         as="h3"
         className="serif"
         style={{ margin: '0 0 6px', fontSize: 20 }}
-        hint="每戶可自訂不同區域名稱與編號（例如臥室1／臥室2）。修改名稱會同步更新此戶既有缺失的區域欄位。"
+        hint="可先為此戶上傳預設位置圖；之後新增缺失會自動帶入，方便直接標註。下方可自訂此戶查驗區域。"
       >
-        {unit.code}戶・查驗區域
+        {unit.code}戶・設定
       </TitleHint>
       <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600 }}>
-        {unit.buildingName} {unit.floor} · {unit.areas?.length ? '已自訂此戶區域' : '目前使用專案預設，儲存後將獨立套用此戶'}
+        {unit.buildingName} {unit.floor}
+      </p>
+
+      <section className="glass" style={{ padding: 12, marginBottom: 14 }}>
+        <div style={{ fontWeight: 800, fontSize: 14 }}>預設位置圖</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', marginTop: 4, lineHeight: 1.45 }}>
+          上傳此戶平面／位置圖後，新增缺失會自動帶出，可直接標註位置。
+        </div>
+        {planUrl && (
+          <img
+            src={planUrl}
+            alt="預設位置圖"
+            style={{
+              width: '100%',
+              maxHeight: 160,
+              objectFit: 'contain',
+              marginTop: 10,
+              borderRadius: 12,
+              background: 'rgba(255,252,246,0.9)',
+            }}
+          />
+        )}
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          <label
+            className="btn btn-primary"
+            style={{
+              flex: 1,
+              minWidth: 120,
+              minHeight: 40,
+              opacity: canEdit && !planBusy ? 1 : 0.55,
+              pointerEvents: canEdit && !planBusy ? 'auto' : 'none',
+            }}
+          >
+            {planBusy ? '處理中…' : planUrl ? '更換位置圖' : '上傳位置圖'}
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              disabled={!canEdit || planBusy}
+              onChange={(e) => {
+                void onPickPlan(e.target.files?.[0])
+                e.target.value = ''
+              }}
+            />
+          </label>
+          {planUrl && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ minHeight: 40, color: 'var(--terracotta)', fontWeight: 800 }}
+              disabled={!canEdit || planBusy}
+              onClick={() => void clearPlan()}
+            >
+              清除
+            </button>
+          )}
+        </div>
+        {planMsg && (
+          <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--green-deep)' }}>
+            {planMsg}
+          </div>
+        )}
+      </section>
+
+      <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>查驗區域</div>
+      <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
+        {unit.areas?.length ? '已自訂此戶區域' : '目前使用專案預設，儲存後將獨立套用此戶'}
       </p>
 
       {!canEdit && (
         <div style={{ color: 'var(--terracotta)', fontWeight: 700, fontSize: 13, marginBottom: 10 }}>
-          目前為僅查看權限，無法增刪改區域。
+          目前為僅查看權限，無法增刪改。
         </div>
       )}
 
-      <div style={{ display: 'grid', gap: 8, maxHeight: '46vh', overflow: 'auto', paddingRight: 2 }}>
+      <div style={{ display: 'grid', gap: 8, maxHeight: '36vh', overflow: 'auto', paddingRight: 2 }}>
         {rows.map((row, index) => (
           <div
             key={row.key}

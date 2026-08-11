@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Lock, Settings2 } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
@@ -34,8 +34,10 @@ export function AddDefectSheet({
   const cat = activeCats.find((c) => c.id === catId) ?? activeCats[0]
   const [area, setArea] = useState(() => areas[1] ?? areas[0] ?? '客廳')
   const [description, setDescription] = useState('')
-  const [planPhoto, setPlanPhoto] = useState<string | undefined>()
-  const [planOriginal, setPlanOriginal] = useState<string | undefined>()
+  const defaultPlan = unit?.defaultPlanPhotoUrl
+  const [planPhoto, setPlanPhoto] = useState<string | undefined>(() => defaultPlan)
+  const [planOriginal, setPlanOriginal] = useState<string | undefined>(() => defaultPlan)
+  const [planTouched, setPlanTouched] = useState(false)
   const [photos, setPhotos] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -44,6 +46,13 @@ export function AddDefectSheet({
   const [syncMsg, setSyncMsg] = useState(
     cloudReady() ? '儲存後將同步至雲端' : '示範模式：資料存在本機，尚未接 Firebase',
   )
+
+  // 此戶若有預設位置圖，新增時自動帶入（尚未手動更換前）
+  useEffect(() => {
+    setPlanTouched(false)
+    setPlanOriginal(defaultPlan)
+    setPlanPhoto(defaultPlan)
+  }, [unit?.id, defaultPlan])
 
   const nextNumber = unit?.nextDefectNumber ?? 1
   const canEdit = role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
@@ -75,6 +84,7 @@ export function AddDefectSheet({
       if (kind === 'plan') {
         setPlanOriginal(url)
         setPlanPhoto(url)
+        setPlanTouched(true)
       } else {
         setPhotos((prev) => [...prev, url].slice(0, 6))
       }
@@ -206,9 +216,25 @@ export function AddDefectSheet({
 
         <div className="field">
           <label>圖面位置照片（與現況照片分開）</label>
+          {defaultPlan && !planTouched && planPhoto === defaultPlan && (
+            <div
+              style={{
+                marginBottom: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                color: 'var(--green-deep)',
+              }}
+            >
+              已帶入此戶預設位置圖，可直接標註位置
+            </div>
+          )}
           <div className="upload-actions">
             <label className="upload-box" style={{ cursor: 'pointer' }}>
-              {planPhoto ? '已選取圖面，點擊可更換' : '上傳／拍攝圖面位置'}
+              {planPhoto
+                ? planTouched
+                  ? '已選取圖面，點擊可更換'
+                  : '已帶入預設圖，點擊可更換'
+                : '上傳／拍攝圖面位置'}
               <input
                 type="file"
                 accept="image/*"
@@ -236,6 +262,11 @@ export function AddDefectSheet({
           </div>
           {planPhoto && (
             <img className="photo-thumb" src={planPhoto} alt="圖面位置" style={{ marginTop: 8 }} />
+          )}
+          {!planPhoto && (
+            <p style={{ margin: '8px 0 0', color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
+              可先在首頁「區域／位置圖」為此戶上傳預設圖，之後就不用每次重選。
+            </p>
           )}
         </div>
 
@@ -295,6 +326,7 @@ export function AddDefectSheet({
           onCancel={() => setAnnotateOpen(false)}
           onSave={(url) => {
             setPlanPhoto(url)
+            setPlanTouched(true)
             setAnnotateOpen(false)
             setSyncMsg('圖面標註已套用，記得按下方儲存')
           }}

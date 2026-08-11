@@ -224,7 +224,7 @@ export function HomePage({
               }}
               onClick={() => setAreasOpen(true)}
             >
-              區域 {getUnitAreas(unit, projectAreas).length}
+              區域／位置圖 {getUnitAreas(unit, projectAreas).length}
             </button>
             <button
               type="button"

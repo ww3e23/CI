@@ -185,6 +185,27 @@ function unitAreasMap(units: ProjectState['units']): Record<string, string[]> {
   return map
 }
 
+function unitPlanPhotosMap(units: ProjectState['units']): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const u of units) {
+    const url = u.defaultPlanPhotoUrl?.trim()
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      map[u.id] = url
+    }
+  }
+  return map
+}
+
+function parseUnitPlanPhotosMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, string> = {}
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    const url = String(value ?? '').trim()
+    if (url.startsWith('http://') || url.startsWith('https://')) out[id] = url
+  }
+  return out
+}
+
 function parseUnitCategoryDone(raw: unknown): Record<string, string[]> {
   if (!raw || typeof raw !== 'object') return {}
   const out: Record<string, string[]> = {}
@@ -307,6 +328,7 @@ export async function pushProjectState(
       activities: state.activities.slice(0, 40),
       unitNextDefect: unitNextMap(state.units),
       unitAreas: unitAreasMap(state.units),
+      unitPlanPhotos: unitPlanPhotosMap(state.units),
       currentUnitId: state.currentUnitId,
       recentUnitIds: state.recentUnitIds,
       updatedAt: serverTimestamp(),
@@ -369,6 +391,7 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
         ? (meta.unitNextDefect as Record<string, number>)
         : {}
     const unitAreas = parseUnitAreasMap(meta.unitAreas)
+    const unitPlanPhotos = parseUnitPlanPhotosMap(meta.unitPlanPhotos)
 
     const units = expandUnitsFromBuildings(buildings).map((u) => ({
       ...u,
@@ -378,6 +401,7 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
         defects,
       ),
       areas: unitAreas[u.id]?.length ? unitAreas[u.id] : undefined,
+      defaultPlanPhotoUrl: unitPlanPhotos[u.id] || undefined,
     }))
 
     const activities = Array.isArray(meta.activities)
@@ -524,9 +548,11 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
   const mergedDefects = [...defectMap.values()]
   const unitNext: Record<string, number> = {}
   const unitAreas: Record<string, string[]> = {}
+  const unitPlans: Record<string, string> = {}
   for (const u of local.units) {
     unitNext[u.id] = u.nextDefectNumber
     if (u.areas?.length) unitAreas[u.id] = [...u.areas]
+    if (u.defaultPlanPhotoUrl) unitPlans[u.id] = u.defaultPlanPhotoUrl
   }
   for (const u of remote.units) {
     unitNext[u.id] = Math.max(unitNext[u.id] ?? 1, u.nextDefectNumber)
@@ -534,11 +560,17 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
     if (!unitAreas[u.id]?.length && u.areas?.length) {
       unitAreas[u.id] = [...u.areas]
     }
+    const localPlan = unitPlans[u.id]
+    const remotePlan = u.defaultPlanPhotoUrl
+    const mergedPlan = preferMediaUrl(localPlan, remotePlan)
+    if (mergedPlan) unitPlans[u.id] = mergedPlan
+    else delete unitPlans[u.id]
   }
   const units = expandUnitsFromBuildings(buildings).map((u) => ({
     ...u,
     nextDefectNumber: computeNextDefectNumber(u.id, unitNext[u.id] ?? 1, mergedDefects),
     areas: unitAreas[u.id]?.length ? unitAreas[u.id] : undefined,
+    defaultPlanPhotoUrl: unitPlans[u.id] || undefined,
   }))
 
   return {

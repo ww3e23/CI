@@ -20,7 +20,7 @@ import {
   pullProjectState,
   pushProjectState,
 } from '../services/projectSync'
-import { uploadDefectImages } from '../services/storageUpload'
+import { uploadDefectImages, uploadUnitPlanImage } from '../services/storageUpload'
 import {
   autoSyncDefectPhotosToDrive,
   deleteDefectPhotosFromDrive,
@@ -83,6 +83,11 @@ interface ProjectActions {
   ) => { ok: boolean; error?: string }
   /** 清除此戶自訂區域，改回專案預設 */
   resetUnitAreasToProjectDefault: (unitId: string) => { ok: boolean; error?: string }
+  /** 設定／清除此戶預設位置圖（圖面）；傳 null 清除 */
+  setUnitDefaultPlan: (
+    unitId: string,
+    planUrl: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>
   /** 更新專案預設查驗區域（尚未自訂的戶別會沿用） */
   setProjectAreas: (areas: string[]) => { ok: boolean; error?: string }
   markUnitChecked: (unitId: string, checked: number) => void
@@ -188,6 +193,7 @@ function rebuildUnits(buildings: BuildingRule[], prevUnits: ProjectState['units'
       ...u,
       nextDefectNumber: old.nextDefectNumber,
       areas: old.areas?.length ? [...old.areas] : undefined,
+      defaultPlanPhotoUrl: old.defaultPlanPhotoUrl || undefined,
     }
   })
 }
@@ -684,6 +690,66 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           units: state.units.map((u) =>
             u.id === unitId ? { ...u, areas: undefined } : u,
           ),
+        })
+        afterProjectChange(get, set)
+        return { ok: true }
+      },
+
+      setUnitDefaultPlan: async (unitId, planUrl) => {
+        const state = get()
+        const unit = state.units.find((u) => u.id === unitId)
+        if (!unit) return { ok: false, error: '找不到此戶別' }
+
+        let nextUrl: string | undefined
+        if (planUrl === null || planUrl === '') {
+          nextUrl = undefined
+        } else if (planUrl.startsWith('http://') || planUrl.startsWith('https://')) {
+          nextUrl = planUrl
+        } else if (planUrl.startsWith('data:')) {
+          const projectId = get().activeProjectId
+          if (projectId && cloudReady()) {
+            try {
+              const up = await uploadUnitPlanImage({
+                projectId,
+                unitId,
+                dataUrl: planUrl,
+              })
+              nextUrl = up?.url || planUrl
+            } catch (err) {
+              console.warn('[setUnitDefaultPlan] upload failed', err)
+              return { ok: false, error: '位置圖上傳失敗，請檢查網路後再試' }
+            }
+          } else {
+            // 示範／離線：暫存 data URL（僅本機）
+            nextUrl = planUrl
+          }
+        } else {
+          return { ok: false, error: '不支援的圖片格式' }
+        }
+
+        set({
+          units: get().units.map((u) =>
+            u.id === unitId ? { ...u, defaultPlanPhotoUrl: nextUrl } : u,
+          ),
+          activities: [
+            {
+              id: createId('act'),
+              at: new Date().toLocaleString('zh-TW', {
+                month: 'numeric',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+              buildingName: unit.buildingName,
+              floor: unit.floor,
+              unitCode: unit.code,
+              summary: nextUrl
+                ? `更新 ${unit.code}戶 預設位置圖`
+                : `清除 ${unit.code}戶 預設位置圖`,
+              actorName: '現場查驗',
+            },
+            ...get().activities,
+          ].slice(0, 40),
         })
         afterProjectChange(get, set)
         return { ok: true }
