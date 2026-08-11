@@ -31,7 +31,7 @@ import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
 import { hasUploadableLocalMedia } from '../lib/defectMedia'
 import { statusLabel } from '../lib/progress'
-import { currentActorInfo, currentActorName } from '../lib/currentActor'
+import { currentActorInfo, currentActorLabel } from '../lib/currentActor'
 import {
   backfillProjectActors,
   inferActorNameFromState,
@@ -160,6 +160,33 @@ interface ProjectActions {
   removeCategory: (categoryId: string) => { ok: boolean; reason?: string }
   upsertChecklistItem: (item: ChecklistItem) => void
   removeChecklistItem: (itemId: string) => { ok: boolean; reason?: string }
+}
+
+
+function activityActorFields() {
+  const { name, account } = currentActorLabel()
+  return {
+    actorName: name,
+    actorAccount: account || undefined,
+  }
+}
+
+function defectActorCreateFields() {
+  const { name, account } = currentActorLabel()
+  return {
+    createdByName: name,
+    createdByAccount: account || undefined,
+    updatedByName: name,
+    updatedByAccount: account || undefined,
+  }
+}
+
+function defectActorUpdateFields() {
+  const { name, account } = currentActorLabel()
+  return {
+    updatedByName: name,
+    updatedByAccount: account || undefined,
+  }
 }
 
 let syncTimer: ReturnType<typeof setTimeout> | null = null
@@ -339,7 +366,6 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         }
 
         const syncState: SyncState = cloudReady() ? 'pending' : 'demo'
-        const actor = currentActorName()
         const defect: Defect = {
           id: createId('def'),
           unitId,
@@ -359,8 +385,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           syncState,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          createdByName: actor,
-          updatedByName: actor,
+          ...defectActorCreateFields(),
         }
 
         const nextDefects = [defect, ...state.defects]
@@ -384,7 +409,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               floor: unit.floor,
               unitCode: unit.code,
               summary: `新增缺失 #${defect.defectNumber}｜${description}`,
-              actorName: actor,
+              ...activityActorFields(),
             },
             ...state.activities,
           ].slice(0, 40),
@@ -498,7 +523,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           ...defect,
           status: 'voided',
           updatedAt: new Date().toISOString(),
-          updatedByName: currentActorName(),
+          ...defectActorUpdateFields(),
         }
         const nextDefects = state.defects.map((d) => (d.id === defectId ? next : d))
         // 刪除後回收尾號：下一號改回「未作廢最大號 + 1」，避免跳號
@@ -521,7 +546,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               floor: defect.floor,
               unitCode: defect.unitCode,
               summary: `刪除缺失 #${defect.defectNumber}`,
-              actorName: currentActorName(),
+              ...activityActorFields(),
             },
             ...state.activities,
           ].slice(0, 40),
@@ -569,11 +594,15 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         const defect = state.defects.find((d) => d.id === defectId)
         if (!defect || defect.status === 'voided') return
         if (defect.status === status) return
-        const actor = currentActorName()
         set({
           defects: state.defects.map((d) =>
             d.id === defectId
-              ? { ...d, status, updatedAt: new Date().toISOString(), updatedByName: actor }
+              ? {
+                  ...d,
+                  status,
+                  updatedAt: new Date().toISOString(),
+                  ...defectActorUpdateFields(),
+                }
               : d,
           ),
           activities: [
@@ -589,7 +618,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               floor: defect.floor,
               unitCode: defect.unitCode,
               summary: `狀態更新 → ${statusLabel(status)}`,
-              actorName: actor,
+              ...activityActorFields(),
             },
             ...state.activities,
           ].slice(0, 40),
@@ -632,7 +661,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           planPhotoDataUrl: nextPlan,
           photoDataUrls: nextPhotos,
           updatedAt: new Date().toISOString(),
-          updatedByName: currentActorName(),
+          ...defectActorUpdateFields(),
           syncState: cloudReady() ? 'pending' : defect.syncState,
         }
 
@@ -651,7 +680,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               floor: defect.floor,
               unitCode: defect.unitCode,
               summary: `修改缺失 #${defect.defectNumber}`,
-              actorName: currentActorName(),
+              ...activityActorFields(),
             },
             ...state.activities,
           ].slice(0, 40),
@@ -770,7 +799,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               floor: unit.floor,
               unitCode: unit.code,
               summary: `更新 ${unit.code}戶 查驗區域（${cleaned.length} 項）`,
-              actorName: currentActorName(),
+              ...activityActorFields(),
             },
             ...state.activities,
           ].slice(0, 40),
@@ -880,7 +909,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               summary: `套用格局範本 ${template.code}：${applied} 戶${
                 skipped ? `，略過 ${skipped} 戶` : ''
               }`,
-              actorName: currentActorName(),
+              ...activityActorFields(),
             },
             ...state.activities,
           ].slice(0, 40),
@@ -920,7 +949,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               floor: '—',
               unitCode: '—',
               summary: `還原查驗區域為專案預設：${reset} 戶`,
-              actorName: currentActorName(),
+              ...activityActorFields(),
             },
             ...state.activities,
           ].slice(0, 40),
@@ -980,7 +1009,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               summary: nextUrl
                 ? `更新 ${unit.code}戶 預設位置圖`
                 : `清除 ${unit.code}戶 預設位置圖`,
-              actorName: currentActorName(),
+              ...activityActorFields(),
             },
             ...get().activities,
           ].slice(0, 40),
@@ -1112,7 +1141,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               summary: done
                 ? `標記大項「${cat.name}」已查畢`
                 : `取消大項「${cat.name}」查畢`,
-              actorName: currentActorName(),
+              ...activityActorFields(),
             },
             ...state.activities,
           ].slice(0, 40),
@@ -1151,7 +1180,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               floor: unit.floor,
               unitCode: unit.code,
               summary: complete ? '標記本戶全部大項查驗完成' : '清除本戶查驗完成標記',
-              actorName: currentActorName(),
+              ...activityActorFields(),
             },
             ...state.activities,
           ].slice(0, 40),
@@ -1311,8 +1340,12 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         const snap = snapshotProject(get())
         const preferred =
           resolveBackfillActorName([inferActorNameFromState(snap), info.accountHint]) || ''
-        if (isPlaceholderActor(preferred)) return 0
-        const { state, changed } = backfillProjectActors(snap, preferred)
+        if (isPlaceholderActor(preferred) && isPlaceholderActor(info.accountHint)) return 0
+        const { state, changed } = backfillProjectActors(
+          snap,
+          preferred || info.accountHint,
+          info.accountHint,
+        )
         if (changed === 0) return 0
         set({
           activities: state.activities,

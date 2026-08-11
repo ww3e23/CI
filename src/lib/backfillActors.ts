@@ -54,11 +54,19 @@ function preferActorName(a?: string | null, b?: string | null): string | undefin
 /** 合併兩筆缺失的查驗人欄位（優先真實現場人名） */
 export function mergeDefectActorFields(local: Defect, remote: Defect): Pick<
   Defect,
-  'createdByName' | 'updatedByName'
+  'createdByName' | 'updatedByName' | 'createdByAccount' | 'updatedByAccount'
 > {
   return {
     createdByName: preferActorName(local.createdByName, remote.createdByName),
     updatedByName: preferActorName(local.updatedByName, remote.updatedByName),
+    createdByAccount:
+      (local.createdByAccount || '').trim() ||
+      (remote.createdByAccount || '').trim() ||
+      undefined,
+    updatedByAccount:
+      (local.updatedByAccount || '').trim() ||
+      (remote.updatedByAccount || '').trim() ||
+      undefined,
   }
 }
 
@@ -82,6 +90,10 @@ export function mergeActivityLists(
         preferActorName(prev.actorName, a.actorName) ||
         a.actorName ||
         prev.actorName,
+      actorAccount:
+        (prev.actorAccount || '').trim() ||
+        (a.actorAccount || '').trim() ||
+        undefined,
     })
   }
   const preferRemote = remote.length >= local.length
@@ -107,34 +119,55 @@ export function mergeActivityLists(
 export function backfillProjectActors(
   state: ProjectState,
   preferredName: string,
+  preferredAccount = '',
 ): { state: ProjectState; changed: number } {
   const name = preferredName.trim()
-  if (isInvalidInspectorName(name)) {
+  const account = preferredAccount.trim()
+  if (isInvalidInspectorName(name) && isInvalidInspectorName(account)) {
     return { state, changed: 0 }
   }
+  const labelName = !isInvalidInspectorName(name) ? name : account
+  if (!labelName) return { state, changed: 0 }
 
   let changed = 0
 
   const activities = state.activities.map((a) => {
-    if (!isInvalidInspectorName(a.actorName)) return a
+    const nameBad = isInvalidInspectorName(a.actorName)
+    const accountMissing = !String(a.actorAccount || '').trim() && Boolean(account)
+    if (!nameBad && !accountMissing) return a
     changed += 1
-    return { ...a, actorName: name }
+    return {
+      ...a,
+      actorName: nameBad ? labelName : a.actorName,
+      actorAccount: a.actorAccount || account || undefined,
+    }
   })
 
   const defects = state.defects.map((d) => {
     let next = d
     let touched = false
     if (isInvalidInspectorName(d.createdByName)) {
-      next = { ...next, createdByName: name }
+      next = {
+        ...next,
+        createdByName: labelName,
+        createdByAccount: account || next.createdByAccount,
+      }
+      touched = true
+    } else if (!d.createdByAccount && account) {
+      next = { ...next, createdByAccount: account }
       touched = true
     }
     if (isInvalidInspectorName(d.updatedByName)) {
       next = {
         ...next,
         updatedByName: isInvalidInspectorName(next.createdByName)
-          ? name
+          ? labelName
           : (next.createdByName as string),
+        updatedByAccount: account || next.updatedByAccount || next.createdByAccount,
       }
+      touched = true
+    } else if (!d.updatedByAccount && account) {
+      next = { ...next, updatedByAccount: account }
       touched = true
     }
     if (touched) changed += 1

@@ -3,6 +3,7 @@ import { ChevronDown, FileDown, FileSpreadsheet, Images } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentProject, useCurrentUser } from '../../store/useAuthStore'
 import { buildMatrix, formatActivity, unitProgress } from '../../lib/progress'
+import { formatActorLabel } from '../../lib/currentActor'
 import { exportInspectionExcel } from '../../lib/excelReport'
 import {
   exportJiaShanLinExcel,
@@ -931,7 +932,7 @@ export function ReportsPage() {
                   fontSize: 12,
                 }}
               >
-                查驗人：{a.actorName || '—'}
+                查驗人：{formatActorLabel(a.actorName, a.actorAccount)}
               </div>
             </div>
           </div>

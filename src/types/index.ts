@@ -81,8 +81,12 @@ export interface Defect {
   updatedAt: string
   /** 新增此筆缺失的查驗人員姓名 */
   createdByName?: string
+  /** 新增者帳號（例如 a11897），比顯示名更穩定 */
+  createdByAccount?: string
   /** 最近修改此筆的人員姓名 */
   updatedByName?: string
+  /** 最近修改者帳號 */
+  updatedByAccount?: string
 }
 
 export interface ProgressCell {
@@ -106,6 +110,8 @@ export interface ActivityLog {
   unitCode: string
   summary: string
   actorName: string
+  /** 操作者帳號（例如 a11897）；用於辨識真實操作者，避免顯示名混淆 */
+  actorAccount?: string
 }
 
 /** 格局／查驗區域範本（可批量套用到多戶） */
