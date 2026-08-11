@@ -794,8 +794,13 @@ bindCurrentActorGetter(() => {
   const u = s.users.find((x) => x.id === s.currentUserId)
   if (!u) return '現場查驗'
   const name = (u.displayName || '').trim()
-  if (name) return name
+  // 不要把佔位顯示名當成真實查驗人
+  if (name && name !== '現場查驗' && name !== '现场查验') return name
   const email = (u.email || '').trim()
-  if (email.includes('@')) return email.split('@')[0] || '現場查驗'
-  return email || '現場查驗'
+  if (email.includes('@')) {
+    const local = email.split('@')[0] || ''
+    if (local) return local
+  }
+  if (email) return email
+  return accountDisplay(u.email) || '現場查驗'
 })

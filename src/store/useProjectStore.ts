@@ -33,6 +33,12 @@ import { hasUploadableLocalMedia } from '../lib/defectMedia'
 import { statusLabel } from '../lib/progress'
 import { currentActorName } from '../lib/currentActor'
 import {
+  backfillProjectActors,
+  inferActorNameFromState,
+  isPlaceholderActor,
+  resolveBackfillActorName,
+} from '../lib/backfillActors'
+import {
   isUnitAreasCustomized,
   nextAreaTemplateCode,
   normalizeAreaName,
@@ -138,6 +144,11 @@ interface ProjectActions {
   flushPendingMediaUploads: () => Promise<{ ok: boolean; uploaded: number }>
   /** 立刻把作用中專案存本機並推上雲端 */
   flushSyncNow: () => Promise<{ ok: boolean }>
+  /**
+   * 把舊活動／缺失中的「現場查驗」佔位名改成真實查驗人，並寫回本機／上雲。
+   * @returns 修正筆數
+   */
+  backfillActorNames: () => number
   loadProjectBundle: (projectId: string) => void
   saveProjectBundle: (projectId: string) => void
   ensureProjectBundle: (projectId: string, name: string) => void
@@ -1174,6 +1185,8 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           })
         }
         set({ ...structuredClone(bundle), activeProjectId: projectId })
+        // 先回填本機舊佔位名，再開雲端合併
+        get().backfillActorNames()
         // 本機載入後立刻嘗試從雲端還原／合併
         void get().hydrateFromCloud(projectId)
       },
@@ -1291,10 +1304,26 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         return { ok }
       },
 
+      backfillActorNames: () => {
+        const snap = snapshotProject(get())
+        const preferred =
+          resolveBackfillActorName([inferActorNameFromState(snap)]) || ''
+        if (isPlaceholderActor(preferred)) return 0
+        const { state, changed } = backfillProjectActors(snap, preferred)
+        if (changed === 0) return 0
+        set({
+          activities: state.activities,
+          defects: state.defects,
+        })
+        afterProjectChange(get, set)
+        return changed
+      },
+
       hydrateFromCloud: async (projectId) => {
         if (!cloudReady() || !projectId) {
           // 即使離線也先把佇列照片掛回畫面
           await get().restorePendingMediaToMemory()
+          get().backfillActorNames()
           return { ok: false, error: '尚未設定 Firebase' }
         }
         try {
@@ -1303,6 +1332,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
 
           const remote = await pullProjectState(projectId)
           if (!remote) {
+            get().backfillActorNames()
             void get().flushPendingMediaUploads()
             void quietBackfillProjectDrive(projectId)
             return { ok: true }
@@ -1327,6 +1357,12 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           await get().restorePendingMediaToMemory()
           await get().healStuckMediaSyncStates()
 
+          // 舊「現場查驗」佔位名 → 真實查驗人，並推回雲端
+          const filled = get().backfillActorNames()
+          if (filled > 0) {
+            scheduleCloudSync(get)
+          }
+
           // 本機有、雲端缺的部分補推回去
           if (
             local.buildings.length > remote.buildings.length ||
@@ -1343,6 +1379,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           console.warn('[hydrateFromCloud] failed', err)
           await get().restorePendingMediaToMemory()
           await get().healStuckMediaSyncStates()
+          get().backfillActorNames()
           return { ok: false, error: '從雲端同步失敗' }
         }
       },

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import {
@@ -19,10 +19,15 @@ export function DefectsPage() {
   const units = useProjectStore((s) => s.units)
   const items = useProjectStore((s) => s.checklistItems)
   const currentUnitId = useProjectStore((s) => s.currentUnitId)
+  const backfillActorNames = useProjectStore((s) => s.backfillActorNames)
 
   const [quickStatus, setQuickStatus] = useState<QuickStatus>('all')
   const [unitOpen, setUnitOpen] = useState(false)
   const [selectedDefect, setSelectedDefect] = useState<Defect | null>(null)
+
+  useEffect(() => {
+    backfillActorNames()
+  }, [backfillActorNames])
 
   const unit =
     units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active) ?? null

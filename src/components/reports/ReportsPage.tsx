@@ -40,6 +40,15 @@ export function ReportsPage() {
   const matrixScrollRef = useRef<HTMLDivElement>(null)
   const didAutoScrollRef = useRef(false)
   const [buildingPercentsOpen, setBuildingPercentsOpen] = useState(false)
+  const backfillActorNames = useProjectStore((s) => s.backfillActorNames)
+
+  // 進入報告頁時主動把舊「現場查驗」改成真實姓名並上雲
+  useEffect(() => {
+    const n = backfillActorNames()
+    if (n > 0) {
+      console.info(`[actor-backfill] 已修正 ${n} 筆舊查驗人佔位名`)
+    }
+  }, [backfillActorNames])
 
   const cellMap = useMemo(() => {
     const m = new Map<string, ProgressCell>()
@@ -901,7 +910,7 @@ export function ReportsPage() {
             key={a.id}
             style={{
               display: 'grid',
-              gridTemplateColumns: '64px 1fr auto',
+              gridTemplateColumns: '56px minmax(0, 1fr)',
               gap: 8,
               padding: '12px 0',
               borderBottom: '1px solid rgba(34,41,31,0.08)',
@@ -909,15 +918,29 @@ export function ReportsPage() {
             }}
           >
             <span style={{ color: 'var(--ink-soft)', fontWeight: 600 }}>{a.at}</span>
-            <span>
-              <strong>{formatActivity(a)}</strong>
-              <span style={{ color: 'var(--ink-soft)' }}> · {a.summary}</span>
-            </span>
-            <span style={{ color: 'var(--green-deep)', fontWeight: 800, whiteSpace: 'nowrap' }}>
-              {a.actorName || '—'}
-            </span>
+            <div style={{ minWidth: 0 }}>
+              <div>
+                <strong>{formatActivity(a)}</strong>
+                <span style={{ color: 'var(--ink-soft)' }}> · {a.summary}</span>
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  color: 'var(--green-deep)',
+                  fontWeight: 800,
+                  fontSize: 12,
+                }}
+              >
+                查驗人：{a.actorName || '—'}
+              </div>
+            </div>
           </div>
         ))}
+        {state.activities.length === 0 && (
+          <div style={{ padding: '14px 0', color: 'var(--ink-soft)', fontWeight: 600 }}>
+            尚無修改紀錄
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>

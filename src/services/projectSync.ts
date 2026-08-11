@@ -23,6 +23,10 @@ import type {
   SyncState,
 } from '../types'
 import type { ProjectMeta } from '../types/auth'
+import {
+  mergeActivityLists,
+  mergeDefectActorFields,
+} from '../lib/backfillActors'
 
 const SITE_META_PATH = ['meta', 'site'] as const
 
@@ -537,6 +541,7 @@ export function mergeDefectPhotos(local: Defect, remote: Defect): Defect {
   const merged: Defect = {
     ...older,
     ...newer,
+    ...mergeDefectActorFields(local, remote),
     planPhotoDataUrl: preferMediaUrl(remote.planPhotoDataUrl, local.planPhotoDataUrl),
     photoDataUrls,
     // 本機仍在上傳時不要被雲端 pending 狀態蓋掉成已同步無圖
@@ -634,10 +639,10 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
       local.unitCategoryDone ?? {},
       remote.unitCategoryDone ?? {},
     ),
-    activities: (remote.activities.length >= local.activities.length
-      ? remote.activities
-      : local.activities
-    ).slice(0, 40),
+    activities: mergeActivityLists(local.activities ?? [], remote.activities ?? []).slice(
+      0,
+      40,
+    ),
     currentUnitId: local.currentUnitId || remote.currentUnitId,
     recentUnitIds: local.recentUnitIds.length
       ? local.recentUnitIds
