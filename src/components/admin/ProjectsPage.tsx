@@ -4,7 +4,12 @@ import { useAuthStore } from '../../store/useAuthStore'
 import { createId } from '../../lib/id'
 import { nextProjectCode } from '../../lib/projectCode'
 import { driveFolderUrl, parseDriveFolderId } from '../../lib/driveFolder'
-import { syncProjectPhotosToDrive, syncProjectPhotosToDriveAsUser } from '../../services/driveSync'
+import {
+  connectProjectDriveOwner,
+  disconnectProjectDriveOwner,
+  syncProjectPhotosToDrive,
+  syncProjectPhotosToDriveAsUser,
+} from '../../services/driveSync'
 import { getGoogleOAuthClientId } from '../../lib/googleDriveAuth'
 import {
   ROLE_LABEL,
@@ -106,7 +111,59 @@ export function ProjectsPage() {
     )
   }
 
-  async function runDriveSync(mode: 'service' | 'user') {
+  async function runConnectDriveOwner() {
+    if (!selected?.driveFolderId) {
+      setDriveMsg('請先貼上並儲存雲端硬碟資料夾網址')
+      return
+    }
+    if (driveSyncing) return
+    if (!getGoogleOAuthClientId()) {
+      setDriveMsg(
+        '尚未啟用 Google OAuth：請先在 GCP 建立網頁用戶端，並設定 VITE_GOOGLE_OAUTH_CLIENT_ID 後重新部署。',
+      )
+      return
+    }
+    const okConfirm = window.confirm(
+      `將綁定「雲端硬碟擁有者」到「${selected.name}」。\n` +
+        `請用「擁有／可編輯該資料夾」的 Google 帳號授權一次。\n\n` +
+        `綁定後，現場人員按同步時不必再登入 Google，照片會寫入此帳號的雲端硬碟。`,
+    )
+    if (!okConfirm) return
+
+    setDriveSyncing(true)
+    setDriveMsg('請在跳出的 Google 視窗完成授權…')
+    try {
+      const res = await connectProjectDriveOwner(selected.id)
+      if (!res.ok || !res.result) {
+        setDriveMsg(res.error || '綁定失敗')
+        return
+      }
+      const email = res.result.email
+      setDriveMsg(
+        `已綁定雲端硬碟擁有者${email ? `：${email}` : ''}。\n` +
+          `之後現場與後台按「同步到雲端硬碟」都不必再登 Google。` +
+          (res.result.reusedRefreshToken
+            ? '\n（沿用既有授權；若同步失敗請到 Google 帳戶權限移除此應用後重綁）'
+            : ''),
+      )
+    } finally {
+      setDriveSyncing(false)
+    }
+  }
+
+  async function runDisconnectDriveOwner() {
+    if (!selected) return
+    if (!window.confirm('確定解除雲端硬碟擁有者綁定？現場將無法再免登同步。')) return
+    setDriveSyncing(true)
+    try {
+      const res = await disconnectProjectDriveOwner(selected.id)
+      setDriveMsg(res.ok ? '已解除擁有者綁定' : res.error || '解除失敗')
+    } finally {
+      setDriveSyncing(false)
+    }
+  }
+
+  async function runDriveSync(mode: 'owner' | 'user' | 'service') {
     if (!selected?.driveFolderId) {
       setDriveMsg('請先貼上並儲存雲端硬碟資料夾網址')
       return
@@ -121,10 +178,17 @@ export function ProjectsPage() {
       return
     }
 
+    if (mode === 'owner' && !selected.driveOwnerConnected) {
+      setDriveMsg('請先按「綁定雲端硬碟擁有者」（只需授權一次），再同步。')
+      return
+    }
+
     const okConfirm = window.confirm(
       mode === 'user'
-        ? `將以「你的 Google 帳號」把「${selected.name}」照片同步到雲端硬碟。\n會跳出 Google 授權視窗，請選有該資料夾權限的帳號。\n\n只會補還沒有的照片，不會刪除既有檔案。`
-        : `將以「服務帳戶」同步「${selected.name}」。\n此方式只適用「共用雲端硬碟」。\n若公司未開放共用雲端硬碟，請改用「用我的 Google 帳號同步」。`,
+        ? `將以「你的 Google 帳號」臨時同步「${selected.name}」（不會改綁定擁有者）。\n會跳出 Google 授權視窗。\n\n只會補還沒有的照片，不會刪除既有檔案。`
+        : mode === 'owner'
+          ? `將以已綁定的雲端硬碟擁有者同步「${selected.name}」。\n現場人員也可用同一方式，不必登 Google。\n\n只會補還沒有的照片，不會刪除既有檔案。`
+          : `將以「服務帳戶」同步「${selected.name}」。\n此方式只適用「共用雲端硬碟」。\n個人碟請先「綁定雲端硬碟擁有者」。`,
     )
     if (!okConfirm) return
 
@@ -199,7 +263,13 @@ export function ProjectsPage() {
               <div style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontWeight: 700, fontSize: 13 }}>{count} 位成員</span>
                 <span className="pill" style={{ minHeight: 28 }}>
-                  {p.driveFolderId ? '已綁 Drive' : p.status === 'active' ? '進行中' : '封存'}
+                  {p.driveOwnerConnected
+                    ? 'Drive 已授權'
+                    : p.driveFolderId
+                      ? '已綁資料夾'
+                      : p.status === 'active'
+                        ? '進行中'
+                        : '封存'}
                 </span>
               </div>
             </button>
@@ -257,7 +327,7 @@ export function ProjectsPage() {
               <TitleHint
                 as="span"
                 style={{ pointerEvents: 'auto' }}
-                hint="綁定後可用手動同步把既有照片補進 Drive；結構為棟別／樓層／戶別／大項／#編號 小項名稱。個人碟請用「用我的 Google 帳號同步」。"
+                hint="先貼資料夾網址，再「綁定雲端硬碟擁有者」一次；之後現場同步不必各自登 Google。結構：棟／樓／戶／大項／#編號 小項名稱。"
               >
                 Google 雲端硬碟
               </TitleHint>
@@ -288,11 +358,43 @@ export function ProjectsPage() {
                   type="button"
                   className="btn btn-primary"
                   disabled={!selected.driveFolderId || driveSyncing}
-                  onClick={() => void runDriveSync('user')}
-                  title="用你的 Google 帳號寫入「我的雲端硬碟」（公司未開共用雲端硬碟時用這個）"
+                  onClick={() => void runConnectDriveOwner()}
+                  title="管理者用擁有該資料夾的 Google 帳號授權一次，現場人員就不用再登 Google"
+                >
+                  {driveSyncing
+                    ? '處理中…'
+                    : selected.driveOwnerConnected
+                      ? '重新綁定雲端硬碟擁有者'
+                      : '綁定雲端硬碟擁有者'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!selected.driveFolderId || !selected.driveOwnerConnected || driveSyncing}
+                  onClick={() => void runDriveSync('owner')}
+                  title="用已綁定擁有者同步（現場同樣免登 Google）"
                 >
                   <CloudUpload size={16} />
-                  {driveSyncing ? '同步中…' : '用我的 Google 帳號同步'}
+                  {driveSyncing ? '同步中…' : '同步到雲端硬碟'}
+                </button>
+                {selected.driveOwnerConnected && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={driveSyncing}
+                    onClick={() => void runDisconnectDriveOwner()}
+                  >
+                    解除擁有者綁定
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={!selected.driveFolderId || driveSyncing}
+                  onClick={() => void runDriveSync('user')}
+                  title="臨時用你的 Google 帳號同步（不改綁定）"
+                >
+                  臨時用我的 Google 同步
                 </button>
                 <button
                   type="button"
@@ -305,13 +407,16 @@ export function ProjectsPage() {
                 </button>
               </div>
               <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600, lineHeight: 1.5 }}>
-                同步後資料夾：棟別 → 樓層 → 戶別 → 大項 → <code>#5 小項名稱</code>（與缺失列表相同）
+                狀態：
+                {selected.driveOwnerConnected
+                  ? `已綁定擁有者${selected.driveOwnerEmail ? `（${selected.driveOwnerEmail}）` : ''}，現場同步免登 Google`
+                  : '尚未綁定擁有者 — 現場按同步仍無法寫入「我的雲端硬碟」'}
                 <br />
-                公司若未開放「共用雲端硬碟」，請用綠色按鈕「用我的 Google 帳號同步」（寫進你自己的雲端容量）。
+                建議流程：① 貼上資料夾網址並儲存 → ② 按「綁定雲端硬碟擁有者」完成一次授權 → ③ 現場／後台按「同步到雲端硬碟」。
                 <br />
-                在同一瀏覽器授權成功後，之後現場拍照會自動補傳到此資料夾（約數十秒內；換裝置或清快取需再按一次授權）。
+                同步後資料夾：棟別 → 樓層 → 戶別 → 大項 → <code>#5 小項名稱</code>
                 <br />
-                舊的 <code>03_小項</code> 資料夾不會自動改名；新同步會依「#編號 小項名稱」建立。
+                綁定後，拍照會由伺服器自動鏡像到該擁有者雲端硬碟（約數十秒）。
               </div>
               {driveMsg && (
                 <div

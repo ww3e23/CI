@@ -9,8 +9,7 @@ import {
 } from '../../store/useAuthStore'
 import { firebaseModeLabel, isFirebaseConfigured } from '../../lib/firebase'
 import { APP_VERSION } from '../../lib/appVersion'
-import { getGoogleOAuthClientId } from '../../lib/googleDriveAuth'
-import { syncProjectPhotosToDriveAsUser } from '../../services/driveSync'
+import { syncProjectPhotosToDrive } from '../../services/driveSync'
 import { SettingsPage } from '../settings/SettingsPage'
 import { ProjectSwitcher } from '../home/ProjectSwitcher'
 import { forceReloadApp } from '../pwa/UpdateAppBanner'
@@ -49,20 +48,22 @@ export function ProfilePage() {
       setDriveMsg('此專案尚未綁定雲端硬碟資料夾，請請後台管理者先設定資料夾網址。')
       return
     }
-    if (driveSyncing) return
-    if (!getGoogleOAuthClientId()) {
-      setDriveMsg('尚未啟用 Google 授權同步，請請管理者重新部署最新版 App。')
+    if (!project.driveOwnerConnected) {
+      setDriveMsg(
+        '後台尚未「綁定雲端硬碟擁有者」。請管理者到專案設定完成一次 Google 授權後，現場即可免登同步。',
+      )
       return
     }
+    if (driveSyncing) return
     const ok = window.confirm(
-      `將以「你的 Google 帳號」把「${project.name}」照片同步到雲端硬碟。\n會跳出 Google 授權視窗，請選有該資料夾權限的帳號。\n\n只會補還沒有的照片，不會刪除既有檔案。`,
+      `將把「${project.name}」照片同步到已綁定的雲端硬碟。\n不必登入 Google（使用管理者已授權的帳號）。\n\n只會補還沒有的照片，不會刪除既有檔案。`,
     )
     if (!ok) return
 
     setDriveSyncing(true)
-    setDriveMsg('請在跳出的 Google 視窗完成授權，授權後開始同步…')
+    setDriveMsg('同步中，照片多時可能需要幾分鐘，請勿關閉頁面…')
     try {
-      const res = await syncProjectPhotosToDriveAsUser(project.id)
+      const res = await syncProjectPhotosToDrive(project.id)
       if (!res.ok || !res.result) {
         setDriveMsg(res.error || '同步失敗')
         return
@@ -219,14 +220,16 @@ export function ProfilePage() {
               <TitleHint
                 as="div"
                 style={{ fontWeight: 800 }}
-                hint="用你的 Google 帳號把本專案照片同步到後台綁定的雲端硬碟資料夾，方便現場補建／補傳圖片。"
+                hint="用後台已綁定的雲端硬碟擁有者同步照片；現場不必登入 Google。"
               >
                 同步到雲端硬碟
               </TitleHint>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', marginTop: 4 }}>
-                {project?.driveFolderId
-                  ? '已綁定資料夾；按下方按鈕授權後開始同步'
-                  : '尚未綁定資料夾（請後台管理者先設定）'}
+                {!project?.driveFolderId
+                  ? '尚未綁定資料夾（請後台管理者先設定）'
+                  : project.driveOwnerConnected
+                    ? `已綁定擁有者${project.driveOwnerEmail ? `（${project.driveOwnerEmail}）` : ''}，按下方即可同步（免登 Google）`
+                    : '資料夾已設，但後台尚未綁定擁有者（請管理者先授權一次）'}
               </div>
             </div>
           </div>
@@ -234,11 +237,16 @@ export function ProfilePage() {
             type="button"
             className="btn btn-primary"
             style={{ width: '100%', marginTop: 12 }}
-            disabled={!project?.driveFolderId || driveSyncing || !cloud}
+            disabled={
+              !project?.driveFolderId ||
+              !project?.driveOwnerConnected ||
+              driveSyncing ||
+              !cloud
+            }
             onClick={() => void runDriveSync()}
           >
             <CloudUpload size={16} />
-            {driveSyncing ? '同步中…' : '用我的 Google 帳號同步照片'}
+            {driveSyncing ? '同步中…' : '同步照片到雲端硬碟'}
           </button>
           {project?.driveFolderUrl && (
             <a

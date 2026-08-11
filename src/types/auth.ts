@@ -23,6 +23,10 @@ export interface ProjectMeta {
   driveFolderId?: string
   /** 方便顯示的完整資料夾網址 */
   driveFolderUrl?: string
+  /** 後台已綁定「雲端硬碟擁有者」（現場免各自登 Google） */
+  driveOwnerConnected?: boolean
+  /** 綁定的 Google 帳號（僅顯示用） */
+  driveOwnerEmail?: string
 }
 
 export interface ProjectMember {

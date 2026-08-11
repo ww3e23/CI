@@ -40,6 +40,7 @@ export async function syncProjectMeta(project: ProjectMeta): Promise<boolean> {
       status: project.status,
       driveFolderId: project.driveFolderId ?? null,
       driveFolderUrl: project.driveFolderUrl ?? null,
+      // driveOwner* 由 Cloud Functions 寫入，前端勿覆蓋
       updatedAt: serverTimestamp(),
       mode: 'site-inspection',
     },
@@ -191,6 +192,8 @@ export async function pullAuthDirectory(): Promise<{
         createdAt: String(data.createdAt ?? new Date().toISOString()),
         driveFolderId: data.driveFolderId ? String(data.driveFolderId) : undefined,
         driveFolderUrl: data.driveFolderUrl ? String(data.driveFolderUrl) : undefined,
+        driveOwnerConnected: Boolean(data.driveOwnerConnected),
+        driveOwnerEmail: data.driveOwnerEmail ? String(data.driveOwnerEmail) : undefined,
       }
     })
 

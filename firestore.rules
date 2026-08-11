@@ -44,6 +44,11 @@ service cloud.firestore {
         allow create, update: if signedIn();
         allow delete: if false;
       }
+
+      // refresh token 等敏感資料：僅 Admin SDK（Cloud Functions）可讀寫
+      match /private/{docId} {
+        allow read, write: if false;
+      }
     }
   }
 }

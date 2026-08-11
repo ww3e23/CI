@@ -9,6 +9,10 @@ type TokenClient = {
   requestAccessToken: (override?: { prompt?: string }) => void
 }
 
+type CodeClient = {
+  requestCode: () => void
+}
+
 type GoogleAccounts = {
   accounts: {
     oauth2: {
@@ -22,6 +26,17 @@ type GoogleAccounts = {
           error_description?: string
         }) => void
       }) => TokenClient
+      initCodeClient: (config: {
+        client_id: string
+        scope: string
+        ux_mode?: 'popup' | 'redirect'
+        callback: (resp: {
+          code?: string
+          error?: string
+          error_description?: string
+        }) => void
+        error_callback?: (err: { type?: string; message?: string }) => void
+      }) => CodeClient
     }
   }
 }
@@ -144,4 +159,40 @@ export async function requestGoogleDriveAccessTokenSilent(): Promise<string | nu
   } catch {
     return null
   }
+}
+
+/**
+ * 取得授權碼（給後端換 refresh token）。
+ * 僅後台「綁定雲端硬碟擁有者」使用；現場人員不必呼叫。
+ */
+export async function requestGoogleDriveAuthCode(): Promise<string> {
+  const clientId = getGoogleOAuthClientId()
+  if (!clientId) {
+    throw new Error(
+      '尚未設定 Google OAuth 用戶端 ID（VITE_GOOGLE_OAUTH_CLIENT_ID）。請先在 GCP 建立網頁應用程式用戶端。',
+    )
+  }
+  await loadGis()
+  if (!window.google?.accounts?.oauth2?.initCodeClient) {
+    throw new Error('Google 授權元件未就緒')
+  }
+
+  return new Promise((resolve, reject) => {
+    const client = window.google!.accounts.oauth2.initCodeClient({
+      client_id: clientId,
+      scope: DRIVE_SCOPE,
+      ux_mode: 'popup',
+      callback: (resp) => {
+        if (resp.error || !resp.code) {
+          reject(new Error(resp.error_description || resp.error || 'Google 授權失敗或已取消'))
+          return
+        }
+        resolve(resp.code)
+      },
+      error_callback: (err) => {
+        reject(new Error(err.message || err.type || 'Google 授權視窗關閉或失敗'))
+      },
+    })
+    client.requestCode()
+  })
 }

@@ -3,7 +3,7 @@ import { getFirebaseApp, getFirebaseAuth, isFirebaseConfigured } from '../lib/fi
 import {
   getGoogleOAuthClientId,
   requestGoogleDriveAccessToken,
-  requestGoogleDriveAccessTokenSilent,
+  requestGoogleDriveAuthCode,
 } from '../lib/googleDriveAuth'
 import { useAuthStore } from '../store/useAuthStore'
 
@@ -16,6 +16,13 @@ export type DriveSyncResult = {
   errors: string[]
   clientEmail?: string | null
   folderLayout?: string
+}
+
+export type DriveOwnerConnectResult = {
+  ok: boolean
+  projectId: string
+  email?: string | null
+  reusedRefreshToken?: boolean
 }
 
 async function ensureFirebaseUser() {
@@ -32,26 +39,105 @@ async function ensureFirebaseUser() {
   return { ok: true as const, app }
 }
 
-/** 服務帳戶同步（僅共用雲端硬碟） */
+function cleanError(err: unknown): string {
+  const anyErr = err as { message?: string }
+  const message = anyErr.message || String(err)
+  return message.replace(/^Firebase:\s*/i, '').replace(/\s*\(.*\)$/, '')
+}
+
+/** 後台：綁定專案雲端硬碟擁有者（彈一次 Google，之後現場免登） */
+export async function connectProjectDriveOwner(
+  projectId: string,
+): Promise<{ ok: boolean; result?: DriveOwnerConnectResult; error?: string }> {
+  if (!getGoogleOAuthClientId()) {
+    return {
+      ok: false,
+      error:
+        '尚未設定 Google OAuth 用戶端。請到 GCP 建立「網頁應用程式」用戶端，並把用戶端 ID 設成 VITE_GOOGLE_OAUTH_CLIENT_ID 後重新部署。',
+    }
+  }
+
+  const ready = await ensureFirebaseUser()
+  if (!ready.ok) return ready
+
+  try {
+    const code = await requestGoogleDriveAuthCode()
+    const functions = getFunctions(ready.app, 'asia-east1')
+    const callable = httpsCallable<{ projectId: string; code: string }, DriveOwnerConnectResult>(
+      functions,
+      'connectProjectDriveOwner',
+      { timeout: 60_000 },
+    )
+    const res = await callable({ projectId, code })
+    const email = res.data.email || null
+    if (email || res.data.ok) {
+      const projects = useAuthStore.getState().projects
+      const project = projects.find((p) => p.id === projectId)
+      if (project) {
+        useAuthStore.getState().upsertProject({
+          ...project,
+          driveOwnerConnected: true,
+          driveOwnerEmail: email || project.driveOwnerEmail,
+        })
+      }
+    }
+    return { ok: true, result: res.data }
+  } catch (err) {
+    return { ok: false, error: cleanError(err) }
+  }
+}
+
+/** 後台：解除擁有者綁定 */
+export async function disconnectProjectDriveOwner(
+  projectId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const ready = await ensureFirebaseUser()
+  if (!ready.ok) return ready
+  try {
+    const functions = getFunctions(ready.app, 'asia-east1')
+    const callable = httpsCallable<{ projectId: string }, { ok: boolean }>(
+      functions,
+      'disconnectProjectDriveOwner',
+    )
+    await callable({ projectId })
+    const project = useAuthStore.getState().projects.find((p) => p.id === projectId)
+    if (project) {
+      useAuthStore.getState().upsertProject({
+        ...project,
+        driveOwnerConnected: false,
+        driveOwnerEmail: undefined,
+      })
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: cleanError(err) }
+  }
+}
+
+/**
+ * 現場／後台同步：後端用「已綁定擁有者」寫入雲端硬碟，不彈 Google。
+ * 若尚未綁定擁有者，則僅適用共用雲端硬碟的服務帳戶路徑。
+ */
 export async function syncProjectPhotosToDrive(
   projectId: string,
+  defectIds?: string[],
 ): Promise<{ ok: boolean; result?: DriveSyncResult; error?: string }> {
   const ready = await ensureFirebaseUser()
   if (!ready.ok) return ready
 
   try {
     const functions = getFunctions(ready.app, 'asia-east1')
-    const callable = httpsCallable<{ projectId: string }, DriveSyncResult>(
-      functions,
-      'syncProjectPhotosToDrive',
-      { timeout: 540_000 },
-    )
-    const res = await callable({ projectId })
+    const callable = httpsCallable<
+      { projectId: string; defectIds?: string[] },
+      DriveSyncResult
+    >(functions, 'syncProjectPhotosToDrive', { timeout: 540_000 })
+    const res = await callable({
+      projectId,
+      ...(defectIds && defectIds.length ? { defectIds } : {}),
+    })
     return { ok: true, result: res.data }
   } catch (err) {
-    const anyErr = err as { message?: string }
-    const message = anyErr.message || String(err)
-    return { ok: false, error: message.replace(/^Firebase:\s*/i, '').replace(/\s*\(.*\)$/, '') }
+    return { ok: false, error: cleanError(err) }
   }
 }
 
@@ -76,13 +162,14 @@ async function callUserDriveSync(
     })
     return { ok: true, result: res.data }
   } catch (err) {
-    const anyErr = err as { message?: string }
-    const message = anyErr.message || String(err)
-    return { ok: false, error: message.replace(/^Firebase:\s*/i, '').replace(/\s*\(.*\)$/, '') }
+    return { ok: false, error: cleanError(err) }
   }
 }
 
-/** 用登入者的 Google 帳號同步（適用「我的雲端硬碟」） */
+/**
+ * 後台備援：當場用管理者自己的 Google 帳號同步（不寫入長期擁有者）。
+ * 一般請改用「綁定雲端硬碟擁有者」+「同步到雲端硬碟」。
+ */
 export async function syncProjectPhotosToDriveAsUser(
   projectId: string,
 ): Promise<{ ok: boolean; result?: DriveSyncResult; error?: string }> {
@@ -98,15 +185,13 @@ export async function syncProjectPhotosToDriveAsUser(
     const accessToken = await requestGoogleDriveAccessToken()
     return await callUserDriveSync(projectId, accessToken)
   } catch (err) {
-    const anyErr = err as { message?: string }
-    const message = anyErr.message || String(err)
-    return { ok: false, error: message.replace(/^Firebase:\s*/i, '').replace(/\s*\(.*\)$/, '') }
+    return { ok: false, error: cleanError(err) }
   }
 }
 
 /**
- * 拍照上傳後背景自動同步到「我的雲端硬碟」。
- * 不彈授權窗：需先前按過「用我的 Google 帳號同步」。失敗時靜默略過。
+ * 拍照上傳後背景自動同步。
+ * 已綁定擁有者時：直接呼叫後端，不彈 Google。
  */
 export async function autoSyncDefectPhotosToDrive(params: {
   projectId: string
@@ -114,18 +199,15 @@ export async function autoSyncDefectPhotosToDrive(params: {
 }): Promise<void> {
   const project = useAuthStore.getState().projects.find((p) => p.id === params.projectId)
   if (!project?.driveFolderId) return
-  if (!getGoogleOAuthClientId()) return
 
-  const accessToken = await requestGoogleDriveAccessTokenSilent()
-  if (!accessToken) {
-    console.info('[drive-auto] 尚無 Google 授權快取，略過自動同步（請先按「用我的 Google 帳號同步」一次）')
+  if (project.driveOwnerConnected) {
+    const res = await syncProjectPhotosToDrive(params.projectId, [params.defectId])
+    if (!res.ok) console.warn('[drive-auto] 擁有者自動同步失敗', res.error)
     return
   }
 
-  const res = await callUserDriveSync(params.projectId, accessToken, [params.defectId])
-  if (!res.ok) {
-    console.warn('[drive-auto] 自動同步失敗', res.error)
-  }
+  // 尚未綁定擁有者：略過（避免現場每人被逼登 Google）
+  console.info('[drive-auto] 專案尚未綁定雲端硬碟擁有者，略過自動同步')
 }
 
 export type DriveDeleteResult = {
@@ -138,7 +220,7 @@ export type DriveDeleteResult = {
 
 /**
  * 刪除缺失後，同步把雲端硬碟對應資料夾移到垃圾桶。
- * 先靜默授權；若無快取則彈窗請使用者授權（為了資料正確）。
+ * 已綁定擁有者時不彈 Google；否則才退回個人授權。
  */
 export async function deleteDefectPhotosFromDrive(params: {
   projectId: string
@@ -148,34 +230,44 @@ export async function deleteDefectPhotosFromDrive(params: {
   if (!project?.driveFolderId) {
     return { ok: true, result: { ok: true, skipped: true, reason: 'no-drive-folder' } }
   }
-  if (!getGoogleOAuthClientId()) {
-    return { ok: false, error: '尚未設定 Google OAuth，無法同步刪除雲端硬碟' }
-  }
 
   const ready = await ensureFirebaseUser()
   if (!ready.ok) return ready
 
-  let accessToken = await requestGoogleDriveAccessTokenSilent()
-  if (!accessToken) {
-    try {
-      accessToken = await requestGoogleDriveAccessToken()
-    } catch (err) {
-      const anyErr = err as { message?: string }
-      return {
-        ok: false,
-        error:
-          anyErr.message ||
-          '需要 Google 授權才能同步刪除雲端硬碟資料。請同意授權後再刪一次，或至後台先完成「用我的 Google 帳號同步」。',
-      }
-    }
-  }
-
   try {
     const functions = getFunctions(ready.app, 'asia-east1')
     const callable = httpsCallable<
-      { projectId: string; defectId: string; accessToken: string },
+      { projectId: string; defectId: string; accessToken?: string },
       DriveDeleteResult
     >(functions, 'deleteDefectPhotosFromDriveAsUser', { timeout: 120_000 })
+
+    if (project.driveOwnerConnected) {
+      const res = await callable({
+        projectId: params.projectId,
+        defectId: params.defectId,
+      })
+      return { ok: true, result: res.data }
+    }
+
+    if (!getGoogleOAuthClientId()) {
+      return {
+        ok: false,
+        error: '此專案尚未綁定雲端硬碟擁有者，且未設定 Google OAuth，無法同步刪除',
+      }
+    }
+
+    let accessToken: string
+    try {
+      accessToken = await requestGoogleDriveAccessToken()
+    } catch (err) {
+      return {
+        ok: false,
+        error:
+          (err as Error)?.message ||
+          '需要 Google 授權才能同步刪除。請請後台管理者先完成「綁定雲端硬碟擁有者」。',
+      }
+    }
+
     const res = await callable({
       projectId: params.projectId,
       defectId: params.defectId,
@@ -183,8 +275,6 @@ export async function deleteDefectPhotosFromDrive(params: {
     })
     return { ok: true, result: res.data }
   } catch (err) {
-    const anyErr = err as { message?: string }
-    const message = anyErr.message || String(err)
-    return { ok: false, error: message.replace(/^Firebase:\s*/i, '').replace(/\s*\(.*\)$/, '') }
+    return { ok: false, error: cleanError(err) }
   }
 }

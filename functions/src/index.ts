@@ -18,6 +18,16 @@ import {
   trashDriveItem,
   type DriveClient,
 } from './driveFolders'
+import {
+  clearDriveOwner,
+  createOAuth2Client,
+  exchangeAuthCode,
+  getDriveClientFromOwner,
+  googleOAuthClientSecret,
+  loadDriveOwner,
+  saveDriveOwner,
+  tryGetDriveClientFromOwner,
+} from './driveOwnerAuth'
 
 initializeApp()
 
@@ -185,6 +195,7 @@ export const mirrorDefectPhotoToDrive = onObjectFinalized(
     region: 'us-east1',
     memory: '512MiB',
     timeoutSeconds: 120,
+    secrets: [googleOAuthClientSecret],
   },
   async (event) => {
     const object = event.data
@@ -219,7 +230,13 @@ export const mirrorDefectPhotoToDrive = onObjectFinalized(
       return
     }
 
-    const { drive, clientEmail } = await getDriveClient()
+    const ownerDrive = await tryGetDriveClientFromOwner({
+      projectId,
+      clientSecret: googleOAuthClientSecret.value(),
+    })
+    const { drive, clientEmail } = ownerDrive
+      ? { drive: ownerDrive.drive, clientEmail: ownerDrive.email }
+      : await getDriveClient()
     const items = await loadChecklistItems(projectId)
     let folderId: string
     try {
@@ -427,7 +444,11 @@ function requireDriveFolderId(value: unknown): string {
   return value
 }
 
-/** 服務帳戶同步：僅適用共用雲端硬碟 */
+/**
+ * 同步照片到雲端硬碟。
+ * 優先使用「專案擁有者」refresh token（現場免登 Google）；
+ * 否則退回服務帳戶（僅共用雲端硬碟）。
+ */
 export const syncProjectPhotosToDrive = onCall(
   {
     region: 'asia-east1',
@@ -435,6 +456,7 @@ export const syncProjectPhotosToDrive = onCall(
     timeoutSeconds: 540,
     cors: true,
     invoker: 'public',
+    secrets: [googleOAuthClientSecret],
   },
   async (request) => {
     if (!request.auth?.uid) {
@@ -442,10 +464,29 @@ export const syncProjectPhotosToDrive = onCall(
     }
     const projectId = String(request.data?.projectId ?? '').trim()
     if (!projectId) throw new HttpsError('invalid-argument', '缺少 projectId')
+    const rawDefectIds = request.data?.defectIds
+    const defectIds = Array.isArray(rawDefectIds)
+      ? rawDefectIds.map((id: unknown) => String(id ?? '').trim()).filter(Boolean)
+      : undefined
 
     const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
     if (!projectSnap.exists) throw new HttpsError('not-found', '找不到此專案')
     const driveFolderId = requireDriveFolderId(projectSnap.get('driveFolderId'))
+
+    const ownerDrive = await tryGetDriveClientFromOwner({
+      projectId,
+      clientSecret: googleOAuthClientSecret.value(),
+    })
+    if (ownerDrive) {
+      return runPhotoSync({
+        projectId,
+        driveFolderId,
+        drive: ownerDrive.drive,
+        actorLabel: ownerDrive.email ? `owner:${ownerDrive.email}` : 'owner-oauth',
+        requireSharedDrive: false,
+        defectIds,
+      })
+    }
 
     const { drive, clientEmail } = await getDriveClient()
     return runPhotoSync({
@@ -454,7 +495,112 @@ export const syncProjectPhotosToDrive = onCall(
       drive,
       actorLabel: clientEmail,
       requireSharedDrive: true,
+      defectIds,
     })
+  },
+)
+
+/** 後台：用授權碼綁定專案雲端硬碟擁有者（只需一次） */
+export const connectProjectDriveOwner = onCall(
+  {
+    region: 'asia-east1',
+    memory: '256MiB',
+    timeoutSeconds: 60,
+    cors: true,
+    invoker: 'public',
+    secrets: [googleOAuthClientSecret],
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', '請先登入後再綁定雲端硬碟')
+    }
+    const projectId = String(request.data?.projectId ?? '').trim()
+    const code = String(request.data?.code ?? '').trim()
+    if (!projectId) throw new HttpsError('invalid-argument', '缺少 projectId')
+    if (!code) throw new HttpsError('invalid-argument', '缺少 Google 授權碼')
+
+    const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
+    if (!projectSnap.exists) throw new HttpsError('not-found', '找不到此專案')
+    const driveFolderId = requireDriveFolderId(projectSnap.get('driveFolderId'))
+
+    let exchanged: Awaited<ReturnType<typeof exchangeAuthCode>>
+    try {
+      exchanged = await exchangeAuthCode({
+        code,
+        clientSecret: googleOAuthClientSecret.value(),
+      })
+    } catch (err) {
+      throw new HttpsError(
+        'invalid-argument',
+        `Google 授權碼兌換失敗：${String((err as Error)?.message ?? err)}`,
+      )
+    }
+
+    const existing = await loadDriveOwner(projectId)
+    const refreshToken = exchanged.refreshToken || existing?.refreshToken || null
+    if (!refreshToken) {
+      throw new HttpsError(
+        'failed-precondition',
+        '未取得長期授權（refresh token）。請到 https://myaccount.google.com/permissions 移除此應用程式存取權後，再按一次「綁定雲端硬碟擁有者」。',
+      )
+    }
+
+    const oauth2 = createOAuth2Client(googleOAuthClientSecret.value())
+    oauth2.setCredentials(
+      exchanged.accessToken
+        ? { access_token: exchanged.accessToken, refresh_token: refreshToken }
+        : { refresh_token: refreshToken },
+    )
+    const drive = google.drive({ version: 'v3', auth: oauth2 })
+    try {
+      await drive.files.get({
+        fileId: driveFolderId,
+        fields: 'id,name',
+        supportsAllDrives: true,
+      })
+    } catch (err) {
+      throw new HttpsError(
+        'permission-denied',
+        `授權的 Google 帳號無法存取綁定資料夾。請用擁有／可編輯該資料夾的帳號授權。（${String(
+          (err as Error)?.message ?? err,
+        )}）`,
+      )
+    }
+
+    await saveDriveOwner(projectId, {
+      refreshToken,
+      email: exchanged.email || existing?.email || null,
+      connectedAt: new Date().toISOString(),
+      connectedByUid: request.auth.uid,
+      connectedByEmail: request.auth.token.email ? String(request.auth.token.email) : null,
+    })
+
+    return {
+      ok: true,
+      projectId,
+      email: exchanged.email || existing?.email || null,
+      reusedRefreshToken: !exchanged.refreshToken,
+    }
+  },
+)
+
+/** 後台：解除專案雲端硬碟擁有者綁定 */
+export const disconnectProjectDriveOwner = onCall(
+  {
+    region: 'asia-east1',
+    memory: '256MiB',
+    timeoutSeconds: 30,
+    cors: true,
+    invoker: 'public',
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', '請先登入')
+    }
+    const projectId = String(request.data?.projectId ?? '').trim()
+    if (!projectId) throw new HttpsError('invalid-argument', '缺少 projectId')
+    await clearDriveOwner(projectId)
+    return { ok: true, projectId }
   },
 )
 
@@ -523,6 +669,7 @@ export const deleteDefectPhotosFromDriveAsUser = onCall(
     timeoutSeconds: 120,
     cors: true,
     invoker: 'public',
+    secrets: [googleOAuthClientSecret],
   },
   async (request) => {
     if (!request.auth?.uid) {
@@ -534,7 +681,6 @@ export const deleteDefectPhotosFromDriveAsUser = onCall(
     const accessToken = String(request.data?.accessToken ?? '').trim()
     if (!projectId) throw new HttpsError('invalid-argument', '缺少 projectId')
     if (!defectId) throw new HttpsError('invalid-argument', '缺少 defectId')
-    if (!accessToken) throw new HttpsError('invalid-argument', '缺少 Google 授權')
 
     const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
     if (!projectSnap.exists) throw new HttpsError('not-found', '找不到此專案')
@@ -553,9 +699,18 @@ export const deleteDefectPhotosFromDriveAsUser = onCall(
     if (!defectSnap.exists) throw new HttpsError('not-found', '找不到此缺失')
     const defect = { id: defectId, ...(defectSnap.data() as Omit<DefectRow, 'id'>) }
 
-    const oauth2 = new google.auth.OAuth2()
-    oauth2.setCredentials({ access_token: accessToken })
-    const drive = google.drive({ version: 'v3', auth: oauth2 })
+    let drive: DriveClient
+    if (accessToken) {
+      const oauth2 = new google.auth.OAuth2()
+      oauth2.setCredentials({ access_token: accessToken })
+      drive = google.drive({ version: 'v3', auth: oauth2 })
+    } else {
+      const owner = await getDriveClientFromOwner({
+        projectId,
+        clientSecret: googleOAuthClientSecret.value(),
+      })
+      drive = owner.drive
+    }
 
     try {
       await drive.files.get({
