@@ -69,17 +69,125 @@ export async function findChildFolder(
   parentId: string,
   name: string,
 ): Promise<string | null> {
+  const all = await findChildFoldersByName(drive, parentId, name)
+  return all[0]?.id ?? null
+}
+
+export async function findChildFoldersByName(
+  drive: DriveClient,
+  parentId: string,
+  name: string,
+): Promise<Array<{ id: string; name: string }>> {
   const safe = sanitizeDriveName(name)
   const escaped = safe.replace(/'/g, "\\'")
+  const out: Array<{ id: string; name: string }> = []
+  let pageToken: string | undefined
+  do {
+    const res = await drive.files.list({
+      q: `'${parentId}' in parents and name = '${escaped}' and mimeType = '${FOLDER_MIME}' and trashed = false`,
+      fields: 'nextPageToken, files(id, name, createdTime)',
+      pageSize: 100,
+      pageToken,
+      orderBy: 'createdTime',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+      corpora: 'allDrives',
+    })
+    for (const f of res.data.files ?? []) {
+      if (!f.id || !f.name) continue
+      out.push({ id: f.id, name: f.name })
+    }
+    pageToken = res.data.nextPageToken ?? undefined
+  } while (pageToken)
+  return out
+}
+
+export async function listChildFolders(
+  drive: DriveClient,
+  parentId: string,
+): Promise<Array<{ id: string; name: string; defectId?: string }>> {
+  const out: Array<{ id: string; name: string; defectId?: string }> = []
+  let pageToken: string | undefined
+  do {
+    const res = await drive.files.list({
+      q: `'${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`,
+      fields: 'nextPageToken, files(id, name, appProperties, createdTime)',
+      pageSize: 200,
+      pageToken,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+      corpora: 'allDrives',
+    })
+    for (const f of res.data.files ?? []) {
+      if (!f.id || !f.name) continue
+      out.push({
+        id: f.id,
+        name: f.name,
+        defectId: f.appProperties?.defectId || undefined,
+      })
+    }
+    pageToken = res.data.nextPageToken ?? undefined
+  } while (pageToken)
+  return out
+}
+
+async function findChildFolderByDefectId(
+  drive: DriveClient,
+  parentId: string,
+  defectId: string,
+): Promise<{ id: string; name: string } | null> {
+  const safeId = defectId.replace(/'/g, "\\'")
   const res = await drive.files.list({
-    q: `'${parentId}' in parents and name = '${escaped}' and mimeType = '${FOLDER_MIME}' and trashed = false`,
+    q:
+      `'${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false` +
+      ` and appProperties has { key='defectId' and value='${safeId}' }`,
     fields: 'files(id, name)',
-    pageSize: 5,
+    pageSize: 10,
     supportsAllDrives: true,
     includeItemsFromAllDrives: true,
     corpora: 'allDrives',
   })
-  return res.data.files?.[0]?.id ?? null
+  const f = res.data.files?.[0]
+  if (!f?.id) return null
+  return { id: f.id, name: f.name || '' }
+}
+
+async function setFolderDefectProps(
+  drive: DriveClient,
+  folderId: string,
+  props: { defectId: string; projectId?: string },
+): Promise<void> {
+  await drive.files.update({
+    fileId: folderId,
+    requestBody: {
+      appProperties: {
+        defectId: props.defectId,
+        ...(props.projectId ? { projectId: props.projectId } : {}),
+      },
+    },
+    supportsAllDrives: true,
+  })
+}
+
+/** 同名資料夾只留一個，其餘丟垃圾桶（解決競態重複） */
+export async function dedupeChildFoldersByName(
+  drive: DriveClient,
+  parentId: string,
+  name: string,
+  keepId?: string | null,
+): Promise<string | null> {
+  const all = await findChildFoldersByName(drive, parentId, name)
+  if (all.length === 0) return null
+  const keep = keepId && all.some((f) => f.id === keepId) ? keepId : all[0].id
+  for (const f of all) {
+    if (f.id === keep) continue
+    try {
+      await trashDriveItem(drive, f.id)
+    } catch {
+      /* ignore */
+    }
+  }
+  return keep
 }
 
 export async function ensureChildFolder(
@@ -87,9 +195,15 @@ export async function ensureChildFolder(
   parentId: string,
   name: string,
 ): Promise<string> {
-  const existing = await findChildFolder(drive, parentId, name)
-  if (existing) return existing
   const safe = sanitizeDriveName(name)
+  const existing = await findChildFoldersByName(drive, parentId, safe)
+  if (existing.length > 0) {
+    if (existing.length > 1) {
+      return (await dedupeChildFoldersByName(drive, parentId, safe, existing[0].id)) || existing[0].id
+    }
+    return existing[0].id
+  }
+
   const created = await drive.files.create({
     requestBody: {
       name: safe,
@@ -100,7 +214,63 @@ export async function ensureChildFolder(
     supportsAllDrives: true,
   })
   if (!created.data.id) throw new Error(`建立資料夾失敗：${safe}`)
-  return created.data.id
+
+  // 競態下可能同時新建 → 再建一次去重
+  const kept = await dedupeChildFoldersByName(drive, parentId, safe, created.data.id)
+  return kept || created.data.id
+}
+
+/**
+ * 葉層（一筆缺失一個資料夾）：以 defectId 為準，避免同名重複與刪不乾淨。
+ */
+export async function ensureDefectLeafFolder(
+  drive: DriveClient,
+  categoryFolderId: string,
+  itemFolderName: string,
+  meta: { defectId: string; projectId?: string },
+): Promise<string> {
+  const safe = sanitizeDriveName(itemFolderName || '00_未指定細項')
+  const byId = await findChildFolderByDefectId(drive, categoryFolderId, meta.defectId)
+  if (byId) {
+    if (byId.name !== safe) {
+      try {
+        await renameDriveItem(drive, byId.id, safe)
+      } catch {
+        /* ignore rename race */
+      }
+    }
+    await dedupeChildFoldersByName(drive, categoryFolderId, safe, byId.id)
+    return byId.id
+  }
+
+  const sameName = await findChildFoldersByName(drive, categoryFolderId, safe)
+  if (sameName.length > 0) {
+    const keep = sameName[0].id
+    try {
+      await setFolderDefectProps(drive, keep, meta)
+    } catch {
+      /* ignore */
+    }
+    await dedupeChildFoldersByName(drive, categoryFolderId, safe, keep)
+    return keep
+  }
+
+  const created = await drive.files.create({
+    requestBody: {
+      name: safe,
+      mimeType: FOLDER_MIME,
+      parents: [categoryFolderId],
+      appProperties: {
+        defectId: meta.defectId,
+        ...(meta.projectId ? { projectId: meta.projectId } : {}),
+      },
+    },
+    fields: 'id',
+    supportsAllDrives: true,
+  })
+  if (!created.data.id) throw new Error(`建立資料夾失敗：${safe}`)
+  const kept = await dedupeChildFoldersByName(drive, categoryFolderId, safe, created.data.id)
+  return kept || created.data.id
 }
 
 /** 棟別／樓層／戶別／大項／小項（編號開頭） */
@@ -113,13 +283,41 @@ export async function ensureDefectFolderPath(
     unitCode: string
     categoryName: string
     itemFolderName: string
+    defectId?: string
+    projectId?: string
   },
 ): Promise<string> {
   const buildingId = await ensureChildFolder(drive, rootFolderId, parts.buildingName || '未指定棟別')
   const floorId = await ensureChildFolder(drive, buildingId, parts.floor || '未指定樓層')
   const unitId = await ensureChildFolder(drive, floorId, parts.unitCode || '未指定戶別')
   const categoryId = await ensureChildFolder(drive, unitId, parts.categoryName || '未指定大項')
+  if (parts.defectId) {
+    return ensureDefectLeafFolder(drive, categoryId, parts.itemFolderName || '00_未指定細項', {
+      defectId: parts.defectId,
+      projectId: parts.projectId,
+    })
+  }
   return ensureChildFolder(drive, categoryId, parts.itemFolderName || '00_未指定細項')
+}
+
+/** 只查找大項層（不建立） */
+export async function findCategoryFolderPath(
+  drive: DriveClient,
+  rootFolderId: string,
+  parts: {
+    buildingName: string
+    floor: string
+    unitCode: string
+    categoryName: string
+  },
+): Promise<string | null> {
+  const buildingId = await findChildFolder(drive, rootFolderId, parts.buildingName || '未指定棟別')
+  if (!buildingId) return null
+  const floorId = await findChildFolder(drive, buildingId, parts.floor || '未指定樓層')
+  if (!floorId) return null
+  const unitId = await findChildFolder(drive, floorId, parts.unitCode || '未指定戶別')
+  if (!unitId) return null
+  return findChildFolder(drive, unitId, parts.categoryName || '未指定大項')
 }
 
 /** 只查找、不建立：回傳葉層資料夾 id（找不到則 null） */
@@ -133,16 +331,16 @@ export async function findDefectFolderPath(
     categoryName: string
     /** 可能的葉層名稱（含舊版命名） */
     itemFolderNames: string[]
+    defectId?: string
   },
 ): Promise<string | null> {
-  const buildingId = await findChildFolder(drive, rootFolderId, parts.buildingName || '未指定棟別')
-  if (!buildingId) return null
-  const floorId = await findChildFolder(drive, buildingId, parts.floor || '未指定樓層')
-  if (!floorId) return null
-  const unitId = await findChildFolder(drive, floorId, parts.unitCode || '未指定戶別')
-  if (!unitId) return null
-  const categoryId = await findChildFolder(drive, unitId, parts.categoryName || '未指定大項')
+  const categoryId = await findCategoryFolderPath(drive, rootFolderId, parts)
   if (!categoryId) return null
+
+  if (parts.defectId) {
+    const byId = await findChildFolderByDefectId(drive, categoryId, parts.defectId)
+    if (byId) return byId.id
+  }
 
   const tried = new Set<string>()
   for (const raw of parts.itemFolderNames) {
@@ -153,6 +351,49 @@ export async function findDefectFolderPath(
     if (leafId) return leafId
   }
   return null
+}
+
+/** 列出大項下所有可能屬於此缺失的葉層（含同名重複） */
+export async function findAllDefectLeafFolders(
+  drive: DriveClient,
+  rootFolderId: string,
+  parts: {
+    buildingName: string
+    floor: string
+    unitCode: string
+    categoryName: string
+    itemFolderNames: string[]
+    defectId: string
+    defectNumber: number
+  },
+): Promise<string[]> {
+  const categoryId = await findCategoryFolderPath(drive, rootFolderId, parts)
+  if (!categoryId) return []
+
+  const children = await listChildFolders(drive, categoryId)
+  const candidates = new Set(
+    parts.itemFolderNames.map((n) => sanitizeDriveName(n || '')).filter(Boolean),
+  )
+  const prefix = `#${parts.defectNumber}`
+  const ids = new Set<string>()
+
+  for (const child of children) {
+    if (child.defectId && child.defectId === parts.defectId) {
+      ids.add(child.id)
+      continue
+    }
+    if (child.defectId && child.defectId !== parts.defectId) continue
+    if (candidates.has(sanitizeDriveName(child.name))) {
+      ids.add(child.id)
+      continue
+    }
+    // 無 defectId 標記的舊資料夾：同編號開頭也清掉（避免刪不乾淨／重複）
+    const name = child.name.trim()
+    if (!child.defectId && (name === prefix || name.startsWith(`${prefix} `))) {
+      ids.add(child.id)
+    }
+  }
+  return [...ids]
 }
 
 /** 移到雲端硬碟垃圾桶（支援共用碟） */

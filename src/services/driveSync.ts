@@ -314,7 +314,7 @@ export type DriveDeleteResult = {
 
 /**
  * 刪除缺失後，同步把雲端硬碟對應資料夾移到垃圾桶。
- * 已綁定擁有者時不彈 Google；否則才退回個人授權。
+ * 不依前端 driveOwnerConnected 旗標擋下——改由後端判斷。
  */
 export async function deleteDefectPhotosFromDrive(params: {
   projectId: string
@@ -335,39 +335,36 @@ export async function deleteDefectPhotosFromDrive(params: {
       DriveDeleteResult
     >(functions, 'deleteDefectPhotosFromDriveAsUser', { timeout: 120_000 })
 
-    if (project.driveOwnerConnected) {
+    // 優先走擁有者 token（後端）；失敗再退回現場授權
+    try {
       const res = await callable({
         projectId: params.projectId,
         defectId: params.defectId,
       })
       return { ok: true, result: res.data }
-    }
-
-    if (!getGoogleOAuthClientId()) {
-      return {
-        ok: false,
-        error: '此專案尚未綁定雲端硬碟擁有者，且未設定 Google OAuth，無法同步刪除',
+    } catch (ownerErr) {
+      if (!getGoogleOAuthClientId()) {
+        return { ok: false, error: cleanError(ownerErr) }
       }
-    }
-
-    let accessToken: string
-    try {
-      accessToken = await requestGoogleDriveAccessToken()
-    } catch (err) {
-      return {
-        ok: false,
-        error:
-          (err as Error)?.message ||
-          '需要 Google 授權才能同步刪除。請請後台管理者先完成「綁定雲端硬碟擁有者」。',
+      let accessToken: string
+      try {
+        accessToken = await requestGoogleDriveAccessToken()
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            (err as Error)?.message ||
+            cleanError(ownerErr) ||
+            '雲端硬碟同步刪除失敗，請請後台確認已綁定擁有者',
+        }
       }
+      const res = await callable({
+        projectId: params.projectId,
+        defectId: params.defectId,
+        accessToken,
+      })
+      return { ok: true, result: res.data }
     }
-
-    const res = await callable({
-      projectId: params.projectId,
-      defectId: params.defectId,
-      accessToken,
-    })
-    return { ok: true, result: res.data }
   } catch (err) {
     return { ok: false, error: cleanError(err) }
   }

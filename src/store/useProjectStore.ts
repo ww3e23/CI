@@ -522,22 +522,26 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             console.warn('[deleteDefect] sync failed', err)
             return { ok: true, error: '已本機刪除，雲端同步失敗' }
           }
+          // Firestore 觸發器會清 Drive；這裡再強制清一次（含同名重複資料夾）
           try {
             const driveDel = await deleteDefectPhotosFromDrive({
               projectId,
               defectId,
             })
             if (!driveDel.ok) {
+              // 再試 reconcile（作廢路徑）
+              await autoSyncDefectPhotosToDrive({ projectId, defectId }).catch(() => undefined)
               return {
                 ok: true,
-                error: `已刪除缺失紀錄，但雲端硬碟同步刪除失敗：${driveDel.error || '未知錯誤'}`,
+                error: `已刪除缺失紀錄，雲端硬碟稍後會再自動清除：${driveDel.error || '未知錯誤'}`,
               }
             }
           } catch (err) {
             console.warn('[deleteDefect] drive trash failed', err)
+            void autoSyncDefectPhotosToDrive({ projectId, defectId }).catch(() => undefined)
             return {
               ok: true,
-              error: '已刪除缺失紀錄，但雲端硬碟同步刪除失敗',
+              error: '已刪除缺失紀錄，雲端硬碟稍後會再自動清除',
             }
           }
         }

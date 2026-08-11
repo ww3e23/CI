@@ -16,6 +16,7 @@ import {
   buildItemFolderNameCandidates,
   ensureCategoryFolderPath,
   ensureDefectFolderPath,
+  findAllDefectLeafFolders,
   findDefectFolderPath,
   getDriveClient,
   getDriveItemMeta,
@@ -84,6 +85,7 @@ async function resolveLeafFolder(
   rootFolderId: string,
   defect: DefectRow,
   items: Map<string, ChecklistItemRow>,
+  projectId?: string,
 ): Promise<string> {
   const item = defect.checklistItemId ? items.get(defect.checklistItemId) : undefined
   const itemFolderName = buildItemFolderName({
@@ -100,6 +102,8 @@ async function resolveLeafFolder(
     unitCode: String(defect.unitCode ?? '未指定戶別'),
     categoryName: String(defect.categoryName ?? '未指定大項'),
     itemFolderName,
+    defectId: defect.id,
+    projectId,
   })
 }
 
@@ -113,28 +117,50 @@ async function trashDefectDriveData(params: {
   let trashedFolder = false
   let trashedFiles = 0
 
-  const knownFolderId = String(defect.driveLeafFolderId || '').trim()
-  let folderId = knownFolderId || null
+  const item = defect.checklistItemId ? items.get(defect.checklistItemId) : undefined
+  const candidates = buildItemFolderNameCandidates({
+    itemSortOrder: item?.sortOrder,
+    itemDescription: item?.description,
+    defectNumber: Number(defect.defectNumber ?? 0),
+    defectDescription: String(defect.description ?? ''),
+    categoryName: String(defect.categoryName ?? ''),
+    area: String(defect.area ?? ''),
+  })
 
-  if (!folderId) {
-    const item = defect.checklistItemId ? items.get(defect.checklistItemId) : undefined
-    folderId = await findDefectFolderPath(drive, rootFolderId, {
+  const folderIds = new Set<string>()
+  const knownFolderId = String(defect.driveLeafFolderId || '').trim()
+  if (knownFolderId) folderIds.add(knownFolderId)
+
+  try {
+    const found = await findAllDefectLeafFolders(drive, rootFolderId, {
       buildingName: String(defect.buildingName ?? '未指定棟別'),
       floor: String(defect.floor ?? '未指定樓層'),
       unitCode: String(defect.unitCode ?? '未指定戶別'),
       categoryName: String(defect.categoryName ?? '未指定大項'),
-      itemFolderNames: buildItemFolderNameCandidates({
-        itemSortOrder: item?.sortOrder,
-        itemDescription: item?.description,
-        defectNumber: Number(defect.defectNumber ?? 0),
-        defectDescription: String(defect.description ?? ''),
-        categoryName: String(defect.categoryName ?? ''),
-        area: String(defect.area ?? ''),
-      }),
+      itemFolderNames: candidates,
+      defectId: defect.id,
+      defectNumber: Number(defect.defectNumber ?? 0),
     })
+    for (const id of found) folderIds.add(id)
+  } catch (err) {
+    logger.warn('findAllDefectLeafFolders failed', { defectId: defect.id, err })
+    // 後援：至少找一個
+    try {
+      const one = await findDefectFolderPath(drive, rootFolderId, {
+        buildingName: String(defect.buildingName ?? '未指定棟別'),
+        floor: String(defect.floor ?? '未指定樓層'),
+        unitCode: String(defect.unitCode ?? '未指定戶別'),
+        categoryName: String(defect.categoryName ?? '未指定大項'),
+        itemFolderNames: candidates,
+        defectId: defect.id,
+      })
+      if (one) folderIds.add(one)
+    } catch {
+      /* ignore */
+    }
   }
 
-  if (folderId) {
+  for (const folderId of folderIds) {
     try {
       const files = await listFolderFiles(drive, folderId)
       for (const f of files) {
@@ -149,23 +175,18 @@ async function trashDefectDriveData(params: {
       trashedFolder = true
     } catch (err) {
       logger.warn('trash folder failed', { folderId, err })
-      // 再試一次：至少丟掉已知的最後一個檔
-      const lastFile = String(defect.driveLastFileId || '').trim()
-      if (lastFile) {
-        try {
-          await trashDriveItem(drive, lastFile)
-          trashedFiles += 1
-        } catch {
-          /* ignore */
-        }
-      }
-      throw err
     }
-  } else {
+  }
+
+  if (!trashedFolder) {
     const lastFile = String(defect.driveLastFileId || '').trim()
     if (lastFile) {
-      await trashDriveItem(drive, lastFile)
-      trashedFiles += 1
+      try {
+        await trashDriveItem(drive, lastFile)
+        trashedFiles += 1
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -327,7 +348,7 @@ export const mirrorDefectPhotoToDrive = onObjectFinalized(
     const items = await loadChecklistItems(projectId)
     let folderId: string
     try {
-      folderId = await resolveLeafFolder(drive, driveFolderId, defect, items)
+      folderId = await resolveLeafFolder(drive, driveFolderId, defect, items, projectId)
     } catch (err) {
       logger.error('ensure folder failed', { err, clientEmail, driveFolderId })
       throw err
@@ -467,7 +488,7 @@ async function runPhotoSync(params: {
     let folderId = folderCache.get(cacheKey)
     if (!folderId) {
       try {
-        folderId = await resolveLeafFolder(drive, driveFolderId, defect, items)
+        folderId = await resolveLeafFolder(drive, driveFolderId, defect, items, projectId)
         folderCache.set(cacheKey, folderId)
       } catch (err) {
         const msg = String((err as Error)?.message ?? err)
@@ -1023,7 +1044,40 @@ async function reconcileOneDefectOnDrive(params: {
       unitCode: String(defect.unitCode ?? '未指定戶別'),
       categoryName: String(defect.categoryName ?? '未指定大項'),
       itemFolderName: desiredName,
+      defectId: defect.id,
+      projectId,
     })
+  } else {
+    // 既有葉層：清掉同名／同編號的重複資料夾
+    try {
+      const item = defect.checklistItemId ? items.get(defect.checklistItemId) : undefined
+      const extras = await findAllDefectLeafFolders(drive, driveFolderId, {
+        buildingName: String(defect.buildingName ?? '未指定棟別'),
+        floor: String(defect.floor ?? '未指定樓層'),
+        unitCode: String(defect.unitCode ?? '未指定戶別'),
+        categoryName: String(defect.categoryName ?? '未指定大項'),
+        itemFolderNames: buildItemFolderNameCandidates({
+          itemSortOrder: item?.sortOrder,
+          itemDescription: item?.description,
+          defectNumber: Number(defect.defectNumber ?? 0),
+          defectDescription: String(defect.description ?? ''),
+          categoryName: String(defect.categoryName ?? ''),
+          area: String(defect.area ?? ''),
+        }),
+        defectId: defect.id,
+        defectNumber: Number(defect.defectNumber ?? 0),
+      })
+      for (const extraId of extras) {
+        if (extraId === folderId) continue
+        try {
+          await trashDriveItem(drive, extraId)
+        } catch (err) {
+          logger.warn('trash duplicate leaf failed', { extraId, err })
+        }
+      }
+    } catch (err) {
+      logger.warn('dedupe leaf folders failed', { defectId: defect.id, err })
+    }
   }
 
   const prefix = `projects/${projectId}/defects/${defect.id}/`
@@ -1348,18 +1402,21 @@ export const cleanupVoidedDefectDrives = onSchedule(
       const voidedSnap = await getFirestore()
         .collection(`projects/${projectId}/defects`)
         .where('status', '==', 'voided')
-        .limit(80)
+        .limit(200)
         .get()
 
       for (const doc of voidedSnap.docs) {
         const data = doc.data()
-        // 只處理近 5 分鐘有動作、或仍留有 Drive 痕跡的作廢筆
         const recent = defectActivityMillis(data) >= cutoff
+        const alreadyCleaned = Boolean(String(data.driveDeletedAt || '').trim())
         const hasDriveHint =
           Boolean(String(data.driveLeafFolderId || '').trim()) ||
           Boolean(String(data.driveLastFileId || '').trim())
-        if (!recent && !hasDriveHint) continue
-        if (!hasDriveHint) continue
+        // 已標記清過且無殘留 hint、又非近期動作 → 略過
+        if (alreadyCleaned && !hasDriveHint && !recent) continue
+        // 非近期且完全沒 hint、也沒編號可查 → 略過（避免全掃太重）；有編號仍嘗試清
+        if (!recent && !hasDriveHint && !Number(data.defectNumber)) continue
+
         const defect = { id: doc.id, ...(data as Omit<DefectRow, 'id'>) }
         try {
           const result = await trashDefectDriveData({
@@ -1368,7 +1425,7 @@ export const cleanupVoidedDefectDrives = onSchedule(
             defect,
             items,
           })
-          if (result.trashedFolder || result.trashedFiles > 0) {
+          if (result.trashedFolder || result.trashedFiles > 0 || !alreadyCleaned) {
             cleaned += 1
             await doc.ref.set(
               {
