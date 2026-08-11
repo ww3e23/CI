@@ -47,6 +47,8 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
+        // 主包含 exceljs 等，超過預設 2MiB 會讓整次 Pages 部署失敗
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         // HTML 優先打網路，減少手機 PWA 一直吃到舊 index
         runtimeCaching: [
           {

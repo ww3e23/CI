@@ -51,16 +51,28 @@ export function UpdateAppBanner() {
   )
 }
 
-export function forceReloadApp() {
+/** 強制清掉 Service Worker＋Cache，再硬重載最新版（避免只改 URL 仍吃舊 SW） */
+export async function forceReloadApp() {
   try {
-    if ('caches' in window) {
-      void caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(regs.map((r) => r.unregister()))
     }
   } catch {
     /* ignore */
   }
+  try {
+    if ('caches' in window) {
+      const keys = await caches.keys()
+      await Promise.all(keys.map((k) => caches.delete(k)))
+    }
+  } catch {
+    /* ignore */
+  }
+
   const url = new URL(window.location.href)
   url.searchParams.set('v', APP_VERSION)
   url.searchParams.set('_', String(Date.now()))
+  // 用 replace 避免回來又進舊頁；hash（如 #/）保留
   window.location.replace(url.toString())
 }

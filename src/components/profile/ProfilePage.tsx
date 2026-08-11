@@ -348,10 +348,13 @@ export function ProfilePage() {
           type="button"
           className="btn btn-primary"
           style={{ width: '100%', marginTop: 12 }}
-          onClick={() => forceReloadApp()}
+          onClick={() => void forceReloadApp()}
         >
-          <RefreshCw size={16} /> 重新載入最新版
+          <RefreshCw size={16} /> 強制更新最新版
         </button>
+        <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>
+          會清除快取與離線服務後重載；更新後版本號應變成最新。
+        </div>
       </section>
 
       <section className="glass" style={{ padding: 14, marginBottom: 14 }}>
