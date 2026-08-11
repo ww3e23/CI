@@ -72,7 +72,9 @@ export function ProfilePage() {
       const errHint =
         r.errors.length > 0 ? `；部分失敗 ${r.errors.length} 筆` : ''
       setDriveMsg(
-        `同步完成：新增 ${r.uploaded} 張、略過已存在 ${r.skipped} 張、掃描 ${r.scanned} 張${errHint}`,
+        `同步完成：新增 ${r.uploaded} 張、略過已存在 ${r.skipped} 張、掃描 ${r.scanned} 張` +
+          (r.cleanedVoided ? `、清除已刪除 ${r.cleanedVoided} 筆` : '') +
+          errHint,
       )
     } catch (err) {
       setDriveMsg(String((err as Error)?.message ?? err))

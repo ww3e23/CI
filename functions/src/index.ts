@@ -315,13 +315,43 @@ async function runPhotoSync(params: {
   let uploaded = 0
   let skipped = 0
   let scanned = 0
+  let cleanedVoided = 0
   const errors: string[] = []
   const folderCache = new Map<string, string>()
 
   for (const doc of defectsSnap.docs) {
     if (defectIdFilter && !defectIdFilter.has(doc.id)) continue
     const defect: DefectRow = { id: doc.id, ...(doc.data() as Omit<DefectRow, 'id'>) }
-    if (defect.status === 'voided') continue
+
+    // 已刪除（作廢）的缺失：不上傳，並清掉雲端硬碟葉層資料夾（避免測試照片殘留）
+    if (defect.status === 'voided') {
+      try {
+        const result = await trashDefectDriveData({
+          drive,
+          rootFolderId: driveFolderId,
+          defect,
+          items,
+        })
+        if (result.trashedFolder || result.trashedFiles > 0) {
+          cleanedVoided += 1
+          await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
+            {
+              driveLeafFolderId: null,
+              driveLastFileId: null,
+              driveDeletedAt: new Date().toISOString(),
+            },
+            { merge: true },
+          )
+        }
+      } catch (err) {
+        logger.warn('cleanup voided drive folder failed', {
+          projectId,
+          defectId: defect.id,
+          err,
+        })
+      }
+      continue
+    }
 
     const prefix = `projects/${projectId}/defects/${defect.id}/`
     let files: Array<{ name: string; contentType?: string }> = []
@@ -426,6 +456,7 @@ async function runPhotoSync(params: {
     uploaded,
     skipped,
     scanned,
+    cleanedVoided,
     errorCount: errors.length,
     actorLabel,
   })
@@ -436,6 +467,7 @@ async function runPhotoSync(params: {
     uploaded,
     skipped,
     scanned,
+    cleanedVoided,
     errors: errors.slice(0, 12),
     clientEmail: actorLabel ?? null,
     folderLayout: '棟別 / 樓層 / 戶別 / 大項 / #編號 小項名稱 備註',

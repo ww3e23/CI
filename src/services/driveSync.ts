@@ -6,6 +6,8 @@ import {
   requestGoogleDriveAuthCode,
 } from '../lib/googleDriveAuth'
 import { useAuthStore } from '../store/useAuthStore'
+import { useProjectStore } from '../store/useProjectStore'
+import { syncDefect } from './cloudSync'
 
 export type DriveSyncResult = {
   ok: boolean
@@ -13,9 +15,28 @@ export type DriveSyncResult = {
   uploaded: number
   skipped: number
   scanned: number
+  cleanedVoided?: number
   errors: string[]
   clientEmail?: string | null
   folderLayout?: string
+}
+
+/** 同步 Drive 前，先把本機已刪除（作廢）的缺失寫回 Firestore，避免幽靈缺失又被上傳 */
+async function pushLocalVoidedDefects(projectId: string): Promise<number> {
+  const voided = useProjectStore.getState().defects.filter((d) => d.status === 'voided')
+  if (voided.length === 0) return 0
+  let n = 0
+  await Promise.all(
+    voided.map(async (d) => {
+      try {
+        const ok = await syncDefect(projectId, d)
+        if (ok) n += 1
+      } catch {
+        /* ignore single failure */
+      }
+    }),
+  )
+  return n
 }
 
 export type DriveOwnerConnectResult = {
@@ -126,6 +147,9 @@ export async function syncProjectPhotosToDrive(
   if (!ready.ok) return ready
 
   try {
+    // 先對齊作廢狀態，避免 App 已刪、Firestore 仍 pending 又被上傳到 Drive
+    await pushLocalVoidedDefects(projectId)
+
     const functions = getFunctions(ready.app, 'asia-east1')
     const callable = httpsCallable<
       { projectId: string; defectIds?: string[] },
@@ -182,6 +206,7 @@ export async function syncProjectPhotosToDriveAsUser(
   }
 
   try {
+    await pushLocalVoidedDefects(projectId)
     const accessToken = await requestGoogleDriveAccessToken()
     return await callUserDriveSync(projectId, accessToken)
   } catch (err) {
