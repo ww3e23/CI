@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, Cloud, CloudOff, Pencil, RefreshCw } from 'lucide-react'
+import { ChevronDown, Cloud, CloudOff, CloudUpload, Pencil, RefreshCw } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import {
   useAuthStore,
@@ -9,6 +9,8 @@ import {
 } from '../../store/useAuthStore'
 import { firebaseModeLabel, isFirebaseConfigured } from '../../lib/firebase'
 import { APP_VERSION } from '../../lib/appVersion'
+import { getGoogleOAuthClientId } from '../../lib/googleDriveAuth'
+import { syncProjectPhotosToDriveAsUser } from '../../services/driveSync'
 import { SettingsPage } from '../settings/SettingsPage'
 import { ProjectSwitcher } from '../home/ProjectSwitcher'
 import { forceReloadApp } from '../pwa/UpdateAppBanner'
@@ -28,6 +30,8 @@ export function ProfilePage() {
   const [name, setName] = useState(user?.displayName ?? '')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  const [driveSyncing, setDriveSyncing] = useState(false)
+  const [driveMsg, setDriveMsg] = useState('')
   const [projectOpen, setProjectOpen] = useState(false)
   const cloud = isFirebaseConfigured()
   const mode = firebaseModeLabel()
@@ -35,6 +39,46 @@ export function ProfilePage() {
   if (!user) return null
 
   const initial = user.displayName.slice(0, 1)
+  const canSyncDrive =
+    Boolean(project) &&
+    (role === 'admin' || role === 'inspector' || Boolean(user.systemAdmin))
+
+  async function runDriveSync() {
+    if (!project) return
+    if (!project.driveFolderId) {
+      setDriveMsg('此專案尚未綁定雲端硬碟資料夾，請請後台管理者先設定資料夾網址。')
+      return
+    }
+    if (driveSyncing) return
+    if (!getGoogleOAuthClientId()) {
+      setDriveMsg('尚未啟用 Google 授權同步，請請管理者重新部署最新版 App。')
+      return
+    }
+    const ok = window.confirm(
+      `將以「你的 Google 帳號」把「${project.name}」照片同步到雲端硬碟。\n會跳出 Google 授權視窗，請選有該資料夾權限的帳號。\n\n只會補還沒有的照片，不會刪除既有檔案。`,
+    )
+    if (!ok) return
+
+    setDriveSyncing(true)
+    setDriveMsg('請在跳出的 Google 視窗完成授權，授權後開始同步…')
+    try {
+      const res = await syncProjectPhotosToDriveAsUser(project.id)
+      if (!res.ok || !res.result) {
+        setDriveMsg(res.error || '同步失敗')
+        return
+      }
+      const r = res.result
+      const errHint =
+        r.errors.length > 0 ? `；部分失敗 ${r.errors.length} 筆` : ''
+      setDriveMsg(
+        `同步完成：新增 ${r.uploaded} 張、略過已存在 ${r.skipped} 張、掃描 ${r.scanned} 張${errHint}`,
+      )
+    } catch (err) {
+      setDriveMsg(String((err as Error)?.message ?? err))
+    } finally {
+      setDriveSyncing(false)
+    }
+  }
 
   return (
     <div className="rise">
@@ -165,6 +209,81 @@ export function ProfilePage() {
         >
           <RefreshCw size={14} /> {busy ? '同步中…' : '重新同步專案（手機／電腦共用）'}
         </button>
+      )}
+
+      {canSyncDrive && (
+        <section className="glass" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <CloudUpload size={20} color="var(--green-deep)" />
+            <div style={{ flex: 1 }}>
+              <TitleHint
+                as="div"
+                style={{ fontWeight: 800 }}
+                hint="用你的 Google 帳號把本專案照片同步到後台綁定的雲端硬碟資料夾，方便現場補建／補傳圖片。"
+              >
+                同步到雲端硬碟
+              </TitleHint>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', marginTop: 4 }}>
+                {project?.driveFolderId
+                  ? '已綁定資料夾；按下方按鈕授權後開始同步'
+                  : '尚未綁定資料夾（請後台管理者先設定）'}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%', marginTop: 12 }}
+            disabled={!project?.driveFolderId || driveSyncing || !cloud}
+            onClick={() => void runDriveSync()}
+          >
+            <CloudUpload size={16} />
+            {driveSyncing ? '同步中…' : '用我的 Google 帳號同步照片'}
+          </button>
+          {project?.driveFolderUrl && (
+            <a
+              className="btn btn-ghost"
+              href={project.driveFolderUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                width: '100%',
+                marginTop: 8,
+                textDecoration: 'none',
+                minHeight: 40,
+              }}
+            >
+              開啟雲端硬碟資料夾
+            </a>
+          )}
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 12,
+              color: 'var(--ink-soft)',
+              fontWeight: 600,
+              lineHeight: 1.5,
+            }}
+          >
+            資料夾結構：棟別 → 樓層 → 戶別 → 大項 → <code>#編號 小項名稱</code>
+            <br />
+            授權成功後，現場拍照也會自動補傳到此資料夾。
+          </div>
+          {driveMsg && (
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'var(--green-deep)',
+                whiteSpace: 'pre-wrap',
+                lineHeight: 1.45,
+              }}
+            >
+              {driveMsg}
+            </div>
+          )}
+        </section>
       )}
 
       {(role === 'admin' || user.systemAdmin) && (
