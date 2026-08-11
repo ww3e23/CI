@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { Redo2, Trash2, Undo2, X } from 'lucide-react'
 import { TitleHint } from '../ui/TitleHint'
@@ -12,6 +17,53 @@ interface Stroke {
   points: { x: number; y: number }[]
 }
 
+function loadHtmlImage(src: string, crossOrigin?: 'anonymous'): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    if (crossOrigin) img.crossOrigin = crossOrigin
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('圖片載入失敗'))
+    img.src = src
+  })
+}
+
+/**
+ * 遠端圖（Firebase Storage）若直接畫上 canvas 再 toDataURL，
+ * 未帶 CORS／crossOrigin 會污染畫布，完成標註會靜默失敗。
+ * 優先用 fetch→blob→objectURL，讓畫布同源可匯出。
+ */
+async function loadImageForAnnotation(imageUrl: string): Promise<{
+  img: HTMLImageElement
+  objectUrl?: string
+}> {
+  if (imageUrl.startsWith('data:') || imageUrl.startsWith('blob:')) {
+    return { img: await loadHtmlImage(imageUrl) }
+  }
+
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+    try {
+      const res = await fetch(imageUrl, { mode: 'cors', credentials: 'omit' })
+      if (res.ok) {
+        const blob = await res.blob()
+        const objectUrl = URL.createObjectURL(blob)
+        try {
+          const img = await loadHtmlImage(objectUrl)
+          return { img, objectUrl }
+        } catch (err) {
+          URL.revokeObjectURL(objectUrl)
+          throw err
+        }
+      }
+    } catch {
+      // fall through：改試 crossOrigin 圖片
+    }
+    const img = await loadHtmlImage(imageUrl, 'anonymous')
+    return { img }
+  }
+
+  return { img: await loadHtmlImage(imageUrl) }
+}
+
 export function AnnotatePlanModal({
   imageUrl,
   onCancel,
@@ -23,6 +75,7 @@ export function AnnotatePlanModal({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
+  const objectUrlRef = useRef<string | null>(null)
   const [tool, setTool] = useState<Tool>('pen')
   const [color, setColor] = useState('#AE4C3B')
   const [strokes, setStrokes] = useState<Stroke[]>([])
@@ -30,30 +83,60 @@ export function AnnotatePlanModal({
   const drawing = useRef<Stroke | null>(null)
   const strokesRef = useRef<Stroke[]>([])
   const [ready, setReady] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [saveError, setSaveError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     strokesRef.current = strokes
   }, [strokes])
 
   useEffect(() => {
-    const img = new Image()
-    img.onload = () => {
-      imgRef.current = img
-      const canvas = canvasRef.current
-      if (!canvas) return
-      // 畫布維持高解析度（最長邊最多 2048），畫面再用 CSS 縮放，避免標註時糊掉
-      const maxEdge = 2048
-      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height))
-      canvas.width = Math.max(1, Math.round(img.width * scale))
-      canvas.height = Math.max(1, Math.round(img.height * scale))
-      // 顯示寬度不超過視窗，但內部像素保持高解析
-      const displayW = Math.min(window.innerWidth - 24, canvas.width)
-      canvas.style.width = `${displayW}px`
-      canvas.style.height = `${Math.round((displayW / canvas.width) * canvas.height)}px`
-      setReady(true)
-      redraw([])
+    let cancelled = false
+    setReady(false)
+    setLoadError('')
+    setSaveError('')
+
+    void (async () => {
+      try {
+        const { img, objectUrl } = await loadImageForAnnotation(imageUrl)
+        if (cancelled) {
+          if (objectUrl) URL.revokeObjectURL(objectUrl)
+          return
+        }
+        if (objectUrlRef.current) {
+          URL.revokeObjectURL(objectUrlRef.current)
+          objectUrlRef.current = null
+        }
+        if (objectUrl) objectUrlRef.current = objectUrl
+        imgRef.current = img
+
+        const canvas = canvasRef.current
+        if (!canvas) return
+        // 畫布維持高解析度（最長邊最多 2048），畫面再用 CSS 縮放
+        const maxEdge = 2048
+        const scale = Math.min(1, maxEdge / Math.max(img.width, img.height))
+        canvas.width = Math.max(1, Math.round(img.width * scale))
+        canvas.height = Math.max(1, Math.round(img.height * scale))
+        const displayW = Math.min(window.innerWidth - 24, canvas.width)
+        canvas.style.width = `${displayW}px`
+        canvas.style.height = `${Math.round((displayW / canvas.width) * canvas.height)}px`
+        setReady(true)
+        redraw([])
+      } catch {
+        if (!cancelled) {
+          setLoadError('位置圖載入失敗，請關閉後重新上傳再標註')
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current)
+        objectUrlRef.current = null
+      }
     }
-    img.src = imageUrl
   }, [imageUrl])
 
   useEffect(() => {
@@ -127,7 +210,6 @@ export function AnnotatePlanModal({
   }
 
   function finishStroke() {
-    // 先取出 stroke 再清空 ref，避免 setState 延遲執行時 drawing.current 已是 null
     const stroke = drawing.current
     drawing.current = null
     if (!stroke?.points?.length) return
@@ -136,6 +218,32 @@ export function AnnotatePlanModal({
     setStrokes(next)
     setRedoStack([])
     redraw(next)
+  }
+
+  function handleComplete() {
+    if (saving) return
+    const canvas = canvasRef.current
+    if (!canvas || !ready) {
+      setSaveError('圖面尚未就緒，請稍候再試')
+      return
+    }
+    setSaving(true)
+    setSaveError('')
+    try {
+      // 先 redraw 確保筆畫都在
+      redraw(strokesRef.current)
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
+      if (!dataUrl || dataUrl === 'data:,') {
+        throw new Error('empty')
+      }
+      onSave(dataUrl)
+    } catch (err) {
+      console.warn('[annotate] toDataURL failed', err)
+      setSaveError(
+        '無法套用標註（雲端圖片跨網域限制）。請關閉後重新上傳此戶位置圖，再標註一次。',
+      )
+      setSaving(false)
+    }
   }
 
   return createPortal(
@@ -156,15 +264,29 @@ export function AnnotatePlanModal({
           type="button"
           className="btn btn-primary"
           style={{ minHeight: 40, padding: '0 14px' }}
-          onClick={() => {
-            const canvas = canvasRef.current
-            if (!canvas) return
-            onSave(canvas.toDataURL('image/jpeg', 0.92))
-          }}
+          disabled={!ready || Boolean(loadError) || saving}
+          onClick={handleComplete}
         >
-          完成標註
+          {saving ? '套用中…' : '完成標註'}
         </button>
       </header>
+
+      {(loadError || saveError) && (
+        <div
+          style={{
+            margin: '0 12px 8px',
+            padding: '10px 12px',
+            borderRadius: 12,
+            background: 'rgba(174,76,59,0.14)',
+            color: '#fff',
+            fontWeight: 700,
+            fontSize: 13,
+            lineHeight: 1.45,
+          }}
+        >
+          {loadError || saveError}
+        </div>
+      )}
 
       <div className="annotate-tools">
         {(
@@ -249,9 +371,13 @@ export function AnnotatePlanModal({
       </div>
 
       <div className="annotate-canvas-wrap">
+        {!ready && !loadError && (
+          <div style={{ color: '#fff', fontWeight: 700, padding: 24 }}>載入圖面中…</div>
+        )}
         <canvas
           ref={canvasRef}
           className="annotate-canvas"
+          style={{ display: ready ? 'block' : 'none' }}
           onPointerDown={(e) => {
             e.preventDefault()
             e.currentTarget.setPointerCapture(e.pointerId)
