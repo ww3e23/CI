@@ -193,17 +193,57 @@ export async function listFolderFiles(
   return out
 }
 
-/** 葉層資料夾：與缺失列表相同「#編號 小項名稱」 */
+/**
+ * 從缺失說明抽出「備註」（去掉自動帶入的大項｜區域｜細項）。
+ * 與前端 resolveDefectRemark 對齊。
+ */
+export function extractDefectRemark(input: {
+  itemDescription?: string | null
+  defectDescription?: string | null
+  categoryName?: string | null
+  area?: string | null
+}): string {
+  const desc = String(input.defectDescription || '').trim()
+  if (!desc) return ''
+  const itemLabel = String(input.itemDescription || '').trim()
+  const categoryName = String(input.categoryName || '').trim()
+  const area = String(input.area || '').trim()
+  const autos = [
+    itemLabel && categoryName && area ? `${categoryName}｜${area}｜${itemLabel}` : '',
+    categoryName && area ? `${categoryName}｜${area}` : '',
+    itemLabel,
+  ].filter(Boolean)
+  if (autos.some((a) => a === desc)) return ''
+  if (itemLabel && desc.startsWith(`${itemLabel}｜`)) {
+    return desc.slice(itemLabel.length + 1).trim()
+  }
+  if (itemLabel && desc.startsWith(`${itemLabel} `)) {
+    return desc.slice(itemLabel.length).trim()
+  }
+  return desc
+}
+
+/**
+ * 葉層資料夾：一筆缺失一個資料夾
+ * 命名：#編號 小項名稱 備註說明
+ */
 export function buildItemFolderName(input: {
   itemSortOrder?: number | null
   itemDescription?: string | null
   defectNumber: number
   defectDescription: string
+  categoryName?: string | null
+  area?: string | null
 }): string {
   const itemLabel = (input.itemDescription || '').trim()
-  const fallback = (input.defectDescription || '未命名缺失').trim().slice(0, 60)
-  const title = itemLabel || fallback
-  return sanitizeDriveName(`#${input.defectNumber} ${title}`)
+  const remark = extractDefectRemark(input)
+  const parts = [`#${input.defectNumber}`]
+  if (itemLabel) parts.push(itemLabel)
+  if (remark) parts.push(remark)
+  else if (!itemLabel) {
+    parts.push((input.defectDescription || '未命名缺失').trim().slice(0, 60))
+  }
+  return sanitizeDriveName(parts.join(' '))
 }
 
 /** 含現行與舊版命名，供刪除時查找 */
@@ -212,11 +252,15 @@ export function buildItemFolderNameCandidates(input: {
   itemDescription?: string | null
   defectNumber: number
   defectDescription: string
+  categoryName?: string | null
+  area?: string | null
 }): string[] {
   const current = buildItemFolderName(input)
   const out = [current]
   const itemLabel = (input.itemDescription || '').trim()
+  // 舊版：#編號 小項名稱（無備註）
   if (itemLabel) {
+    out.push(sanitizeDriveName(`#${input.defectNumber} ${itemLabel}`))
     const num =
       typeof input.itemSortOrder === 'number' && Number.isFinite(input.itemSortOrder)
         ? String(input.itemSortOrder + 1).padStart(2, '0')

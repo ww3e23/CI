@@ -46,6 +46,7 @@ type DefectRow = {
   unitCode?: string
   categoryId?: string
   categoryName?: string
+  area?: string
   checklistItemId?: string
   defectNumber?: number
   description?: string
@@ -82,6 +83,8 @@ async function resolveLeafFolder(
     itemDescription: item?.description,
     defectNumber: Number(defect.defectNumber ?? 0),
     defectDescription: String(defect.description ?? ''),
+    categoryName: String(defect.categoryName ?? ''),
+    area: String(defect.area ?? ''),
   })
   return ensureDefectFolderPath(drive, rootFolderId, {
     buildingName: String(defect.buildingName ?? '未指定棟別'),
@@ -117,6 +120,8 @@ async function trashDefectDriveData(params: {
         itemDescription: item?.description,
         defectNumber: Number(defect.defectNumber ?? 0),
         defectDescription: String(defect.description ?? ''),
+        categoryName: String(defect.categoryName ?? ''),
+        area: String(defect.area ?? ''),
       }),
     })
   }
@@ -335,12 +340,15 @@ async function runPhotoSync(params: {
 
     if (files.length === 0) continue
 
+    // 一筆缺失一個葉層資料夾；不可只用 checklistItemId（同小項多編號會被併進同一資料夾）
     const cacheKey = [
       defect.buildingName,
       defect.floor,
       defect.unitCode,
       defect.categoryName,
-      defect.checklistItemId || defect.defectNumber,
+      defect.id,
+      defect.defectNumber,
+      defect.description,
     ].join('|')
 
     let folderId = folderCache.get(cacheKey)
@@ -430,7 +438,7 @@ async function runPhotoSync(params: {
     scanned,
     errors: errors.slice(0, 12),
     clientEmail: actorLabel ?? null,
-    folderLayout: '棟別 / 樓層 / 戶別 / 大項 / #編號 小項名稱',
+    folderLayout: '棟別 / 樓層 / 戶別 / 大項 / #編號 小項名稱 備註',
   }
 }
 

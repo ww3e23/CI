@@ -275,7 +275,7 @@ export function ProfilePage() {
               lineHeight: 1.5,
             }}
           >
-            資料夾結構：棟別 → 樓層 → 戶別 → 大項 → <code>#編號 小項名稱</code>
+            資料夾結構：棟別 → 樓層 → 戶別 → 大項 → <code>#編號 小項名稱 備註</code>（同小項多編號會分開）
             <br />
             後台綁定擁有者後，現場拍照也會自動補傳到該雲端硬碟（不必每人登 Google）。
           </div>
