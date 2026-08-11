@@ -77,28 +77,22 @@ function compactFloor(floor: string): string {
 }
 
 /**
- * 戶別代號：專案代號_樓層戶號
- * 例：8-2_8FA3（樓層 8F + 戶 A3）
+ * 戶別代號：樓層＋戶號（不加專案內部編碼）
+ * 例：8FA3、3FI2
  */
-function formatUnitToken(unit: Unit, projectCode?: string): string {
-  const unitPart = `${compactFloor(unit.floor)}${String(unit.code || '').trim()}`
-  const code = String(projectCode || '').trim()
-  return code ? `${code}_${unitPart}` : unitPart
+function formatUnitToken(unit: Unit): string {
+  return `${compactFloor(unit.floor)}${String(unit.code || '').trim()}`
 }
 
-/** 特定戶標題／檔名：案名 + 戶別代號，例「新竹帝寶 8-2_8FA3」 */
-function formatPartialHeading(
-  projectLabel: string,
-  projectCode: string | undefined,
-  units: Unit[],
-): string {
-  const tokens = units.map((u) => formatUnitToken(u, projectCode))
+/** 特定戶標題／檔名：案名_戶別，例「新竹帝寶 8-2_8FA3」 */
+function formatPartialHeading(projectLabel: string, units: Unit[]): string {
+  const tokens = units.map((u) => formatUnitToken(u))
   let unitPart: string
   if (tokens.length === 1) unitPart = tokens[0]
   else if (tokens.length <= 3) unitPart = tokens.join('、')
   else unitPart = `${tokens[0]}等${units.length}戶`
   const name = projectLabel.trim()
-  return name ? `${name} ${unitPart}` : unitPart
+  return name ? `${name}_${unitPart}` : unitPart
 }
 
 function applyTitleUnderline(cell: ExcelJS.Cell) {
@@ -170,7 +164,7 @@ function addSummaryMatrixSheet(
   projectLabel: string,
   units: Unit[],
   usedNames: Set<string>,
-  options?: { partialExport?: boolean; projectCode?: string },
+  options?: { partialExport?: boolean },
 ) {
   const buildingIds = new Set(units.map((u) => u.buildingId))
   const buildings = [...project.buildings]
@@ -187,9 +181,9 @@ function addSummaryMatrixSheet(
   const partial = Boolean(options?.partialExport)
 
   if (partial) {
-    // 特定戶：案名 + 戶別代號（底線）＋自主驗屋檢查表
+    // 特定戶：案名_戶別（底線）＋自主驗屋檢查表
     // 例：新竹帝寶 8-2_8FA3
-    const heading = formatPartialHeading(projectLabel, options?.projectCode, units)
+    const heading = formatPartialHeading(projectLabel, units)
     const locCell = sheet.getCell(1, 1)
     locCell.value = heading
     applyTitleUnderline(locCell)
@@ -299,7 +293,6 @@ function addUnitSheet(
   unit: Unit,
   projectLabel: string,
   usedNames: Set<string>,
-  options?: { projectCode?: string },
 ) {
   const areas = getUnitAreas(unit, project.areas, project.areaTemplates ?? [])
   const cats = project.categories
@@ -317,9 +310,9 @@ function addUnitSheet(
   )
   const sheet = workbook.addWorksheet(sheetName)
 
-  // 標題：案名 + 戶別代號（底線）＋自主驗屋檢查表
+  // 標題：案名_戶別（底線）＋自主驗屋檢查表
   // 例：新竹帝寶 8-2_8FA3
-  const heading = formatPartialHeading(projectLabel, options?.projectCode, [unit])
+  const heading = formatPartialHeading(projectLabel, [unit])
   const mergeCols = Math.max(5, 3 + Math.max(1, areas.length) * 2)
 
   const locCell = sheet.getCell(1, 1)
@@ -462,8 +455,6 @@ export async function exportJiaShanLinExcel(
   project: ProjectState,
   options?: {
     displayName?: string
-    /** 專案代號，用於特定戶標題／檔名（例 8-2_8FA3） */
-    projectCode?: string
     /** 指定要匯出的戶別；空／未傳則預設「已查驗過」的戶 */
     unitIds?: string[]
   },
@@ -473,7 +464,6 @@ export async function exportJiaShanLinExcel(
   workbook.created = new Date()
 
   const projectLabel = resolveExportProjectLabel(project, options?.displayName)
-  const projectCode = String(options?.projectCode || '').trim()
   const usedNames = new Set<string>()
 
   const buildings = [...project.buildings]
@@ -498,23 +488,22 @@ export async function exportJiaShanLinExcel(
     throw new Error('沒有可匯出的戶別（請勾選戶別，或先完成至少一戶查驗）')
   }
 
-  // 未涵蓋全部啟用戶 → 視為特定戶（標題顯示案名＋戶別代號）
+  // 未涵蓋全部啟用戶 → 視為特定戶（標題顯示案名＿戶別）
   const partialExport = units.length < activeUnits.length
 
   addSummaryMatrixSheet(workbook, project, projectLabel, units, usedNames, {
     partialExport,
-    projectCode,
   })
 
   for (const unit of units) {
-    addUnitSheet(workbook, project, unit, projectLabel, usedNames, { projectCode })
+    addUnitSheet(workbook, project, unit, projectLabel, usedNames)
   }
 
   const stamp = new Date().toISOString().slice(0, 10)
   const safeName = (s: string) => s.replace(/[\\/:*?"<>|]/g, '_').trim()
   let filenameBase: string
   if (partialExport) {
-    filenameBase = `${safeName(formatPartialHeading(projectLabel, projectCode, units))}_自主驗屋檢查表`
+    filenameBase = `${safeName(formatPartialHeading(projectLabel, units))}_自主驗屋檢查表`
   } else {
     filenameBase = `${safeName(projectLabel || '查驗專案')}_自主驗屋檢查表`
   }
