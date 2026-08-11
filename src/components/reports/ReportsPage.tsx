@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FileDown, FileSpreadsheet, Images } from 'lucide-react'
+import { ChevronDown, FileDown, FileSpreadsheet, Images } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentProject, useCurrentUser } from '../../store/useAuthStore'
 import { buildMatrix, formatActivity, unitProgress } from '../../lib/progress'
@@ -39,6 +39,7 @@ export function ReportsPage() {
   const setCurrentUnit = useProjectStore((s) => s.setCurrentUnit)
   const matrixScrollRef = useRef<HTMLDivElement>(null)
   const didAutoScrollRef = useRef(false)
+  const [buildingPercentsOpen, setBuildingPercentsOpen] = useState(false)
 
   const cellMap = useMemo(() => {
     const m = new Map<string, ProgressCell>()
@@ -130,6 +131,21 @@ export function ReportsPage() {
     return ids
   }, [picked, unitByKey])
 
+  function openPhotoUnitPicker() {
+    setReportChooserOpen(false)
+    setUnitPickMode('photo')
+    const initial: Record<string, boolean> = {}
+    for (const key of inspectedKeys) initial[key] = true
+    setPicked(initial)
+    const preferred =
+      activeBuildings.find((b) =>
+        inspectedKeys.some((k) => k.startsWith(`${b.id}|`)),
+      ) ?? activeBuildings[0]
+    setPickBuildingId(preferred?.id ?? '')
+    // 下一幀再開選戶，避免與「選擇報告類型」Modal 同幀切換時偶發無反應
+    window.requestAnimationFrame(() => setUnitPickOpen(true))
+  }
+
   function openUnitPicker(kind: 'general' | 'jsl') {
     setExcelChooserOpen(false)
     setExcelKind(kind)
@@ -137,18 +153,12 @@ export function ReportsPage() {
     const initial: Record<string, boolean> = {}
     for (const key of inspectedKeys) initial[key] = true
     setPicked(initial)
-    setPickBuildingId(activeBuildings[0]?.id ?? '')
-    setUnitPickOpen(true)
-  }
-
-  function openPhotoUnitPicker() {
-    setReportChooserOpen(false)
-    setUnitPickMode('photo')
-    const initial: Record<string, boolean> = {}
-    for (const key of inspectedKeys) initial[key] = true
-    setPicked(initial)
-    setPickBuildingId(activeBuildings[0]?.id ?? '')
-    setUnitPickOpen(true)
+    const preferred =
+      activeBuildings.find((b) =>
+        inspectedKeys.some((k) => k.startsWith(`${b.id}|`)),
+      ) ?? activeBuildings[0]
+    setPickBuildingId(preferred?.id ?? '')
+    window.requestAnimationFrame(() => setUnitPickOpen(true))
   }
 
   function selectInspectedOnly() {
@@ -241,20 +251,41 @@ export function ReportsPage() {
   }
 
   function openPhotoReport() {
-    const unitIds =
-      pickedIds.length > 0
-        ? pickedIds
-        : inspectedKeys
-            .map((k) => unitByKey.get(k)?.id)
-            .filter((id): id is string => Boolean(id))
+    try {
+      const unitIds =
+        pickedIds.length > 0
+          ? pickedIds
+          : inspectedKeys
+              .map((k) => unitByKey.get(k)?.id)
+              .filter((id): id is string => Boolean(id))
 
-    if (unitIds.length === 0) {
-      window.alert('沒有可列入的戶別。請勾選戶別，或先完成至少一戶查驗。')
-      return
+      if (unitIds.length === 0) {
+        window.alert('沒有可列入的戶別。請勾選戶別，或先完成至少一戶查驗。')
+        return
+      }
+      setUnitPickOpen(false)
+      setPhotoUnitIds(unitIds)
+      setPhotoPreviewOpen(true)
+    } catch (err) {
+      console.error('[photo-report] open failed', err)
+      window.alert(
+        err instanceof Error && err.message
+          ? `圖片報告開啟失敗：${err.message}`
+          : '圖片報告開啟失敗，請稍後再試',
+      )
     }
-    setUnitPickOpen(false)
-    setPhotoUnitIds(unitIds)
-    setPhotoPreviewOpen(true)
+  }
+
+  function scrollMatrixToBuilding(buildingId: string) {
+    const scroller = matrixScrollRef.current
+    if (!scroller) return
+    const sel = `[data-matrix-building="${CSS.escape(buildingId)}"]`
+    const anchor = scroller.querySelector<HTMLElement>(sel)
+    if (!anchor) return
+    scroller.scrollTo({
+      left: Math.max(0, anchor.offsetLeft - 56),
+      behavior: 'smooth',
+    })
   }
 
   return (
@@ -398,7 +429,9 @@ export function ReportsPage() {
           }}
           aria-label="選擇匯出戶別"
           variant="bottom"
+          className="unit-pick-sheet"
         >
+          <div className="unit-pick-body">
           <TitleHint
             as="h3"
             className="serif"
@@ -432,22 +465,41 @@ export function ReportsPage() {
           </div>
 
           {activeBuildings.length > 1 && (
-            <div className="chip-row" style={{ marginBottom: 10 }}>
-              {activeBuildings.map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  className={`chip ${pickBuilding?.id === b.id ? 'active' : ''}`}
-                  onClick={() => setPickBuildingId(b.id)}
-                >
-                  {b.name}
-                </button>
-              ))}
-            </div>
+            <label style={{ display: 'block', marginBottom: 4 }}>
+              <span
+                style={{
+                  display: 'block',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: 'var(--ink-soft)',
+                  marginBottom: 6,
+                }}
+              >
+                選擇棟別（{activeBuildings.length}）
+              </span>
+              <select
+                className="building-select"
+                value={pickBuilding?.id ?? ''}
+                onChange={(e) => setPickBuildingId(e.target.value)}
+                aria-label="選擇棟別"
+              >
+                {activeBuildings.map((b) => {
+                  const started =
+                    matrix.buildingPercents.find((x) => x.buildingId === b.id)
+                      ?.startedUnitCount ?? 0
+                  return (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                      {started > 0 ? `（已開工 ${started} 戶）` : ''}
+                    </option>
+                  )
+                })}
+              </select>
+            </label>
           )}
 
           {pickBuilding ? (
-            <div className="glass matrix-scroll" style={{ maxHeight: '42vh', marginBottom: 12 }}>
+            <div className="glass matrix-scroll" style={{ maxHeight: '36vh', marginBottom: 4 }}>
               <table className="matrix-table">
                 <thead>
                   <tr>
@@ -520,50 +572,56 @@ export function ReportsPage() {
           ) : (
             <p style={{ color: 'var(--ink-soft)', fontWeight: 600 }}>目前沒有可選戶別</p>
           )}
+          </div>
 
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{ width: '100%', marginBottom: 8 }}
-            disabled={
-              unitPickMode === 'excel'
-                ? excelBusy || (pickedIds.length === 0 && inspectedKeys.length === 0)
-                : pickedIds.length === 0 && inspectedKeys.length === 0
-            }
-            onClick={() => {
-              if (unitPickMode === 'photo') openPhotoReport()
-              else void handleExportExcel()
-            }}
-          >
-            {unitPickMode === 'photo' ? (
-              <>
-                <Images size={16} />
-                {pickedIds.length > 0
-                  ? `產生 ${pickedIds.length} 戶圖片報告`
-                  : '產生已查驗戶圖片報告'}
-              </>
-            ) : (
-              <>
-                <FileSpreadsheet size={16} />
-                {excelBusy
-                  ? '匯出中…'
-                  : pickedIds.length > 0
-                    ? `下載 ${pickedIds.length} 戶`
-                    : '下載已查驗戶'}
-              </>
+          <div className="unit-pick-footer">
+            {pickedIds.length === 0 && inspectedKeys.length === 0 && (
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--terracotta)' }}>
+                尚無可匯出戶別：請先查驗至少一戶，或改勾選戶格
+              </div>
             )}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ width: '100%' }}
-            onClick={() => {
-              setUnitPickOpen(false)
-              setExcelKind(null)
-            }}
-          >
-            取消
-          </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ width: '100%' }}
+              disabled={unitPickMode === 'excel' ? excelBusy : false}
+              onClick={() => {
+                if (unitPickMode === 'photo') openPhotoReport()
+                else void handleExportExcel()
+              }}
+            >
+              {unitPickMode === 'photo' ? (
+                <>
+                  <Images size={16} />
+                  {pickedIds.length > 0
+                    ? `產生 ${pickedIds.length} 戶圖片報告`
+                    : inspectedKeys.length > 0
+                      ? '產生已查驗戶圖片報告'
+                      : '產生圖片報告'}
+                </>
+              ) : (
+                <>
+                  <FileSpreadsheet size={16} />
+                  {excelBusy
+                    ? '匯出中…'
+                    : pickedIds.length > 0
+                      ? `下載 ${pickedIds.length} 戶`
+                      : '下載已查驗戶'}
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ width: '100%' }}
+              onClick={() => {
+                setUnitPickOpen(false)
+                setExcelKind(null)
+              }}
+            >
+              取消
+            </button>
+          </div>
         </Modal>
       )}
 
@@ -693,35 +751,78 @@ export function ReportsPage() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 0' }}>
-        {matrix.buildingPercents.map((b) => (
-          <button
-            key={b.buildingId}
-            type="button"
-            className={`pill ${b.startedUnitCount > 0 ? '' : b.percent < 70 ? 'warn' : ''}`}
+      <div className="glass" style={{ marginTop: 10, padding: 0, overflow: 'hidden' }}>
+        <button
+          type="button"
+          className="building-fold-toggle"
+          aria-expanded={buildingPercentsOpen}
+          onClick={() => setBuildingPercentsOpen((v) => !v)}
+        >
+          <div style={{ minWidth: 0, textAlign: 'left' }}>
+            <div style={{ fontWeight: 800, fontSize: 14 }}>
+              各棟進度 · {matrix.buildingPercents.length} 棟
+            </div>
+            <div
+              style={{
+                marginTop: 2,
+                color: 'var(--ink-soft)',
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              {buildingPercentsOpen
+                ? '點此收合'
+                : matrix.startedUnitCount > 0
+                  ? `已開工 ${matrix.startedUnitCount} 戶 · 點開跳至各棟`
+                  : '點開查看／跳至各棟'}
+            </div>
+          </div>
+          <ChevronDown
+            size={18}
             style={{
-              cursor: 'pointer',
-              border:
-                b.startedUnitCount > 0
-                  ? '1px solid rgba(47, 93, 76, 0.45)'
-                  : undefined,
+              flexShrink: 0,
+              color: 'var(--ink-soft)',
+              transform: buildingPercentsOpen ? 'rotate(180deg)' : undefined,
+              transition: 'transform 0.2s ease',
             }}
-            onClick={() => {
-              const scroller = matrixScrollRef.current
-              if (!scroller) return
-              const sel = `[data-matrix-building="${CSS.escape(b.buildingId)}"]`
-              const anchor = scroller.querySelector<HTMLElement>(sel)
-              if (!anchor) return
-              scroller.scrollTo({
-                left: Math.max(0, anchor.offsetLeft - 56),
-                behavior: 'smooth',
-              })
+          />
+        </button>
+        {buildingPercentsOpen && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 8,
+              padding: '0 12px 12px',
+              borderTop: '1px solid rgba(34,41,31,0.08)',
+              paddingTop: 10,
             }}
           >
-            {b.name}{' '}
-            {b.startedUnitCount > 0 ? `${b.startedPercent}%` : `${b.percent}%`}
-          </button>
-        ))}
+            {matrix.buildingPercents.map((b) => (
+              <button
+                key={b.buildingId}
+                type="button"
+                className={`pill ${b.startedUnitCount > 0 ? '' : b.percent < 70 ? 'warn' : ''}`}
+                style={{
+                  cursor: 'pointer',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                  margin: 0,
+                  border:
+                    b.startedUnitCount > 0
+                      ? '1px solid rgba(47, 93, 76, 0.45)'
+                      : undefined,
+                }}
+                onClick={() => scrollMatrixToBuilding(b.buildingId)}
+              >
+                <span>{b.name}</span>
+                <span>
+                  {b.startedUnitCount > 0 ? `${b.startedPercent}%` : `${b.percent}%`}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="section-row">

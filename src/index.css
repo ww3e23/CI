@@ -813,6 +813,68 @@ button.status-pill:active {
   display: none;
 }
 
+.building-fold-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  text-align: left;
+}
+
+.building-fold-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(34, 41, 31, 0.06);
+}
+
+.building-fold-row:last-of-type {
+  border-bottom: 0;
+}
+
+/* 選戶 Bottom Sheet：內容可捲、底部按鈕常駐，避免棟很多時按不到「產生報告」 */
+.modal-dialog.unit-pick-sheet {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 10px 16px 0;
+  max-width: 100%;
+  width: min(430px, 100%);
+}
+
+.unit-pick-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 8px;
+}
+
+.unit-pick-footer {
+  flex-shrink: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px 0 calc(14px + var(--safe-bottom));
+  border-top: 1px solid rgba(34, 41, 31, 0.08);
+  background: linear-gradient(180deg, rgba(255, 252, 246, 0.92), rgba(255, 255, 255, 0.98));
+}
+
+.building-select {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(34, 41, 31, 0.14);
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0 12px;
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+
 /* 棟別編輯 Bottom Sheet */
 .modal-dialog.building-editor-sheet {
   display: flex;

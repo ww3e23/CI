@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { countActiveUnits, newBuildingDraft, summarizeBuilding } from '../../lib/units'
 import { getUnitAreas } from '../../lib/areas'
@@ -34,6 +35,10 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const [projectAreasOpen, setProjectAreasOpen] = useState(false)
   const [batchAreasOpen, setBatchAreasOpen] = useState(false)
   const [planGalleryOpen, setPlanGalleryOpen] = useState(false)
+  /** 棟很多時預設收合，避免整頁被棟別卡片占滿 */
+  const [buildingsOpen, setBuildingsOpen] = useState(
+    () => buildings.filter((b) => b.active).length <= 2,
+  )
 
   const currentUnit =
     units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active)
@@ -78,58 +83,133 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gap: 10 }}>
-        {activeBuildings.map((b) => (
-          <article
-            key={b.id}
-            className="glass"
-            style={{
-              padding: 14,
-              display: 'flex',
-              justifyContent: 'space-between',
-              gap: 12,
-              alignItems: 'center',
-            }}
-          >
-            <div>
-              <div className="serif" style={{ fontWeight: 700, fontSize: 17 }}>
-                {b.name}
-                <span style={{ color: 'var(--ink-soft)', fontWeight: 600, fontSize: 13, marginLeft: 8, fontFamily: 'Noto Sans TC, sans-serif' }}>
-                  {summarizeBuilding(b)}
-                </span>
-              </div>
-              <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-                戶別 {b.unitCodes.join('、')} · 可查驗 {countActiveUnits(b)} 戶
-              </div>
-            </div>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ minHeight: 40, flexShrink: 0 }}
-              onClick={() => setEditing(b)}
-            >
-              編輯
-            </button>
-          </article>
-        ))}
-
+      <div className="glass" style={{ padding: 0, overflow: 'hidden' }}>
         <button
           type="button"
-          className="btn-dashed"
-          onClick={() => {
-            const nextIndex = activeBuildings.length
-            const letter = String.fromCharCode(65 + (nextIndex % 26))
-            setEditing(
-              newBuildingDraft({
-                name: `${letter}棟`,
-                unitCodes: [`${letter}1`, `${letter}2`, `${letter}3`],
-                sortOrder: nextIndex,
-              }),
-            )
-          }}
+          className="building-fold-toggle"
+          aria-expanded={buildingsOpen}
+          onClick={() => setBuildingsOpen((v) => !v)}
         >
-          + 新增棟別
+          <div style={{ minWidth: 0, textAlign: 'left' }}>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>
+              {activeBuildings.length} 棟 · {totalActiveUnits} 可查驗戶
+            </div>
+            <div
+              style={{
+                marginTop: 2,
+                color: 'var(--ink-soft)',
+                fontSize: 12,
+                fontWeight: 600,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {activeBuildings.length === 0
+                ? '尚未設定棟別'
+                : buildingsOpen
+                  ? '點此收合棟別清單'
+                  : activeBuildings.map((b) => b.name).join('、')}
+            </div>
+          </div>
+          <ChevronDown
+            size={20}
+            style={{
+              flexShrink: 0,
+              color: 'var(--ink-soft)',
+              transform: buildingsOpen ? 'rotate(180deg)' : undefined,
+              transition: 'transform 0.2s ease',
+            }}
+          />
         </button>
+
+        {buildingsOpen && (
+          <div style={{ display: 'grid', gap: 0, borderTop: '1px solid rgba(34,41,31,0.08)' }}>
+            {activeBuildings.map((b) => (
+              <div key={b.id} className="building-fold-row">
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 800, fontSize: 14 }}>
+                    {b.name}
+                    <span
+                      style={{
+                        color: 'var(--ink-soft)',
+                        fontWeight: 600,
+                        fontSize: 12,
+                        marginLeft: 8,
+                      }}
+                    >
+                      {summarizeBuilding(b)}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 2,
+                      color: 'var(--ink-soft)',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {b.unitCodes.join('、')} · {countActiveUnits(b)} 戶
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ minHeight: 36, flexShrink: 0, padding: '0 12px' }}
+                  onClick={() => setEditing(b)}
+                >
+                  編輯
+                </button>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              className="btn-dashed"
+              style={{ margin: 12, marginTop: 8 }}
+              onClick={() => {
+                const nextIndex = activeBuildings.length
+                const letter = String.fromCharCode(65 + (nextIndex % 26))
+                setEditing(
+                  newBuildingDraft({
+                    name: `${letter}棟`,
+                    unitCodes: [`${letter}1`, `${letter}2`, `${letter}3`],
+                    sortOrder: nextIndex,
+                  }),
+                )
+              }}
+            >
+              + 新增棟別
+            </button>
+          </div>
+        )}
+
+        {!buildingsOpen && (
+          <div style={{ padding: '0 12px 12px' }}>
+            <button
+              type="button"
+              className="btn-dashed"
+              style={{ width: '100%' }}
+              onClick={() => {
+                setBuildingsOpen(true)
+                const nextIndex = activeBuildings.length
+                const letter = String.fromCharCode(65 + (nextIndex % 26))
+                setEditing(
+                  newBuildingDraft({
+                    name: `${letter}棟`,
+                    unitCodes: [`${letter}1`, `${letter}2`, `${letter}3`],
+                    sortOrder: nextIndex,
+                  }),
+                )
+              }}
+            >
+              + 新增棟別
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="section-row" style={{ marginTop: 22 }}>
