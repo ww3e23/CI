@@ -66,18 +66,39 @@ function buildingLabel(name: string): string {
   return /棟$/.test(n) ? n : `${n}棟`
 }
 
-function floorLabel(floor: string): string {
-  const f = floor.trim()
-  if (!f) return '—'
-  if (f.includes('樓') || /F$/i.test(f)) return f
-  return `${f}樓`
+/** 樓層壓成檔名／標題用：8F、3F、B1F */
+function compactFloor(floor: string): string {
+  const f = floor.trim().toUpperCase().replace(/\s+/g, '')
+  if (!f) return ''
+  if (f === 'RF' || /^(B|R)?\d+F$/i.test(f)) return f
+  const m = f.match(/^(B|R)?(\d+)/i)
+  if (m) return `${(m[1] || '').toUpperCase()}${m[2]}F`
+  return f
 }
 
-/** 例：A棟 8樓 3戶 */
-function formatUnitLocation(project: ProjectState, unit: Unit): string {
-  const buildingName =
-    project.buildings.find((b) => b.id === unit.buildingId)?.name ?? unit.buildingName
-  return `${buildingLabel(buildingName)} ${floorLabel(unit.floor)} ${unit.code}戶`
+/**
+ * 戶別代號：專案代號_樓層戶號
+ * 例：8-2_8FA3（樓層 8F + 戶 A3）
+ */
+function formatUnitToken(unit: Unit, projectCode?: string): string {
+  const unitPart = `${compactFloor(unit.floor)}${String(unit.code || '').trim()}`
+  const code = String(projectCode || '').trim()
+  return code ? `${code}_${unitPart}` : unitPart
+}
+
+/** 特定戶標題／檔名：案名 + 戶別代號，例「新竹帝寶 8-2_8FA3」 */
+function formatPartialHeading(
+  projectLabel: string,
+  projectCode: string | undefined,
+  units: Unit[],
+): string {
+  const tokens = units.map((u) => formatUnitToken(u, projectCode))
+  let unitPart: string
+  if (tokens.length === 1) unitPart = tokens[0]
+  else if (tokens.length <= 3) unitPart = tokens.join('、')
+  else unitPart = `${tokens[0]}等${units.length}戶`
+  const name = projectLabel.trim()
+  return name ? `${name} ${unitPart}` : unitPart
 }
 
 function applyTitleUnderline(cell: ExcelJS.Cell) {
@@ -149,7 +170,7 @@ function addSummaryMatrixSheet(
   projectLabel: string,
   units: Unit[],
   usedNames: Set<string>,
-  options?: { partialExport?: boolean },
+  options?: { partialExport?: boolean; projectCode?: string },
 ) {
   const buildingIds = new Set(units.map((u) => u.buildingId))
   const buildings = [...project.buildings]
@@ -166,10 +187,11 @@ function addSummaryMatrixSheet(
   const partial = Boolean(options?.partialExport)
 
   if (partial) {
-    // 特定戶：顯示哪棟哪樓哪戶（底線）＋自主驗屋檢查表
-    const locationText = units.map((u) => formatUnitLocation(project, u)).join('、')
+    // 特定戶：案名 + 戶別代號（底線）＋自主驗屋檢查表
+    // 例：新竹帝寶 8-2_8FA3
+    const heading = formatPartialHeading(projectLabel, options?.projectCode, units)
     const locCell = sheet.getCell(1, 1)
-    locCell.value = locationText
+    locCell.value = heading
     applyTitleUnderline(locCell)
     sheet.mergeCells(1, 1, 1, mergeEnd)
     sheet.getRow(1).height = 24
@@ -277,6 +299,7 @@ function addUnitSheet(
   unit: Unit,
   projectLabel: string,
   usedNames: Set<string>,
+  options?: { projectCode?: string },
 ) {
   const areas = getUnitAreas(unit, project.areas, project.areaTemplates ?? [])
   const cats = project.categories
@@ -294,12 +317,13 @@ function addUnitSheet(
   )
   const sheet = workbook.addWorksheet(sheetName)
 
-  // 標題：哪棟哪樓哪戶（底線）＋自主驗屋檢查表（不再顯示「甲山林報表」）
-  const location = formatUnitLocation(project, unit)
+  // 標題：案名 + 戶別代號（底線）＋自主驗屋檢查表
+  // 例：新竹帝寶 8-2_8FA3
+  const heading = formatPartialHeading(projectLabel, options?.projectCode, [unit])
   const mergeCols = Math.max(5, 3 + Math.max(1, areas.length) * 2)
 
   const locCell = sheet.getCell(1, 1)
-  locCell.value = location
+  locCell.value = heading
   applyTitleUnderline(locCell)
   sheet.mergeCells(1, 1, 1, mergeCols)
   sheet.getRow(1).height = 24
@@ -438,6 +462,8 @@ export async function exportJiaShanLinExcel(
   project: ProjectState,
   options?: {
     displayName?: string
+    /** 專案代號，用於特定戶標題／檔名（例 8-2_8FA3） */
+    projectCode?: string
     /** 指定要匯出的戶別；空／未傳則預設「已查驗過」的戶 */
     unitIds?: string[]
   },
@@ -447,6 +473,7 @@ export async function exportJiaShanLinExcel(
   workbook.created = new Date()
 
   const projectLabel = resolveExportProjectLabel(project, options?.displayName)
+  const projectCode = String(options?.projectCode || '').trim()
   const usedNames = new Set<string>()
 
   const buildings = [...project.buildings]
@@ -471,30 +498,23 @@ export async function exportJiaShanLinExcel(
     throw new Error('沒有可匯出的戶別（請勾選戶別，或先完成至少一戶查驗）')
   }
 
-  // 未涵蓋全部啟用戶 → 視為特定戶（標題顯示棟樓戶）
+  // 未涵蓋全部啟用戶 → 視為特定戶（標題顯示案名＋戶別代號）
   const partialExport = units.length < activeUnits.length
 
   addSummaryMatrixSheet(workbook, project, projectLabel, units, usedNames, {
     partialExport,
+    projectCode,
   })
 
   for (const unit of units) {
-    addUnitSheet(workbook, project, unit, projectLabel, usedNames)
+    addUnitSheet(workbook, project, unit, projectLabel, usedNames, { projectCode })
   }
 
   const stamp = new Date().toISOString().slice(0, 10)
   const safeName = (s: string) => s.replace(/[\\/:*?"<>|]/g, '_').trim()
   let filenameBase: string
   if (partialExport) {
-    if (units.length === 1) {
-      filenameBase = `${safeName(formatUnitLocation(project, units[0]))}_自主驗屋檢查表`
-    } else if (units.length <= 3) {
-      filenameBase = `${safeName(
-        units.map((u) => formatUnitLocation(project, u)).join('、'),
-      )}_自主驗屋檢查表`
-    } else {
-      filenameBase = `${safeName(formatUnitLocation(project, units[0]))}等${units.length}戶_自主驗屋檢查表`
-    }
+    filenameBase = `${safeName(formatPartialHeading(projectLabel, projectCode, units))}_自主驗屋檢查表`
   } else {
     filenameBase = `${safeName(projectLabel || '查驗專案')}_自主驗屋檢查表`
   }

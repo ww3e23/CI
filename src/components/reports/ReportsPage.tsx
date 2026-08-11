@@ -187,6 +187,7 @@ export function ReportsPage() {
       if (excelKind === 'jsl') {
         await exportJiaShanLinExcel(snap, {
           displayName: reportName,
+          projectCode: project?.code,
           unitIds,
         })
       } else {
@@ -345,7 +346,7 @@ export function ReportsPage() {
             <FileSpreadsheet size={16} /> 甲山林報表
           </button>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-            甲山林格式：總表＋每戶一分頁。特定戶匯出會標示棟／樓／戶並標題「自主驗屋檢查表」。
+            甲山林格式：總表＋每戶一分頁。特定戶匯出標題／檔名為「案名 代號_樓層戶號」（例：新竹帝寶 8-2_8FA3）。
           </div>
           <button
             type="button"
