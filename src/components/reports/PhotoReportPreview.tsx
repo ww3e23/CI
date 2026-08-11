@@ -53,10 +53,11 @@ export function PhotoReportPreview({
   onClose: () => void
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
-  const liveState = useProjectStore((s) => pickProjectState(s))
+  // 不可在 useProjectStore selector 裡每次 new object（會觸發 React #185 無限重渲）
+  const [reportState, setReportState] = useState<ProjectState>(state)
   const [ready, setReady] = useState(false)
 
-  // 開啟前把 IndexedDB 暫存圖灌回記憶體，避免報告缺位置圖／現況照
+  // 開啟前把 IndexedDB 暫存圖灌回記憶體，再快照一次供報告使用
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -65,7 +66,10 @@ export function PhotoReportPreview({
       } catch {
         /* ignore */
       } finally {
-        if (!cancelled) setReady(true)
+        if (!cancelled) {
+          setReportState(pickProjectState(useProjectStore.getState()))
+          setReady(true)
+        }
       }
     })()
     return () => {
@@ -73,7 +77,6 @@ export function PhotoReportPreview({
     }
   }, [])
 
-  const reportState = ready ? liveState : state
   const input = useMemo(
     () => ({ projectName, recorderName, state: reportState, unitIds }),
     [projectName, recorderName, reportState, unitIds],
