@@ -6,7 +6,7 @@ import type { DriveClient } from './driveFolders'
 
 /** 與前端 VITE_GOOGLE_OAUTH_CLIENT_ID 同一網頁用戶端 */
 export const GOOGLE_OAUTH_CLIENT_ID =
-  '829326871761-i1foshfs40cspeuf9ckqlq32dvr0d535.apps.googleusercontent.com'
+  '829326871761-5ls56g2qktrk242v43551ladikvs2uhv.apps.googleusercontent.com'
 
 /** GIS popup code flow 的 redirect_uri */
 export const OAUTH_REDIRECT_URI = 'postmessage'
