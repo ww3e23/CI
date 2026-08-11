@@ -5,7 +5,7 @@ import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { fileToCompressedDataUrl } from '../../lib/imageCompress'
 import { getUnitAreas } from '../../lib/areas'
 import type { Defect } from '../../types'
-import { resolveDefectItemLabel, resolveDefectRemark } from '../../lib/defectDisplay'
+import { resolveDefectRemark } from '../../lib/defectDisplay'
 import { Modal } from '../ui/Modal'
 import { AnnotatePlanModal } from './AnnotatePlanModal'
 import { UnitAreasEditor } from '../settings/UnitAreasEditor'
@@ -28,7 +28,6 @@ export function EditDefectSheet({
   const canEdit = role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
 
   const unit = units.find((u) => u.id === defect.unitId)
-  const itemLabel = resolveDefectItemLabel(defect, checklistItems)
   const areas = useMemo(() => {
     const list = getUnitAreas(unit, projectAreas, areaTemplates)
     return list.includes(defect.area) ? list : [defect.area, ...list]
@@ -37,6 +36,14 @@ export function EditDefectSheet({
   const activeCats = categories.filter((c) => c.active)
   const [catId, setCatId] = useState(defect.categoryId)
   const cat = activeCats.find((c) => c.id === catId) ?? activeCats[0]
+  const catItems = useMemo(
+    () =>
+      checklistItems
+        .filter((i) => i.categoryId === cat?.id && i.active)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [checklistItems, cat?.id],
+  )
+  const [itemId, setItemId] = useState<string | null>(defect.checklistItemId ?? null)
   const [area, setArea] = useState(defect.area)
   const [description, setDescription] = useState(() =>
     resolveDefectRemark(defect, useProjectStore.getState().checklistItems),
@@ -48,6 +55,12 @@ export function EditDefectSheet({
   const [error, setError] = useState('')
   const [annotateOpen, setAnnotateOpen] = useState(false)
   const [areasOpen, setAreasOpen] = useState(false)
+
+  // 換大項時：若目前細項不屬於新大項，改選該大項第一筆（或清空）
+  const effectiveItemId = useMemo(() => {
+    if (itemId && catItems.some((i) => i.id === itemId)) return itemId
+    return catItems[0]?.id ?? null
+  }, [itemId, catItems])
 
   async function onPick(file: File | undefined, kind: 'plan' | 'photo') {
     if (!file) return
@@ -83,6 +96,7 @@ export function EditDefectSheet({
     const result = await updateDefect(defect.id, {
       categoryId: cat.id,
       categoryName: cat.name,
+      checklistItemId: effectiveItemId,
       area,
       description: text,
       planPhotoDataUrl: planPhoto ?? null,
@@ -104,12 +118,6 @@ export function EditDefectSheet({
         </h3>
         <p style={{ margin: '8px 0 12px', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.45 }}>
           {defect.buildingName}・{defect.floor}・{defect.unitCode}戶
-          {itemLabel ? (
-            <>
-              <br />
-              <strong style={{ color: 'var(--ink)' }}>細項：{itemLabel}</strong>
-            </>
-          ) : null}
         </p>
 
         {!canEdit && (
@@ -126,13 +134,60 @@ export function EditDefectSheet({
                 key={c.id}
                 type="button"
                 className={`chip ${cat?.id === c.id ? 'on' : ''}`}
-                onClick={() => setCatId(c.id)}
+                onClick={() => {
+                  setCatId(c.id)
+                  const first = checklistItems
+                    .filter((i) => i.categoryId === c.id && i.active)
+                    .sort((a, b) => a.sortOrder - b.sortOrder)[0]
+                  setItemId(first?.id ?? null)
+                }}
                 disabled={!canEdit}
               >
                 {c.name}
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="field">
+          <label>查驗細項</label>
+          {catItems.length === 0 ? (
+            <p style={{ margin: '8px 0 0', color: 'var(--terracotta)', fontSize: 12, fontWeight: 700 }}>
+              此大項尚無啟用中的細項
+            </p>
+          ) : (
+            <div
+              className="chip-row"
+              style={{
+                flexDirection: 'column',
+                alignItems: 'stretch',
+                gap: 8,
+                marginTop: 8,
+                maxHeight: '28vh',
+                overflow: 'auto',
+              }}
+            >
+              {catItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`chip ${effectiveItemId === item.id ? 'on' : ''}`}
+                  style={{
+                    minHeight: 40,
+                    justifyContent: 'flex-start',
+                    textAlign: 'left',
+                    whiteSpace: 'normal',
+                    lineHeight: 1.35,
+                    width: '100%',
+                  }}
+                  onClick={() => setItemId(item.id)}
+                  disabled={!canEdit}
+                >
+                  {item.description}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="field">
