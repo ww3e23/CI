@@ -22,13 +22,17 @@ export function AddDefectSheet({
   const units = useProjectStore((s) => s.units)
   const categories = useProjectStore((s) => s.categories)
   const projectAreas = useProjectStore((s) => s.areas)
+  const areaTemplates = useProjectStore((s) => s.areaTemplates) ?? []
   const currentUnitId = useProjectStore((s) => s.currentUnitId)
   const addDefect = useProjectStore((s) => s.addDefect)
   const role = useCurrentRole()
   const user = useCurrentUser()
 
   const unit = units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active)
-  const areas = useMemo(() => getUnitAreas(unit, projectAreas), [unit, projectAreas])
+  const areas = useMemo(
+    () => getUnitAreas(unit, projectAreas, areaTemplates),
+    [unit, projectAreas, areaTemplates],
+  )
   const activeCats = categories.filter((c) => c.active)
   const [catId, setCatId] = useState(categoryId ?? activeCats[0]?.id ?? '')
   const cat = activeCats.find((c) => c.id === catId) ?? activeCats[0]
@@ -361,9 +365,11 @@ export function AddDefectSheet({
           unitId={unit.id}
           onClose={() => {
             setAreasOpen(false)
+            const st = useProjectStore.getState()
             const next = getUnitAreas(
-              useProjectStore.getState().units.find((u) => u.id === unit.id),
-              useProjectStore.getState().areas,
+              st.units.find((u) => u.id === unit.id),
+              st.areas,
+              st.areaTemplates ?? [],
             )
             if (next.length && !next.includes(area)) setArea(next[0])
           }}

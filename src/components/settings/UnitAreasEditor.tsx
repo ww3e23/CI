@@ -1,7 +1,12 @@
 import { useMemo, useState } from 'react'
 import { GripVertical, Plus, Trash2 } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
-import { getUnitAreas, isUnitAreasCustomized, normalizeAreaName } from '../../lib/areas'
+import {
+  getUnitAreas,
+  isUnitAreasCustomized,
+  isUnitFollowingTemplate,
+  normalizeAreaName,
+} from '../../lib/areas'
 import { fileToCompressedDataUrl } from '../../lib/imageCompress'
 import { createId } from '../../lib/id'
 import { Modal } from '../ui/Modal'
@@ -29,10 +34,13 @@ export function UnitAreasEditor({
   const canEdit = role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
 
   const unit = units.find((u) => u.id === unitId)
+  const areaTemplates = useProjectStore((s) => s.areaTemplates) ?? []
   const [rows, setRows] = useState<AreaRow[]>(() => {
+    const st = useProjectStore.getState()
     const names = getUnitAreas(
-      useProjectStore.getState().units.find((u) => u.id === unitId),
-      useProjectStore.getState().areas,
+      st.units.find((u) => u.id === unitId),
+      st.areas,
+      st.areaTemplates ?? [],
     )
     return names.map((name) => ({
       key: createId('area'),
@@ -250,8 +258,10 @@ export function UnitAreasEditor({
       <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>查驗區域</div>
       <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
         {isUnitAreasCustomized(unit)
-          ? '已自訂此戶區域（優先於專案預設／批量套用）'
-          : '目前使用專案預設，儲存後將獨立套用此戶'}
+          ? '已手動自訂此戶區域（優先於範本／專案預設）'
+          : isUnitFollowingTemplate(unit)
+            ? `目前跟隨格局範本 ${areaTemplates.find((t) => t.id === unit.areaTemplateId)?.code ?? ''}；儲存後改為手動自訂`
+            : '目前使用專案預設；儲存後改為手動自訂此戶'}
       </p>
 
       {!canEdit && (
@@ -365,15 +375,16 @@ export function UnitAreasEditor({
           className="btn btn-ghost"
           disabled={!canEdit}
           onClick={() => {
-            if (!confirm('確定還原為專案預設區域？此戶自訂名稱會被覆蓋。')) return
+            if (!confirm('確定還原為專案預設區域？將清除此戶手動自訂與範本綁定。')) return
             const result = resetUnitAreasToProjectDefault(unitId)
             if (!result.ok) {
               setError(result.error || '還原失敗')
               return
             }
             const names = getUnitAreas(
-              { ...unit, areas: undefined },
+              { ...unit, areas: undefined, areaTemplateId: undefined },
               useProjectStore.getState().areas,
+              useProjectStore.getState().areaTemplates ?? [],
             )
             setRows(
               names.map((name) => ({

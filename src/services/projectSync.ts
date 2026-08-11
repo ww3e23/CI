@@ -186,6 +186,24 @@ function unitAreasMap(units: ProjectState['units']): Record<string, string[]> {
   return map
 }
 
+function unitAreaTemplateMap(units: ProjectState['units']): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const u of units) {
+    if (u.areaTemplateId) map[u.id] = u.areaTemplateId
+  }
+  return map
+}
+
+function parseUnitAreaTemplateMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, string> = {}
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    const tid = String(value ?? '').trim()
+    if (tid) out[id] = tid
+  }
+  return out
+}
+
 function unitPlanPhotosMap(units: ProjectState['units']): Record<string, string> {
   const map: Record<string, string> = {}
   for (const u of units) {
@@ -330,6 +348,7 @@ export async function pushProjectState(
       activities: state.activities.slice(0, 40),
       unitNextDefect: unitNextMap(state.units),
       unitAreas: unitAreasMap(state.units),
+      unitAreaTemplates: unitAreaTemplateMap(state.units),
       unitPlanPhotos: unitPlanPhotosMap(state.units),
       currentUnitId: state.currentUnitId,
       recentUnitIds: state.recentUnitIds,
@@ -393,6 +412,7 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
         ? (meta.unitNextDefect as Record<string, number>)
         : {}
     const unitAreas = parseUnitAreasMap(meta.unitAreas)
+    const unitAreaTemplates = parseUnitAreaTemplateMap(meta.unitAreaTemplates)
     const unitPlanPhotos = parseUnitPlanPhotosMap(meta.unitPlanPhotos)
 
     const units = expandUnitsFromBuildings(buildings).map((u) => ({
@@ -402,7 +422,11 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
         Number(unitNext[u.id] ?? u.nextDefectNumber ?? 1),
         defects,
       ),
+      // 手動自訂優先；有手動 areas 就不掛範本綁定
       areas: unitAreas[u.id]?.length ? unitAreas[u.id] : undefined,
+      areaTemplateId: unitAreas[u.id]?.length
+        ? undefined
+        : unitAreaTemplates[u.id] || undefined,
       defaultPlanPhotoUrl: unitPlanPhotos[u.id] || undefined,
     }))
 
@@ -551,10 +575,12 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
   const mergedDefects = [...defectMap.values()]
   const unitNext: Record<string, number> = {}
   const unitAreas: Record<string, string[]> = {}
+  const unitTpl: Record<string, string> = {}
   const unitPlans: Record<string, string> = {}
   for (const u of local.units) {
     unitNext[u.id] = u.nextDefectNumber
     if (u.areas?.length) unitAreas[u.id] = [...u.areas]
+    if (u.areaTemplateId) unitTpl[u.id] = u.areaTemplateId
     if (u.defaultPlanPhotoUrl) unitPlans[u.id] = u.defaultPlanPhotoUrl
   }
   for (const u of remote.units) {
@@ -563,6 +589,7 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
     if (!unitAreas[u.id]?.length && u.areas?.length) {
       unitAreas[u.id] = [...u.areas]
     }
+    if (!unitTpl[u.id] && u.areaTemplateId) unitTpl[u.id] = u.areaTemplateId
     const localPlan = unitPlans[u.id]
     const remotePlan = u.defaultPlanPhotoUrl
     const mergedPlan = preferMediaUrl(localPlan, remotePlan)
@@ -573,6 +600,7 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
     ...u,
     nextDefectNumber: computeNextDefectNumber(u.id, unitNext[u.id] ?? 1, mergedDefects),
     areas: unitAreas[u.id]?.length ? unitAreas[u.id] : undefined,
+    areaTemplateId: unitAreas[u.id]?.length ? undefined : unitTpl[u.id] || undefined,
     defaultPlanPhotoUrl: unitPlans[u.id] || undefined,
   }))
 

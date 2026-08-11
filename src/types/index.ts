@@ -28,8 +28,16 @@ export interface Unit {
   label: string
   active: boolean
   nextDefectNumber: number
-  /** 此戶專屬查驗區域（客廳／臥室等）；未設定時沿用專案預設 areas */
+  /**
+   * 此戶手動自訂查驗區域（優先級最高）。
+   * 有值時不再跟隨專案預設或格局範本。
+   */
   areas?: string[]
+  /**
+   * 綁定的格局區域範本 ID。
+   * 無手動 areas 時，區域清單跟隨該範本（範本改了會一起變）。
+   */
+  areaTemplateId?: string
   /** 此戶預設位置圖（圖面）網址；新增缺失時自動帶入供標註 */
   defaultPlanPhotoUrl?: string
 }

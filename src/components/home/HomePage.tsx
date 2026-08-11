@@ -46,6 +46,7 @@ export function HomePage({
   const categories = useProjectStore((s) => s.categories)
   const defects = useProjectStore((s) => s.defects)
   const projectAreas = useProjectStore((s) => s.areas)
+  const areaTemplates = useProjectStore((s) => s.areaTemplates) ?? []
   const currentUnitId = useProjectStore((s) => s.currentUnitId)
   const unitCategoryDone = useProjectStore((s) => s.unitCategoryDone)
   const unitCheckedCount = useProjectStore((s) => s.unitCheckedCount)
@@ -224,7 +225,7 @@ export function HomePage({
               }}
               onClick={() => setAreasOpen(true)}
             >
-              區域／位置圖 {getUnitAreas(unit, projectAreas).length}
+              區域／位置圖 {getUnitAreas(unit, projectAreas, areaTemplates).length}
             </button>
             <button
               type="button"

@@ -90,15 +90,15 @@ interface ProjectActions {
   /** 清除此戶自訂區域，改回專案預設 */
   resetUnitAreasToProjectDefault: (unitId: string) => { ok: boolean; error?: string }
   /**
-   * 批量套用查驗區域到選取戶別。
-   * 預設略過已自訂戶別（手動優先）；overwriteCustomized=true 才覆蓋。
+   * 批量綁定格局範本到選取戶別（跟著範本，不算手動自訂）。
+   * 預設略過已手動自訂戶別；overwriteCustomized=true 才覆蓋並改綁範本。
    */
-  applyAreasToUnits: (
+  applyAreaTemplateToUnits: (
     unitIds: string[],
-    areas: string[],
+    templateId: string,
     options?: { overwriteCustomized?: boolean },
   ) => { ok: boolean; error?: string; applied: number; skipped: number }
-  /** 批量清除自訂區域，改回專案預設 */
+  /** 批量清除自訂／範本綁定，改回專案預設 */
   resetUnitsAreasToProjectDefault: (
     unitIds: string[],
   ) => { ok: boolean; error?: string; reset: number }
@@ -220,6 +220,7 @@ function rebuildUnits(buildings: BuildingRule[], prevUnits: ProjectState['units'
       ...u,
       nextDefectNumber: old.nextDefectNumber,
       areas: old.areas?.length ? [...old.areas] : undefined,
+      areaTemplateId: old.areaTemplateId || undefined,
       defaultPlanPhotoUrl: old.defaultPlanPhotoUrl || undefined,
     }
   })
@@ -667,7 +668,9 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         }
 
         const nextUnits = state.units.map((u) =>
-          u.id === unitId ? { ...u, areas: cleaned } : u,
+          u.id === unitId
+            ? { ...u, areas: cleaned, areaTemplateId: undefined }
+            : u,
         )
         const nextDefects =
           renameMap.size === 0
@@ -721,35 +724,59 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         if (!unit) return { ok: false, error: '找不到此戶別' }
         set({
           units: state.units.map((u) =>
-            u.id === unitId ? { ...u, areas: undefined } : u,
+            u.id === unitId
+              ? { ...u, areas: undefined, areaTemplateId: undefined }
+              : u,
           ),
         })
         afterProjectChange(get, set)
         return { ok: true }
       },
 
-      applyAreasToUnits: (unitIds, areas, options = {}) => {
+      applyAreaTemplateToUnits: (unitIds, templateId, options = {}) => {
         const overwrite = Boolean(options.overwriteCustomized)
-        const cleaned = sanitizeAreaList(areas)
-        if (cleaned.length === 0) {
-          return { ok: false, error: '至少需要保留一個查驗區域', applied: 0, skipped: 0 }
-        }
         if (unitIds.length === 0) {
           return { ok: false, error: '請先選擇戶別', applied: 0, skipped: 0 }
         }
-
         const state = get()
+        const template = (state.areaTemplates ?? []).find((t) => t.id === templateId)
+        if (!template?.areas?.length) {
+          return { ok: false, error: '找不到此格局範本', applied: 0, skipped: 0 }
+        }
+
         const idSet = new Set(unitIds)
         let applied = 0
         let skipped = 0
+        const sameAreas = (a: string[] | undefined, b: string[]) =>
+          Boolean(a) &&
+          a!.length === b.length &&
+          a!.every((name, i) => name === b[i])
+
         const nextUnits = state.units.map((u) => {
           if (!idSet.has(u.id) || !u.active) return u
+          // 已綁同一範本且無手動自訂 → 略過
+          if (!isUnitAreasCustomized(u) && u.areaTemplateId === templateId) {
+            skipped += 1
+            return u
+          }
+          // 舊版曾把範本內容複製進 areas：清單相同則改回「綁定範本」
+          if (
+            isUnitAreasCustomized(u) &&
+            sameAreas(u.areas, template.areas)
+          ) {
+            applied += 1
+            return { ...u, areas: undefined, areaTemplateId: templateId }
+          }
           if (!overwrite && isUnitAreasCustomized(u)) {
             skipped += 1
             return u
           }
           applied += 1
-          return { ...u, areas: [...cleaned] }
+          return {
+            ...u,
+            areas: undefined,
+            areaTemplateId: templateId,
+          }
         })
 
         if (applied === 0) {
@@ -757,7 +784,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             ok: false,
             error:
               skipped > 0
-                ? `選取的 ${skipped} 戶皆已自訂區域，未覆寫（可勾選「覆蓋已自訂」）`
+                ? `沒有新套用：可能已綁此範本，或皆為手動自訂（可勾選「覆蓋已自訂」）`
                 : '沒有可套用的戶別',
             applied: 0,
             skipped,
@@ -778,8 +805,8 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               buildingName: '—',
               floor: '—',
               unitCode: '—',
-              summary: `批量套用查驗區域：${applied} 戶（${cleaned.length} 項）${
-                skipped ? `，略過已自訂 ${skipped} 戶` : ''
+              summary: `套用格局範本 ${template.code}：${applied} 戶${
+                skipped ? `，略過 ${skipped} 戶` : ''
               }`,
               actorName: '現場查驗',
             },
@@ -799,9 +826,9 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         let reset = 0
         const nextUnits = state.units.map((u) => {
           if (!idSet.has(u.id) || !u.active) return u
-          if (!isUnitAreasCustomized(u)) return u
+          if (!isUnitAreasCustomized(u) && !u.areaTemplateId) return u
           reset += 1
-          return { ...u, areas: undefined }
+          return { ...u, areas: undefined, areaTemplateId: undefined }
         })
         if (reset === 0) {
           return { ok: true, reset: 0 }
@@ -820,7 +847,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               buildingName: '—',
               floor: '—',
               unitCode: '—',
-              summary: `批量還原查驗區域為專案預設：${reset} 戶`,
+              summary: `還原查驗區域為專案預設：${reset} 戶`,
               actorName: '現場查驗',
             },
             ...state.activities,
@@ -947,7 +974,15 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         if (!list.some((t) => t.id === templateId)) {
           return { ok: false, error: '找不到此範本' }
         }
-        set({ areaTemplates: list.filter((t) => t.id !== templateId) })
+        set({
+          areaTemplates: list.filter((t) => t.id !== templateId),
+          // 解除綁定；無手動自訂者改回專案預設
+          units: get().units.map((u) =>
+            u.areaTemplateId === templateId
+              ? { ...u, areaTemplateId: undefined }
+              : u,
+          ),
+        })
         afterProjectChange(get, set)
         return { ok: true }
       },

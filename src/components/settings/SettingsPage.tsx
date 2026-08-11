@@ -18,6 +18,7 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const checklistItems = useProjectStore((s) => s.checklistItems)
   const units = useProjectStore((s) => s.units)
   const projectAreas = useProjectStore((s) => s.areas)
+  const areaTemplates = useProjectStore((s) => s.areaTemplates) ?? []
   const currentUnitId = useProjectStore((s) => s.currentUnitId)
   const upsertBuilding = useProjectStore((s) => s.upsertBuilding)
   const removeBuilding = useProjectStore((s) => s.removeBuilding)
@@ -142,7 +143,7 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
       <article className="glass" style={{ padding: 14, marginBottom: 8 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
           {currentUnit
-            ? `目前戶：${currentUnit.buildingName} ${currentUnit.floor} ${currentUnit.code}戶 · ${getUnitAreas(currentUnit, projectAreas).join('、')}`
+            ? `目前戶：${currentUnit.buildingName} ${currentUnit.floor} ${currentUnit.code}戶 · ${getUnitAreas(currentUnit, projectAreas, areaTemplates).join('、')}`
             : '尚未選擇可查驗戶別'}
           {projectAreas.length > 0 ? (
             <>

@@ -5,6 +5,7 @@ import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import {
   DEFAULT_AREAS,
   isUnitAreasCustomized,
+  isUnitFollowingTemplate,
   normalizeAreaName,
   sanitizeAreaList,
 } from '../../lib/areas'
@@ -27,7 +28,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
   const areaTemplates = useProjectStore((s) => s.areaTemplates) ?? []
   const saveAreaTemplate = useProjectStore((s) => s.saveAreaTemplate)
   const deleteAreaTemplate = useProjectStore((s) => s.deleteAreaTemplate)
-  const applyAreasToUnits = useProjectStore((s) => s.applyAreasToUnits)
+  const applyAreaTemplateToUnits = useProjectStore((s) => s.applyAreaTemplateToUnits)
   const resetUnitsAreasToProjectDefault = useProjectStore(
     (s) => s.resetUnitsAreasToProjectDefault,
   )
@@ -233,7 +234,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
     ) {
       return
     }
-    const result = applyAreasToUnits(selectedIds, selectedTemplate.areas, {
+    const result = applyAreaTemplateToUnits(selectedIds, selectedTemplate.id, {
       overwriteCustomized,
     })
     if (!result.ok) {
@@ -243,8 +244,8 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
     }
     setError('')
     setMsg(
-      `已用 ${selectedTemplate.code} 套用 ${result.applied} 戶` +
-        (result.skipped ? `，略過已自訂 ${result.skipped} 戶` : ''),
+      `已綁定 ${selectedTemplate.code}：${result.applied} 戶（跟著範本，不算自訂）` +
+        (result.skipped ? `，略過 ${result.skipped} 戶` : ''),
     )
   }
 
@@ -279,7 +280,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
         as="h3"
         className="serif"
         style={{ margin: '0 0 6px', fontSize: 20 }}
-        hint="先存格局範本（系統自動編碼），再選範本，用矩陣勾選各棟樓層／戶別一次套用。已手動自訂的戶預設不會被覆蓋。"
+        hint="套用範本是「綁定跟著走」，不是複製成自訂。橘色「自」只代表該戶曾手動改過區域。"
       >
         格局區域範本
       </TitleHint>
@@ -451,13 +452,33 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
                         const unit = unitByKey.get(key)
                         const on = Boolean(selected[key])
                         const customized = unit ? isUnitAreasCustomized(unit) : false
+                        const following = unit ? isUnitFollowingTemplate(unit) : false
+                        const sameTpl =
+                          following && unit?.areaTemplateId === selectedTemplateId
+                        const otherTpl = following && !sameTpl
+                        const tplCode = following
+                          ? areaTemplates.find((t) => t.id === unit?.areaTemplateId)?.code
+                          : ''
                         const cls = !unit
                           ? 'na'
                           : on
                             ? 'done'
                             : customized
                               ? 'defect'
-                              : 'empty'
+                              : sameTpl
+                                ? 'progress'
+                                : otherTpl
+                                  ? 'empty'
+                                  : 'empty'
+                        const label = on
+                          ? '✓'
+                          : customized
+                            ? '自'
+                            : sameTpl
+                              ? '範'
+                              : otherTpl
+                                ? (tplCode?.replace(/^G/i, '') ?? '範')
+                                : ''
                         return (
                           <td key={key}>
                             <button
@@ -466,12 +487,20 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
                               disabled={!unit}
                               title={
                                 unit
-                                  ? `${building.name} ${floor} ${code}${customized ? '｜已自訂' : '｜沿用預設'}${on ? '｜已勾選' : ''}`
+                                  ? `${building.name} ${floor} ${code}${
+                                      customized
+                                        ? '｜手動自訂'
+                                        : sameTpl
+                                          ? `｜跟隨 ${selectedTemplate?.code ?? '範本'}`
+                                          : otherTpl
+                                            ? `｜跟隨 ${tplCode}`
+                                            : '｜專案預設'
+                                    }${on ? '｜已勾選' : ''}`
                                   : '不適用'
                               }
                               onClick={() => toggleCell(key, unit)}
                             >
-                              {on ? '✓' : customized ? '自' : ''}
+                              {label}
                             </button>
                           </td>
                         )
@@ -484,7 +513,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
           )}
 
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-soft)', marginBottom: 10 }}>
-            綠勾＝已選　橘「自」＝該戶已手動自訂　灰＝未選　空白＝不適用
+            綠勾＝勾選中　藍「範」＝已綁目前範本（跟著走）　橘「自」＝手動改過　灰＝專案預設／其他
           </div>
         </>
       )}
@@ -508,7 +537,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
           onChange={(e) => setOverwriteCustomized(e.target.checked)}
           style={{ marginTop: 2, width: 18, height: 18 }}
         />
-        <span>覆蓋已自訂戶別（預設不勾，避免誤改）</span>
+        <span>覆蓋手動自訂戶別（預設不勾；已綁範本會跟著更新，不算自訂）</span>
       </label>
 
       {error && (

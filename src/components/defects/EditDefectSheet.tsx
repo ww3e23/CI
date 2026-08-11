@@ -20,6 +20,7 @@ export function EditDefectSheet({
   const categories = useProjectStore((s) => s.categories)
   const units = useProjectStore((s) => s.units)
   const projectAreas = useProjectStore((s) => s.areas)
+  const areaTemplates = useProjectStore((s) => s.areaTemplates) ?? []
   const checklistItems = useProjectStore((s) => s.checklistItems)
   const updateDefect = useProjectStore((s) => s.updateDefect)
   const role = useCurrentRole()
@@ -29,9 +30,9 @@ export function EditDefectSheet({
   const unit = units.find((u) => u.id === defect.unitId)
   const itemLabel = resolveDefectItemLabel(defect, checklistItems)
   const areas = useMemo(() => {
-    const list = getUnitAreas(unit, projectAreas)
+    const list = getUnitAreas(unit, projectAreas, areaTemplates)
     return list.includes(defect.area) ? list : [defect.area, ...list]
-  }, [unit, projectAreas, defect.area])
+  }, [unit, projectAreas, areaTemplates, defect.area])
 
   const activeCats = categories.filter((c) => c.active)
   const [catId, setCatId] = useState(defect.categoryId)
