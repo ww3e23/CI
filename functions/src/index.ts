@@ -298,7 +298,7 @@ async function runPhotoSync(params: {
       const msg = String((err as Error)?.message ?? err)
       throw new HttpsError(
         'failed-precondition',
-        `${msg}\n\n若公司無法使用共用雲端硬碟，請改按「用我的 Google 帳號同步」。`,
+        `${msg}\n\n若公司無法使用共用雲端硬碟，請後台先「綁定雲端硬碟擁有者」。`,
       )
     }
   }
@@ -354,7 +354,7 @@ async function runPhotoSync(params: {
         if (/storage quota/i.test(msg)) {
           throw new HttpsError(
             'failed-precondition',
-            '無法寫入此雲端硬碟資料夾（服務帳戶無個人容量）。請改按「用我的 Google 帳號同步」。',
+            '無法寫入此雲端硬碟資料夾（服務帳戶無個人容量）。請後台先「綁定雲端硬碟擁有者」。',
           )
         }
         continue
@@ -405,7 +405,7 @@ async function runPhotoSync(params: {
         if (/storage quota/i.test(msg)) {
           throw new HttpsError(
             'failed-precondition',
-            '服務帳戶無法寫入「我的雲端硬碟」。請改按「用我的 Google 帳號同步」（使用你自己的 Google 容量）。',
+            '服務帳戶無法寫入「我的雲端硬碟」。請後台先「綁定雲端硬碟擁有者」。',
           )
         }
         errors.push(`上傳失敗 ${driveFileName}: ${msg}`)
