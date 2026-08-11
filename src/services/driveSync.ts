@@ -214,9 +214,56 @@ export async function syncProjectPhotosToDriveAsUser(
   }
 }
 
+export type DriveReconcileResult = {
+  ok: boolean
+  skipped?: boolean
+  reason?: string
+  action?: 'trashed' | 'synced' | 'skipped'
+  renamed?: boolean
+  moved?: boolean
+  uploaded?: number
+  removed?: number
+  folderId?: string | null
+}
+
 /**
- * 拍照上傳後背景自動同步。
- * 已綁定擁有者時：直接呼叫後端，不彈 Google。
+ * 單筆缺失即時對齊雲端硬碟（新增／編輯／刪除後用）。
+ * 已綁定擁有者時不彈 Google：改名、搬資料夾、補傳、清掉已刪照片。
+ */
+export async function reconcileDefectOnDrive(params: {
+  projectId: string
+  defectId: string
+}): Promise<{ ok: boolean; result?: DriveReconcileResult; error?: string }> {
+  const project = useAuthStore.getState().projects.find((p) => p.id === params.projectId)
+  if (!project?.driveFolderId) {
+    return { ok: true, result: { ok: true, skipped: true, reason: 'no-drive-folder' } }
+  }
+  if (!project.driveOwnerConnected) {
+    return { ok: true, result: { ok: true, skipped: true, reason: 'drive-owner-not-connected' } }
+  }
+
+  const ready = await ensureFirebaseUser()
+  if (!ready.ok) return ready
+
+  try {
+    const functions = getFunctions(ready.app, 'asia-east1')
+    const callable = httpsCallable<
+      { projectId: string; defectId: string },
+      DriveReconcileResult
+    >(functions, 'reconcileDefectOnDrive', { timeout: 180_000 })
+    const res = await callable({
+      projectId: params.projectId,
+      defectId: params.defectId,
+    })
+    return { ok: true, result: res.data }
+  } catch (err) {
+    return { ok: false, error: cleanError(err) }
+  }
+}
+
+/**
+ * 拍照上傳／編輯後背景自動同步。
+ * 已綁定擁有者時：對齊該筆缺失的 Drive 資料夾（不彈 Google）。
  */
 export async function autoSyncDefectPhotosToDrive(params: {
   projectId: string
@@ -226,8 +273,8 @@ export async function autoSyncDefectPhotosToDrive(params: {
   if (!project?.driveFolderId) return
 
   if (project.driveOwnerConnected) {
-    const res = await syncProjectPhotosToDrive(params.projectId, [params.defectId])
-    if (!res.ok) console.warn('[drive-auto] 擁有者自動同步失敗', res.error)
+    const res = await reconcileDefectOnDrive(params)
+    if (!res.ok) console.warn('[drive-auto] 即時對齊失敗', res.error)
     return
   }
 

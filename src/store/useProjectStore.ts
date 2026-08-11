@@ -598,6 +598,11 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               })
               afterProjectChange(get, set, { syncCloud: false })
               scheduleCloudSync(get)
+              // 備註／大項變更時，即時改名／搬移雲端硬碟資料夾
+              void autoSyncDefectPhotosToDrive({
+                projectId,
+                defectId: next.id,
+              }).catch((err) => console.warn('[drive-auto] edit reconcile', err))
             } catch (err) {
               console.warn('[updateDefect] sync failed', err)
               return { ok: true, error: '已本機更新，雲端同步失敗' }

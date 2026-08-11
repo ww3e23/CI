@@ -3,6 +3,7 @@ import { getFirestore } from 'firebase-admin/firestore'
 import { getStorage } from 'firebase-admin/storage'
 import { onObjectFinalized } from 'firebase-functions/v2/storage'
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
+import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { logger } from 'firebase-functions'
 import { Readable } from 'node:stream'
 import { google } from 'googleapis'
@@ -11,10 +12,14 @@ import {
   buildDriveFileName,
   buildItemFolderName,
   buildItemFolderNameCandidates,
+  ensureCategoryFolderPath,
   ensureDefectFolderPath,
   findDefectFolderPath,
   getDriveClient,
+  getDriveItemMeta,
   listFolderFiles,
+  moveDriveItem,
+  renameDriveItem,
   trashDriveItem,
   type DriveClient,
 } from './driveFolders'
@@ -793,5 +798,292 @@ export const deleteDefectPhotosFromDriveAsUser = onCall(
       skipped: false,
       ...result,
     }
+  },
+)
+
+async function resolveDesiredLeafName(
+  defect: DefectRow,
+  items: Map<string, ChecklistItemRow>,
+): Promise<string> {
+  const item = defect.checklistItemId ? items.get(defect.checklistItemId) : undefined
+  return buildItemFolderName({
+    itemSortOrder: item?.sortOrder,
+    itemDescription: item?.description,
+    defectNumber: Number(defect.defectNumber ?? 0),
+    defectDescription: String(defect.description ?? ''),
+    categoryName: String(defect.categoryName ?? ''),
+    area: String(defect.area ?? ''),
+  })
+}
+
+/**
+ * 單筆缺失對齊雲端硬碟：
+ * - 已作廢 → 刪資料夾
+ * - 否則改名／搬到正確路徑，並補傳／清掉多餘照片
+ */
+async function reconcileOneDefectOnDrive(params: {
+  projectId: string
+  driveFolderId: string
+  drive: DriveClient
+  defect: DefectRow
+  items: Map<string, ChecklistItemRow>
+}): Promise<{
+  ok: boolean
+  action: 'trashed' | 'synced' | 'skipped'
+  renamed?: boolean
+  moved?: boolean
+  uploaded?: number
+  removed?: number
+  folderId?: string | null
+}> {
+  const { projectId, driveFolderId, drive, defect, items } = params
+
+  if (defect.status === 'voided') {
+    const result = await trashDefectDriveData({
+      drive,
+      rootFolderId: driveFolderId,
+      defect,
+      items,
+    })
+    await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
+      {
+        driveLeafFolderId: null,
+        driveLastFileId: null,
+        driveDeletedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    )
+    return {
+      ok: true,
+      action: 'trashed',
+      removed: result.trashedFiles + (result.trashedFolder ? 1 : 0),
+      folderId: null,
+    }
+  }
+
+  const desiredName = await resolveDesiredLeafName(defect, items)
+  const categoryId = await ensureCategoryFolderPath(drive, driveFolderId, {
+    buildingName: String(defect.buildingName ?? '未指定棟別'),
+    floor: String(defect.floor ?? '未指定樓層'),
+    unitCode: String(defect.unitCode ?? '未指定戶別'),
+    categoryName: String(defect.categoryName ?? '未指定大項'),
+  })
+
+  let folderId = String(defect.driveLeafFolderId || '').trim() || null
+  let renamed = false
+  let moved = false
+
+  if (folderId) {
+    const meta = await getDriveItemMeta(drive, folderId)
+    if (!meta) {
+      folderId = null
+    } else {
+      const parentId = meta.parents[0] || ''
+      if (parentId && parentId !== categoryId) {
+        await moveDriveItem(drive, folderId, categoryId, parentId)
+        moved = true
+      }
+      if (meta.name !== desiredName) {
+        await renameDriveItem(drive, folderId, desiredName)
+        renamed = true
+      }
+    }
+  }
+
+  if (!folderId) {
+    folderId = await ensureDefectFolderPath(drive, driveFolderId, {
+      buildingName: String(defect.buildingName ?? '未指定棟別'),
+      floor: String(defect.floor ?? '未指定樓層'),
+      unitCode: String(defect.unitCode ?? '未指定戶別'),
+      categoryName: String(defect.categoryName ?? '未指定大項'),
+      itemFolderName: desiredName,
+    })
+  }
+
+  const prefix = `projects/${projectId}/defects/${defect.id}/`
+  const bucket = getStorage().bucket()
+  const [listed] = await bucket.getFiles({ prefix })
+  const storageFiles = listed.filter((f) => f.name && !f.name.endsWith('/'))
+  const storagePaths = new Set(storageFiles.map((f) => f.name))
+
+  const existing = await listFolderFiles(drive, folderId)
+  let uploaded = 0
+  let removed = 0
+  let lastFileId: string | null = String(defect.driveLastFileId || '').trim() || null
+
+  // 清掉 Storage 已不存在的 Drive 檔（使用者刪除單張照片時）
+  for (const f of existing) {
+    if (f.sourcePath && !storagePaths.has(f.sourcePath)) {
+      try {
+        await trashDriveItem(drive, f.id)
+        removed += 1
+      } catch (err) {
+        logger.warn('trash obsolete drive file failed', { fileId: f.id, err })
+      }
+    }
+  }
+
+  const afterTrash = removed > 0 ? await listFolderFiles(drive, folderId) : existing
+  const bySource = new Set(afterTrash.map((f) => f.sourcePath).filter(Boolean) as string[])
+  const byName = new Set(afterTrash.map((f) => f.name))
+
+  for (const file of storageFiles) {
+    const storageFileName = file.name.slice(prefix.length) || file.name
+    const driveFileName = buildDriveFileName(Number(defect.defectNumber ?? 0), storageFileName)
+    if (bySource.has(file.name) || byName.has(driveFileName)) continue
+    const [buffer] = await file.download()
+    const fileId = await uploadBufferToDrive({
+      drive,
+      folderId,
+      fileName: driveFileName,
+      sourcePath: file.name,
+      buffer,
+      contentType: file.metadata?.contentType || 'image/jpeg',
+    })
+    uploaded += 1
+    lastFileId = fileId
+    bySource.add(file.name)
+    byName.add(driveFileName)
+  }
+
+  await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
+    {
+      driveLeafFolderId: folderId,
+      driveLastFileId: lastFileId,
+      driveSyncedAt: new Date().toISOString(),
+    },
+    { merge: true },
+  )
+
+  return {
+    ok: true,
+    action: 'synced',
+    renamed,
+    moved,
+    uploaded,
+    removed,
+    folderId,
+  }
+}
+
+/** 編輯／刪除後即時對齊單筆缺失的雲端硬碟資料夾 */
+export const reconcileDefectOnDrive = onCall(
+  {
+    region: 'asia-east1',
+    memory: '512MiB',
+    timeoutSeconds: 180,
+    cors: true,
+    invoker: 'public',
+    secrets: [googleOAuthClientSecret],
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', '請先登入')
+    }
+    const projectId = String(request.data?.projectId ?? '').trim()
+    const defectId = String(request.data?.defectId ?? '').trim()
+    if (!projectId) throw new HttpsError('invalid-argument', '缺少 projectId')
+    if (!defectId) throw new HttpsError('invalid-argument', '缺少 defectId')
+
+    const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
+    if (!projectSnap.exists) throw new HttpsError('not-found', '找不到此專案')
+    const driveFolderId = projectSnap.get('driveFolderId') as string | undefined
+    if (!driveFolderId) {
+      return { ok: true, skipped: true, reason: 'project-has-no-drive-folder' }
+    }
+
+    const ownerDrive = await tryGetDriveClientFromOwner({
+      projectId,
+      clientSecret: googleOAuthClientSecret.value(),
+    })
+    if (!ownerDrive) {
+      return { ok: true, skipped: true, reason: 'drive-owner-not-connected' }
+    }
+
+    const defectSnap = await getFirestore().doc(`projects/${projectId}/defects/${defectId}`).get()
+    if (!defectSnap.exists) throw new HttpsError('not-found', '找不到此缺失')
+    const defect = { id: defectId, ...(defectSnap.data() as Omit<DefectRow, 'id'>) }
+    const items = await loadChecklistItems(projectId)
+
+    const result = await reconcileOneDefectOnDrive({
+      projectId,
+      driveFolderId,
+      drive: ownerDrive.drive,
+      defect,
+      items,
+    })
+
+    logger.info('reconcile defect on drive', { projectId, defectId, ...result })
+    return { skipped: false, ...result }
+  },
+)
+
+/** 每 15 分鐘掃一次：清掉已作廢但仍留在 Drive 的資料夾 */
+export const cleanupVoidedDefectDrives = onSchedule(
+  {
+    region: 'asia-east1',
+    schedule: 'every 15 minutes',
+    memory: '512MiB',
+    timeoutSeconds: 540,
+    secrets: [googleOAuthClientSecret],
+  },
+  async () => {
+    const projectsSnap = await getFirestore()
+      .collection('projects')
+      .where('driveOwnerConnected', '==', true)
+      .get()
+
+    let cleaned = 0
+    for (const projectDoc of projectsSnap.docs) {
+      const projectId = projectDoc.id
+      const driveFolderId = String(projectDoc.get('driveFolderId') || '').trim()
+      if (!driveFolderId) continue
+
+      const ownerDrive = await tryGetDriveClientFromOwner({
+        projectId,
+        clientSecret: googleOAuthClientSecret.value(),
+      })
+      if (!ownerDrive) continue
+
+      const voidedSnap = await getFirestore()
+        .collection(`projects/${projectId}/defects`)
+        .where('status', '==', 'voided')
+        .limit(80)
+        .get()
+
+      if (voidedSnap.empty) continue
+      const items = await loadChecklistItems(projectId)
+
+      for (const doc of voidedSnap.docs) {
+        const defect = { id: doc.id, ...(doc.data() as Omit<DefectRow, 'id'>) }
+        const hasDriveHint =
+          Boolean(String(defect.driveLeafFolderId || '').trim()) ||
+          Boolean(String(defect.driveLastFileId || '').trim())
+        if (!hasDriveHint) continue
+        try {
+          const result = await trashDefectDriveData({
+            drive: ownerDrive.drive,
+            rootFolderId: driveFolderId,
+            defect,
+            items,
+          })
+          if (result.trashedFolder || result.trashedFiles > 0) {
+            cleaned += 1
+            await doc.ref.set(
+              {
+                driveLeafFolderId: null,
+                driveLastFileId: null,
+                driveDeletedAt: new Date().toISOString(),
+              },
+              { merge: true },
+            )
+          }
+        } catch (err) {
+          logger.warn('scheduled void cleanup failed', { projectId, defectId: doc.id, err })
+        }
+      }
+    }
+
+    logger.info('cleanupVoidedDefectDrives done', { cleaned, projects: projectsSnap.size })
   },
 )

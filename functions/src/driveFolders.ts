@@ -164,6 +164,71 @@ export async function trashDriveItem(drive: DriveClient, fileId: string): Promis
   })
 }
 
+export async function renameDriveItem(
+  drive: DriveClient,
+  fileId: string,
+  name: string,
+): Promise<void> {
+  const safe = sanitizeDriveName(name)
+  await drive.files.update({
+    fileId,
+    requestBody: { name: safe },
+    supportsAllDrives: true,
+  })
+}
+
+export async function moveDriveItem(
+  drive: DriveClient,
+  fileId: string,
+  newParentId: string,
+  oldParentId?: string | null,
+): Promise<void> {
+  await drive.files.update({
+    fileId,
+    addParents: newParentId,
+    ...(oldParentId ? { removeParents: oldParentId } : {}),
+    supportsAllDrives: true,
+  })
+}
+
+export async function getDriveItemMeta(
+  drive: DriveClient,
+  fileId: string,
+): Promise<{ id: string; name: string; parents: string[] } | null> {
+  try {
+    const res = await drive.files.get({
+      fileId,
+      fields: 'id,name,parents,trashed',
+      supportsAllDrives: true,
+    })
+    if (!res.data.id || res.data.trashed) return null
+    return {
+      id: res.data.id,
+      name: res.data.name || '',
+      parents: res.data.parents ?? [],
+    }
+  } catch {
+    return null
+  }
+}
+
+/** 建立到大項層（不含葉層），供搬移／改名用 */
+export async function ensureCategoryFolderPath(
+  drive: DriveClient,
+  rootFolderId: string,
+  parts: {
+    buildingName: string
+    floor: string
+    unitCode: string
+    categoryName: string
+  },
+): Promise<string> {
+  const buildingId = await ensureChildFolder(drive, rootFolderId, parts.buildingName || '未指定棟別')
+  const floorId = await ensureChildFolder(drive, buildingId, parts.floor || '未指定樓層')
+  const unitId = await ensureChildFolder(drive, floorId, parts.unitCode || '未指定戶別')
+  return ensureChildFolder(drive, unitId, parts.categoryName || '未指定大項')
+}
+
 export async function listFolderFiles(
   drive: DriveClient,
   folderId: string,
