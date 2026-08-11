@@ -63,6 +63,46 @@ type DefectRow = {
   driveLeafFolderId?: string
   driveLastFileId?: string
   driveSyncedAt?: string
+  /** 上次成功同步時的內容指紋；相同則不再重存 */
+  driveContentKey?: string
+}
+
+/** 用來判斷「內容沒變就不要再寫 Drive」 */
+function buildDriveContentKey(defect: DefectRow): string {
+  const photos = Array.isArray(defect.photoDataUrls)
+    ? defect.photoDataUrls.map((p) => String(p || '').trim()).filter(Boolean)
+    : []
+  return [
+    String(defect.status ?? ''),
+    String(defect.defectNumber ?? 0),
+    String(defect.buildingName ?? ''),
+    String(defect.floor ?? ''),
+    String(defect.unitCode ?? ''),
+    String(defect.categoryName ?? ''),
+    String(defect.checklistItemId ?? ''),
+    String(defect.area ?? ''),
+    String(defect.description ?? ''),
+    String(defect.planPhotoDataUrl ?? '').trim(),
+    photos.join('|'),
+  ].join('\n')
+}
+
+function driveFileAlreadyPresent(
+  bySource: Set<string>,
+  byName: Set<string>,
+  sourcePath: string,
+  driveFileName: string,
+): boolean {
+  if (bySource.has(sourcePath) || byName.has(driveFileName)) return true
+  // 檔名主體相同也視為已存在（避免 plan.jpg / plan-remote.jpg 重複存）
+  const stem = driveFileName.replace(/\.[^.]+$/, '').toLowerCase()
+  for (const name of byName) {
+    const n = name.replace(/\.[^.]+$/, '').toLowerCase()
+    if (n === stem) return true
+    // #12_plan 與 #12_plan-remote 視為同一張
+    if (stem.replace(/-remote$/, '') === n.replace(/-remote$/, '')) return true
+  }
+  return false
 }
 
 async function loadChecklistItems(projectId: string): Promise<Map<string, ChecklistItemRow>> {
@@ -456,6 +496,17 @@ async function runPhotoSync(params: {
       continue
     }
 
+    // 內容未變且已同步 → 略過，不要重複存
+    const contentKey = buildDriveContentKey(defect)
+    if (
+      String(defect.driveContentKey || '') === contentKey &&
+      String(defect.driveSyncedAt || '') &&
+      String(defect.driveLeafFolderId || '')
+    ) {
+      skipped += 1
+      continue
+    }
+
     const prefix = `projects/${projectId}/defects/${defect.id}/`
     let files: Array<{ name: string; contentType?: string }> = []
     try {
@@ -517,7 +568,7 @@ async function runPhotoSync(params: {
       scanned += 1
       const storageFileName = file.name.slice(prefix.length) || file.name
       const driveFileName = buildDriveFileName(Number(defect.defectNumber ?? 0), storageFileName)
-      if (bySource.has(file.name) || byName.has(driveFileName)) {
+      if (driveFileAlreadyPresent(bySource, byName, file.name, driveFileName)) {
         skipped += 1
         continue
       }
@@ -539,6 +590,7 @@ async function runPhotoSync(params: {
             driveLastFileId: fileId,
             driveLeafFolderId: folderId,
             driveSyncedAt: new Date().toISOString(),
+            driveContentKey: contentKey,
           },
           { merge: true },
         )
@@ -561,7 +613,7 @@ async function runPhotoSync(params: {
         Number(defect.defectNumber ?? 0),
         remote.fileName,
       )
-      if (bySource.has(remote.sourcePath) || byName.has(driveFileName)) {
+      if (driveFileAlreadyPresent(bySource, byName, remote.sourcePath, driveFileName)) {
         skipped += 1
         continue
       }
@@ -587,6 +639,7 @@ async function runPhotoSync(params: {
             driveLastFileId: fileId,
             driveLeafFolderId: folderId,
             driveSyncedAt: new Date().toISOString(),
+            driveContentKey: contentKey,
           },
           { merge: true },
         )
@@ -600,6 +653,18 @@ async function runPhotoSync(params: {
         }
         errors.push(`遠端圖上傳失敗 ${driveFileName}: ${msg}`)
       }
+    }
+
+    // 本次沒有新上傳也標成已同步，之後就略過
+    if (files.length + remoteMedia.length > 0) {
+      await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
+        {
+          driveLeafFolderId: folderId,
+          driveSyncedAt: new Date().toISOString(),
+          driveContentKey: contentKey,
+        },
+        { merge: true },
+      )
     }
   }
 
@@ -982,8 +1047,10 @@ async function reconcileOneDefectOnDrive(params: {
   uploaded?: number
   removed?: number
   folderId?: string | null
+  reason?: string
 }> {
   const { projectId, driveFolderId, drive, defect, items } = params
+  const contentKey = buildDriveContentKey(defect)
 
   if (defect.status === 'voided') {
     const result = await trashDefectDriveData({
@@ -997,6 +1064,7 @@ async function reconcileOneDefectOnDrive(params: {
         driveLeafFolderId: null,
         driveLastFileId: null,
         driveDeletedAt: new Date().toISOString(),
+        driveContentKey: contentKey,
       },
       { merge: true },
     )
@@ -1009,6 +1077,28 @@ async function reconcileOneDefectOnDrive(params: {
   }
 
   const desiredName = await resolveDesiredLeafName(defect, items)
+  let folderId = String(defect.driveLeafFolderId || '').trim() || null
+
+  // 內容指紋相同且葉層資料夾仍在 → 直接略過，不再重存
+  if (
+    folderId &&
+    String(defect.driveContentKey || '') === contentKey &&
+    String(defect.driveSyncedAt || '')
+  ) {
+    const meta = await getDriveItemMeta(drive, folderId)
+    if (meta) {
+      return {
+        ok: true,
+        action: 'skipped',
+        reason: 'unchanged-content',
+        folderId,
+        uploaded: 0,
+        removed: 0,
+      }
+    }
+    folderId = null
+  }
+
   const categoryId = await ensureCategoryFolderPath(drive, driveFolderId, {
     buildingName: String(defect.buildingName ?? '未指定棟別'),
     floor: String(defect.floor ?? '未指定樓層'),
@@ -1016,7 +1106,6 @@ async function reconcileOneDefectOnDrive(params: {
     categoryName: String(defect.categoryName ?? '未指定大項'),
   })
 
-  let folderId = String(defect.driveLeafFolderId || '').trim() || null
   let renamed = false
   let moved = false
 
@@ -1093,14 +1182,14 @@ async function reconcileOneDefectOnDrive(params: {
   let removed = 0
   let lastFileId: string | null = String(defect.driveLastFileId || '').trim() || null
 
-  // 清掉 Storage 已不存在的 Drive 檔（使用者刪除單張照片時）
-  // remote:* 來源改以 Firestore 目前 url 判斷，避免誤刪預設位置圖
+  // 只清「確定過期」的檔；無 sourcePath 的舊檔不刪，避免誤刪後又重存
   for (const f of existing) {
     if (!f.sourcePath) continue
-    const keep =
-      storagePaths.has(f.sourcePath) ||
-      (f.sourcePath.startsWith('remote:') && remoteSourcePaths.has(f.sourcePath))
-    if (keep) continue
+    if (storagePaths.has(f.sourcePath)) continue
+    if (f.sourcePath.startsWith('remote:')) {
+      // Storage 已有實體檔 → remote 備份可清；remote 仍對應目前 URL 且無 Storage 則保留
+      if (storageFiles.length === 0 && remoteSourcePaths.has(f.sourcePath)) continue
+    }
     try {
       await trashDriveItem(drive, f.id)
       removed += 1
@@ -1116,7 +1205,7 @@ async function reconcileOneDefectOnDrive(params: {
   for (const file of storageFiles) {
     const storageFileName = file.name.slice(prefix.length) || file.name
     const driveFileName = buildDriveFileName(Number(defect.defectNumber ?? 0), storageFileName)
-    if (bySource.has(file.name) || byName.has(driveFileName)) continue
+    if (driveFileAlreadyPresent(bySource, byName, file.name, driveFileName)) continue
     const [buffer] = await file.download()
     const fileId = await uploadBufferToDrive({
       drive,
@@ -1132,14 +1221,16 @@ async function reconcileOneDefectOnDrive(params: {
     byName.add(driveFileName)
   }
 
-  // Storage 尚無檔時，把 Firestore 上的 http 預設圖補上 Drive
+  // Storage 尚無檔時，把 Firestore 上的 http 預設圖補上 Drive（已有同類檔則略過）
   if (storageFiles.length === 0) {
     for (const remote of remoteMedia) {
       const driveFileName = buildDriveFileName(
         Number(defect.defectNumber ?? 0),
         remote.fileName,
       )
-      if (bySource.has(remote.sourcePath) || byName.has(driveFileName)) continue
+      if (driveFileAlreadyPresent(bySource, byName, remote.sourcePath, driveFileName)) {
+        continue
+      }
       const fetched = await fetchRemoteImage(remote.url)
       if (!fetched) continue
       const fileId = await uploadBufferToDrive({
@@ -1157,18 +1248,35 @@ async function reconcileOneDefectOnDrive(params: {
     }
   }
 
-  await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
-    {
-      driveLeafFolderId: folderId,
-      driveLastFileId: lastFileId,
-      driveSyncedAt: new Date().toISOString(),
-    },
-    { merge: true },
-  )
+  // 無變更就不要反覆寫 Firestore（避免又觸發同步）
+  const unchanged =
+    uploaded === 0 && removed === 0 && !renamed && !moved && String(defect.driveContentKey || '') === contentKey
+  if (!unchanged) {
+    await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
+      {
+        driveLeafFolderId: folderId,
+        driveLastFileId: lastFileId,
+        driveSyncedAt: new Date().toISOString(),
+        driveContentKey: contentKey,
+      },
+      { merge: true },
+    )
+  } else if (!defect.driveSyncedAt || !defect.driveContentKey) {
+    await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
+      {
+        driveLeafFolderId: folderId,
+        driveLastFileId: lastFileId,
+        driveSyncedAt: defect.driveSyncedAt || new Date().toISOString(),
+        driveContentKey: contentKey,
+      },
+      { merge: true },
+    )
+  }
 
   return {
     ok: true,
-    action: 'synced',
+    action: unchanged ? 'skipped' : 'synced',
+    reason: unchanged ? 'already-on-drive' : undefined,
     renamed,
     moved,
     uploaded,
@@ -1177,7 +1285,7 @@ async function reconcileOneDefectOnDrive(params: {
   }
 }
 
-/** 僅 drive 中繼欄位變更時略過，避免 reconcile 寫回後無限迴圈 */
+/** 僅 drive／同步雜訊欄位變更時略過，避免已存過的內容反覆重寫 */
 function onlyDriveMetaChanged(
   before: DocumentData | undefined,
   after: DocumentData | undefined,
@@ -1188,6 +1296,11 @@ function onlyDriveMetaChanged(
     'driveLastFileId',
     'driveSyncedAt',
     'driveDeletedAt',
+    'driveContentKey',
+    'driveActivityAt',
+    'syncState',
+    'updatedAt',
+    'clientUpdatedAt',
   ])
   const keys = new Set([...Object.keys(before), ...Object.keys(after)])
   for (const k of keys) {
@@ -1219,6 +1332,20 @@ export const onDefectWrittenAutoDrive = onDocumentWritten(
     const after = event.data?.after.exists ? event.data.after.data() : undefined
     if (!after && !before) return
     if (after && before && onlyDriveMetaChanged(before, after)) return
+
+    // 內容指紋未變且已同步過 → 不重存（刪除／作廢除外）
+    if (after && String(after.status ?? '') !== 'voided') {
+      const row = { id: defectId, ...(after as Omit<DefectRow, 'id'>) }
+      const key = buildDriveContentKey(row)
+      if (
+        String(after.driveContentKey || '') === key &&
+        String(after.driveSyncedAt || '') &&
+        String(after.driveLeafFolderId || '')
+      ) {
+        logger.info('auto-drive skip: content unchanged', { projectId, defectId })
+        return
+      }
+    }
 
     const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
     if (!projectSnap.exists) return
@@ -1455,6 +1582,14 @@ export const cleanupVoidedDefectDrives = onSchedule(
         if (!recent && !neverSynced) continue
         // 無近期動作時，neverSynced 舊資料不在此排程狂掃（改由開 App 背景補／強制補齊）
         if (!recent && neverSynced) continue
+        // 內容指紋相同 → 已存過，不重存
+        if (
+          String(defect.driveContentKey || '') === buildDriveContentKey(defect) &&
+          String(defect.driveSyncedAt || '') &&
+          String(defect.driveLeafFolderId || '')
+        ) {
+          continue
+        }
         try {
           const result = await reconcileOneDefectOnDrive({
             projectId,

@@ -282,7 +282,7 @@ export async function autoSyncDefectPhotosToDrive(params: {
 const quietBackfillDone = new Set<string>()
 
 /**
- * 開啟專案後背景補齊雲端硬碟（舊資料／漏同步），不需使用者按按鈕。
+ * 開啟專案後背景補齊雲端硬碟（只補漏的；已存過的後端會偵測略過）。
  * 每個專案每個瀏覽器工作階段只跑一次。
  */
 export async function quietBackfillProjectDrive(projectId: string): Promise<void> {
@@ -291,13 +291,17 @@ export async function quietBackfillProjectDrive(projectId: string): Promise<void
   if (!project?.driveFolderId) return
   quietBackfillDone.add(projectId)
   try {
+    // 後端會用 driveContentKey 跳過已同步內容，不會重複存檔
     const res = await syncProjectPhotosToDrive(projectId)
     if (!res.ok) {
       quietBackfillDone.delete(projectId)
       console.warn('[drive-auto] 背景補齊失敗', res.error)
       return
     }
-    console.info('[drive-auto] 背景補齊完成', res.result)
+    console.info('[drive-auto] 背景補齊完成', {
+      uploaded: res.result?.uploaded,
+      skipped: res.result?.skipped,
+    })
   } catch (err) {
     quietBackfillDone.delete(projectId)
     console.warn('[drive-auto] 背景補齊例外', err)
