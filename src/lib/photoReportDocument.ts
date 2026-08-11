@@ -65,7 +65,8 @@ function resolveStatusPhotos(defect: Defect): string[] {
 }
 
 function imgTag(src: string, alt: string): string {
-  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy" referrerpolicy="no-referrer" />`
+  // eager：列印／PDF 前必須把圖抓完，不可 lazy（離屏圖印出來會空白）
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="eager" decoding="async" referrerpolicy="no-referrer" />`
 }
 
 /** 產生純圖片查驗報表 HTML（無矩陣／統計） */
@@ -181,8 +182,53 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
   const toolbar =
     mode === 'window'
       ? `<div class="toolbar no-print">
-          <button type="button" class="btn-ghost" onclick="window.print()">列印／存 PDF</button>
-        </div>`
+          <button type="button" class="btn-ghost" id="btn-print">列印／存 PDF</button>
+          <span id="print-hint" style="align-self:center;font-size:12px;font-weight:600;color:#5e6861"></span>
+        </div>
+        <script>
+          (function () {
+            function waitImages(onProgress) {
+              var imgs = Array.prototype.slice.call(document.images || []);
+              var total = imgs.length, done = 0, failed = 0;
+              if (!total) { if (onProgress) onProgress(0, 0); return Promise.resolve({ failed: 0 }); }
+              if (onProgress) onProgress(0, total);
+              return Promise.all(imgs.map(function (img) {
+                img.loading = 'eager';
+                return new Promise(function (resolve) {
+                  function finish(ok) {
+                    done += 1;
+                    if (!ok) failed += 1;
+                    if (onProgress) onProgress(done, total);
+                    resolve();
+                  }
+                  if (img.complete && img.naturalWidth > 0) { finish(true); return; }
+                  if (img.complete) { finish(false); return; }
+                  img.addEventListener('load', function () { finish(true); }, { once: true });
+                  img.addEventListener('error', function () { finish(false); }, { once: true });
+                });
+              })).then(function () { return { failed: failed }; });
+            }
+            var btn = document.getElementById('btn-print');
+            var hint = document.getElementById('print-hint');
+            if (!btn) return;
+            btn.addEventListener('click', function () {
+              btn.disabled = true;
+              if (hint) hint.textContent = '圖片載入中…';
+              waitImages(function (done, total) {
+                if (hint) hint.textContent = total ? ('圖片 ' + done + '/' + total) : '準備列印…';
+              }).then(function () {
+                if (hint) hint.textContent = '';
+                btn.disabled = false;
+                window.print();
+              });
+            });
+            // 預先暖圖
+            waitImages(function (done, total) {
+              if (hint && total && done < total) hint.textContent = '圖片載入中 ' + done + '/' + total;
+              if (hint && total && done >= total) hint.textContent = '圖片已就緒，可列印';
+            });
+          })();
+        </script>`
       : ''
 
   return `<!doctype html>
