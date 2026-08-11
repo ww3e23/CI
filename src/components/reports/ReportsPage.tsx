@@ -345,7 +345,7 @@ export function ReportsPage() {
             <FileSpreadsheet size={16} /> 甲山林報表
           </button>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-            甲山林：標題顯示專案名稱；總表＋每戶一分頁（區域含編號／數量）
+            甲山林格式：總表＋每戶一分頁。特定戶匯出會標示棟／樓／戶並標題「自主驗屋檢查表」。
           </div>
           <button
             type="button"

@@ -66,6 +66,30 @@ function buildingLabel(name: string): string {
   return /棟$/.test(n) ? n : `${n}棟`
 }
 
+function floorLabel(floor: string): string {
+  const f = floor.trim()
+  if (!f) return '—'
+  if (f.includes('樓') || /F$/i.test(f)) return f
+  return `${f}樓`
+}
+
+/** 例：A棟 8樓 3戶 */
+function formatUnitLocation(project: ProjectState, unit: Unit): string {
+  const buildingName =
+    project.buildings.find((b) => b.id === unit.buildingId)?.name ?? unit.buildingName
+  return `${buildingLabel(buildingName)} ${floorLabel(unit.floor)} ${unit.code}戶`
+}
+
+function applyTitleUnderline(cell: ExcelJS.Cell) {
+  cell.font = {
+    bold: true,
+    size: 14,
+    underline: true,
+    color: { argb: 'FF222222' },
+  }
+  cell.alignment = { horizontal: 'center', vertical: 'middle' }
+}
+
 function compareUnits(a: Unit, b: Unit, buildingOrder: Map<string, number>): number {
   const bo =
     (buildingOrder.get(a.buildingId) ?? 999) - (buildingOrder.get(b.buildingId) ?? 999)
@@ -125,6 +149,7 @@ function addSummaryMatrixSheet(
   projectLabel: string,
   units: Unit[],
   usedNames: Set<string>,
+  options?: { partialExport?: boolean },
 ) {
   const buildingIds = new Set(units.map((u) => u.buildingId))
   const buildings = [...project.buildings]
@@ -137,20 +162,48 @@ function addSummaryMatrixSheet(
 
   const sheet = workbook.addWorksheet(sanitizeSheetName('總表', usedNames))
   const colCount = 1 + Math.max(1, units.length)
+  const mergeEnd = Math.max(2, colCount)
+  const partial = Boolean(options?.partialExport)
 
-  sheet.getCell(1, 1).value = projectLabel
-    ? `${projectLabel}｜甲山林總表（樓層 × 棟戶缺失數）`
-    : '甲山林總表（樓層 × 棟戶缺失數）'
-  sheet.getCell(1, 1).font = { bold: true, size: 13 }
-  sheet.mergeCells(1, 1, 1, Math.max(2, colCount))
+  if (partial) {
+    // 特定戶：顯示哪棟哪樓哪戶（底線）＋自主驗屋檢查表
+    const locationText = units.map((u) => formatUnitLocation(project, u)).join('、')
+    const locCell = sheet.getCell(1, 1)
+    locCell.value = locationText
+    applyTitleUnderline(locCell)
+    sheet.mergeCells(1, 1, 1, mergeEnd)
+    sheet.getRow(1).height = 24
 
-  sheet.getCell(2, 1).value = '數字＝未改善缺失數（不含已改善、已作廢）；僅含本次匯出戶別'
-  sheet.getCell(2, 1).font = { color: { argb: 'FF666666' }, size: 10 }
-  sheet.mergeCells(2, 1, 2, Math.max(2, colCount))
+    const titleCell = sheet.getCell(2, 1)
+    titleCell.value = '自主驗屋檢查表'
+    titleCell.font = { bold: true, size: 13 }
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' }
+    sheet.mergeCells(2, 1, 2, mergeEnd)
 
-  // 列 4：棟別；列 5：戶別（依實際匯出戶展開）
-  const rowB = sheet.getRow(4)
-  const rowU = sheet.getRow(5)
+    sheet.getCell(3, 1).value = '數字＝未改善缺失數（不含已改善、已作廢）；僅含本次匯出戶別'
+    sheet.getCell(3, 1).font = { color: { argb: 'FF666666' }, size: 10 }
+    sheet.mergeCells(3, 1, 3, mergeEnd)
+  } else {
+    const titleCell = sheet.getCell(1, 1)
+    titleCell.value = projectLabel
+      ? `${projectLabel}｜自主驗屋檢查表`
+      : '自主驗屋檢查表'
+    titleCell.font = { bold: true, size: 13 }
+    titleCell.alignment = { horizontal: 'left', vertical: 'middle' }
+    sheet.mergeCells(1, 1, 1, mergeEnd)
+
+    sheet.getCell(2, 1).value = '數字＝未改善缺失數（不含已改善、已作廢）；僅含本次匯出戶別'
+    sheet.getCell(2, 1).font = { color: { argb: 'FF666666' }, size: 10 }
+    sheet.mergeCells(2, 1, 2, mergeEnd)
+  }
+
+  // 表頭起始列：特定戶多一列標題
+  const headerBuildingRow = partial ? 5 : 4
+  const headerUnitRow = partial ? 6 : 5
+  const dataStartRow = headerUnitRow + 1
+
+  const rowB = sheet.getRow(headerBuildingRow)
+  const rowU = sheet.getRow(headerUnitRow)
   rowB.getCell(1).value = '棟別'
   rowU.getCell(1).value = '樓層＼戶別'
   styleHeaderCell(rowB.getCell(1))
@@ -170,7 +223,7 @@ function addSummaryMatrixSheet(
     const start = col
     const end = col + codes.length - 1
     rowB.getCell(start).value = buildingLabel(b.name)
-    if (end > start) sheet.mergeCells(4, start, 4, end)
+    if (end > start) sheet.mergeCells(headerBuildingRow, start, headerBuildingRow, end)
     for (let c = start; c <= end; c += 1) styleHeaderCell(rowB.getCell(c))
     codes.forEach((code, idx) => {
       rowU.getCell(start + idx).value = code
@@ -180,10 +233,10 @@ function addSummaryMatrixSheet(
     col = end + 1
   }
   sheet.getColumn(1).width = 12
-  sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: 5 }]
+  sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: headerUnitRow }]
 
   floors.forEach((floor, floorIdx) => {
-    const row = sheet.getRow(6 + floorIdx)
+    const row = sheet.getRow(dataStartRow + floorIdx)
     row.getCell(1).value = floor
     row.getCell(1).font = { bold: true }
     row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' }
@@ -241,30 +294,29 @@ function addUnitSheet(
   )
   const sheet = workbook.addWorksheet(sheetName)
 
-  // 標題列：自主驗屋｜專案名稱｜棟｜戶｜樓（不再顯示專案代碼／區）
-  const title = [
-    '自主驗屋',
-    projectLabel || '專案',
-    buildingLabel(buildingName),
-    `${unit.code}戶`,
-    unit.floor.includes('樓') || /F$/i.test(unit.floor) ? unit.floor : `${unit.floor}樓`,
-  ]
-  title.forEach((text, idx) => {
-    const cell = sheet.getCell(1, idx + 1)
-    cell.value = text
-    cell.font = { bold: true, size: 12 }
-    cell.alignment = { horizontal: 'center', vertical: 'middle' }
-    cell.border = THIN_BORDER
-  })
-  sheet.getRow(1).height = 22
+  // 標題：哪棟哪樓哪戶（底線）＋自主驗屋檢查表（不再顯示「甲山林報表」）
+  const location = formatUnitLocation(project, unit)
+  const mergeCols = Math.max(5, 3 + Math.max(1, areas.length) * 2)
+
+  const locCell = sheet.getCell(1, 1)
+  locCell.value = location
+  applyTitleUnderline(locCell)
+  sheet.mergeCells(1, 1, 1, mergeCols)
+  sheet.getRow(1).height = 24
+
+  const titleCell = sheet.getCell(2, 1)
+  titleCell.value = '自主驗屋檢查表'
+  titleCell.font = { bold: true, size: 13 }
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' }
+  sheet.mergeCells(2, 1, 2, mergeCols)
 
   // 表頭兩列：區域名 + 編號／數量（無底色）
-  const head1 = sheet.getRow(3)
-  const head2 = sheet.getRow(4)
+  const head1 = sheet.getRow(4)
+  const head2 = sheet.getRow(5)
   head1.getCell(1).value = '大項'
   head1.getCell(2).value = '查驗項目'
-  sheet.mergeCells(3, 1, 4, 1)
-  sheet.mergeCells(3, 2, 4, 2)
+  sheet.mergeCells(4, 1, 5, 1)
+  sheet.mergeCells(4, 2, 5, 2)
   styleHeaderCell(head1.getCell(1))
   styleHeaderCell(head1.getCell(2))
   styleHeaderCell(head2.getCell(1))
@@ -274,7 +326,7 @@ function addUnitSheet(
     const c1 = 3 + idx * 2
     const c2 = c1 + 1
     head1.getCell(c1).value = area
-    sheet.mergeCells(3, c1, 3, c2)
+    sheet.mergeCells(4, c1, 4, c2)
     styleHeaderCell(head1.getCell(c1))
     styleHeaderCell(head1.getCell(c2))
     head2.getCell(c1).value = '編號'
@@ -285,7 +337,7 @@ function addUnitSheet(
 
   const totalCol = 3 + areas.length * 2
   head1.getCell(totalCol).value = '總數數量'
-  sheet.mergeCells(3, totalCol, 4, totalCol)
+  sheet.mergeCells(4, totalCol, 5, totalCol)
   styleHeaderCell(head1.getCell(totalCol))
   styleHeaderCell(head2.getCell(totalCol))
 
@@ -310,7 +362,7 @@ function addUnitSheet(
     cellMap.set(key, prev)
   }
 
-  let rowIdx = 5
+  let rowIdx = 6
   let grandTotal = 0
 
   for (const cat of cats) {
@@ -373,13 +425,15 @@ function addUnitSheet(
   sumRow.getCell(totalCol).font = { bold: true, size: 12 }
   sumRow.getCell(totalCol).alignment = { horizontal: 'center', vertical: 'middle' }
 
-  sheet.getCell(rowIdx + 3, 1).value = projectLabel ? `專案：${projectLabel}` : ''
-  sheet.getCell(rowIdx + 3, 1).font = { color: { argb: 'FF666666' }, size: 9 }
+  if (projectLabel) {
+    sheet.getCell(rowIdx + 3, 1).value = `專案：${projectLabel}`
+    sheet.getCell(rowIdx + 3, 1).font = { color: { argb: 'FF666666' }, size: 9 }
+  }
 
-  sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 4 }]
+  sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 5 }]
 }
 
-/** 甲山林格式：總表矩陣 + 每戶一張分頁 */
+/** 甲山林格式：總表矩陣 + 每戶一張分頁（對外標題用「自主驗屋檢查表」，不顯示甲山林字樣） */
 export async function exportJiaShanLinExcel(
   project: ProjectState,
   options?: {
@@ -417,13 +471,33 @@ export async function exportJiaShanLinExcel(
     throw new Error('沒有可匯出的戶別（請勾選戶別，或先完成至少一戶查驗）')
   }
 
-  addSummaryMatrixSheet(workbook, project, projectLabel, units, usedNames)
+  // 未涵蓋全部啟用戶 → 視為特定戶（標題顯示棟樓戶）
+  const partialExport = units.length < activeUnits.length
+
+  addSummaryMatrixSheet(workbook, project, projectLabel, units, usedNames, {
+    partialExport,
+  })
 
   for (const unit of units) {
     addUnitSheet(workbook, project, unit, projectLabel, usedNames)
   }
 
   const stamp = new Date().toISOString().slice(0, 10)
-  const filename = `${projectLabel || '查驗專案'}_甲山林報表_${stamp}.xlsx`
+  const safeName = (s: string) => s.replace(/[\\/:*?"<>|]/g, '_').trim()
+  let filenameBase: string
+  if (partialExport) {
+    if (units.length === 1) {
+      filenameBase = `${safeName(formatUnitLocation(project, units[0]))}_自主驗屋檢查表`
+    } else if (units.length <= 3) {
+      filenameBase = `${safeName(
+        units.map((u) => formatUnitLocation(project, u)).join('、'),
+      )}_自主驗屋檢查表`
+    } else {
+      filenameBase = `${safeName(formatUnitLocation(project, units[0]))}等${units.length}戶_自主驗屋檢查表`
+    }
+  } else {
+    filenameBase = `${safeName(projectLabel || '查驗專案')}_自主驗屋檢查表`
+  }
+  const filename = `${filenameBase}_${stamp}.xlsx`
   await downloadWorkbook(workbook, filename)
 }
