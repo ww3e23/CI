@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, ListFilter, X } from 'lucide-react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import {
   defectListTitle,
@@ -7,38 +7,43 @@ import {
 } from '../../lib/defectDisplay'
 import { defectsByStatus, statusLabel } from '../../lib/progress'
 import type { Defect, DefectStatus } from '../../types'
-import {
-  AdvancedFilterSheet,
-  emptyFilters,
-  type DefectFilters,
-} from './AdvancedFilterSheet'
+import { UnitSwitcher } from '../UnitSwitcher'
 import { DefectDetailModal } from './DefectDetailModal'
 
 type QuickStatus = 'all' | DefectStatus
 
 export function DefectsPage() {
   const defects = useProjectStore((s) => s.defects)
-  const buildings = useProjectStore((s) => s.buildings)
   const units = useProjectStore((s) => s.units)
-  const categories = useProjectStore((s) => s.categories)
   const items = useProjectStore((s) => s.checklistItems)
+  const currentUnitId = useProjectStore((s) => s.currentUnitId)
 
   const [quickStatus, setQuickStatus] = useState<QuickStatus>('all')
-  const [filters, setFilters] = useState<DefectFilters>(emptyFilters())
-  const [sheetOpen, setSheetOpen] = useState(false)
+  const [unitOpen, setUnitOpen] = useState(false)
   const [selectedDefect, setSelectedDefect] = useState<Defect | null>(null)
 
-  const filtered = useMemo(
-    () => applyFilters(defects, filters, quickStatus),
-    [defects, filters, quickStatus],
-  )
+  const unit =
+    units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active) ?? null
 
-  const counts = defectsByStatus(defects)
+  const unitDefects = useMemo(() => {
+    if (!unit) return [] as Defect[]
+    return defects.filter((d) => d.unitId === unit.id && d.status !== 'voided')
+  }, [defects, unit])
 
-  const activeChips = useMemo(
-    () => describeFilters(filters, { buildings, units, categories, items }),
-    [filters, buildings, units, categories, items],
-  )
+  const filtered = useMemo(() => {
+    const list =
+      quickStatus === 'all'
+        ? unitDefects
+        : unitDefects.filter((d) => d.status === quickStatus)
+    return [...list].sort((a, b) => {
+      const aDone = a.status === 'completed' ? 1 : 0
+      const bDone = b.status === 'completed' ? 1 : 0
+      if (aDone !== bDone) return aDone - bDone
+      return b.updatedAt.localeCompare(a.updatedAt)
+    })
+  }, [unitDefects, quickStatus])
+
+  const counts = defectsByStatus(unitDefects)
 
   const tabs: { key: QuickStatus; label: string; count: number; cls?: string }[] = [
     { key: 'all', label: '全部', count: counts.all },
@@ -48,24 +53,41 @@ export function DefectsPage() {
     { key: 'completed', label: '已改善', count: counts.completed, cls: 'muted' },
   ]
 
+  const unitLabel = unit
+    ? `${unit.buildingName} ${unit.floor} ${unit.code}戶`
+    : '尚未選擇戶別'
+
   return (
     <div className="rise">
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <div>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
           <div className="eyebrow">DEFECT LOG</div>
           <div className="serif" style={{ fontWeight: 700, fontSize: 22 }}>缺失紀錄</div>
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 13,
+              fontWeight: 700,
+              color: 'var(--green-deep)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {unitLabel}
+          </div>
         </div>
         <button
           type="button"
           className="btn btn-ghost"
-          style={{ minHeight: 40, padding: '0 12px' }}
-          onClick={() => setSheetOpen(true)}
+          style={{ minHeight: 40, padding: '0 12px', flexShrink: 0 }}
+          onClick={() => setUnitOpen(true)}
         >
-          <ListFilter size={16} /> 篩選
+          切換戶別 <ChevronDown size={16} />
         </button>
       </header>
 
-      <div className="status-chip-row" role="tablist" aria-label="狀態快捷篩選">
+      <div className="status-chip-row" role="tablist" aria-label="本戶狀態快捷篩選">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -80,42 +102,6 @@ export function DefectsPage() {
           </button>
         ))}
       </div>
-
-      {(activeChips.length > 0 || filtered.length !== defects.filter((d) => d.status !== 'voided').length) && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-soft)' }}>
-              結果 {filtered.length} 筆
-              {activeChips.length > 0 ? ` · 已套用 ${activeChips.length} 個條件` : ''}
-            </span>
-            {activeChips.length > 0 && (
-              <button
-                type="button"
-                className="link"
-                style={{ fontSize: 12, fontWeight: 700, color: 'var(--green-deep)' }}
-                onClick={() => setFilters(emptyFilters())}
-              >
-                清除全部
-              </button>
-            )}
-          </div>
-          {activeChips.length > 0 && (
-            <div className="chip-row">
-              {activeChips.map((chip) => (
-                <button
-                  key={chip.key}
-                  type="button"
-                  className="chip on"
-                  style={{ minHeight: 32 }}
-                  onClick={() => setFilters(chip.clear)}
-                >
-                  {chip.label} <X size={14} />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       <div style={{ display: 'grid', gap: 10 }}>
         {filtered.map((d) => {
@@ -173,8 +159,7 @@ export function DefectsPage() {
                   </div>
                 ) : null}
                 <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 11, fontWeight: 600 }}>
-                  {d.categoryName} · {d.area} · {d.buildingName} {d.floor} {d.unitCode}戶 ·{' '}
-                  {statusLabel(d.status)}
+                  {d.categoryName} · {d.area} · {statusLabel(d.status)}
                 </div>
               </div>
               <ChevronRight size={18} color="var(--stone)" />
@@ -183,167 +168,22 @@ export function DefectsPage() {
         })}
         {filtered.length === 0 && (
           <div className="glass" style={{ padding: 20, textAlign: 'center', color: 'var(--ink-soft)' }}>
-            沒有符合條件的缺失
+            {!unit
+              ? '請先切換戶別'
+              : quickStatus === 'all'
+                ? '此戶尚無缺失紀錄'
+                : '此狀態沒有缺失'}
           </div>
         )}
       </div>
 
-      {sheetOpen && (
-        <AdvancedFilterSheet
-          initial={filters}
-          onApply={setFilters}
-          onClose={() => setSheetOpen(false)}
-        />
-      )}
+      {unitOpen && <UnitSwitcher onClose={() => setUnitOpen(false)} />}
 
       {selectedDefect && (
         <DefectDetailModal defect={selectedDefect} onClose={() => setSelectedDefect(null)} />
       )}
     </div>
   )
-}
-
-function applyFilters(
-  defects: Defect[],
-  f: DefectFilters,
-  quick: QuickStatus,
-): Defect[] {
-  const list = defects.filter((d) => {
-    if (d.status === 'voided') return false
-
-    if (quick !== 'all' && d.status !== quick) return false
-
-    if (f.buildingIds.length && !f.buildingIds.includes(d.buildingId)) return false
-    if (f.floors.length && !f.floors.includes(d.floor)) return false
-    if (f.unitIds.length && !f.unitIds.includes(d.unitId)) return false
-    if (f.categoryIds.length && !f.categoryIds.includes(d.categoryId)) return false
-    if (f.checklistItemIds.length) {
-      if (!d.checklistItemId || !f.checklistItemIds.includes(d.checklistItemId)) return false
-    }
-    if (f.areas.length && !f.areas.includes(d.area)) return false
-    if (f.statuses.length && !f.statuses.includes(d.status)) return false
-
-    if (f.createdFrom) {
-      if (d.createdAt.slice(0, 10) < f.createdFrom) return false
-    }
-    if (f.createdTo) {
-      if (d.createdAt.slice(0, 10) > f.createdTo) return false
-    }
-    // 複驗日期：示範用 updatedAt 近似
-    if (f.reinspectFrom || f.reinspectTo) {
-      if (d.status !== 'pending_reinspection' && d.status !== 'completed') return false
-      const day = d.updatedAt.slice(0, 10)
-      if (f.reinspectFrom && day < f.reinspectFrom) return false
-      if (f.reinspectTo && day > f.reinspectTo) return false
-    }
-
-    if (f.inspectors.length) {
-      // 示範資料未存 inspector 欄位時，用活動／預設對應；有則比對
-      const inspector = (d as Defect & { inspectorName?: string }).inspectorName
-      if (inspector && !f.inspectors.includes(inspector)) return false
-      if (!inspector && !f.inspectors.includes('現場查驗') && !f.inspectors.includes('謝采辰')) {
-        // 若選了特定人員但此筆無人員資訊，先放行示範資料中「現場查驗」以外的嚴格過濾
-        if (f.inspectors.every((n) => n !== '現場查驗')) return false
-      }
-    }
-
-    return true
-  })
-
-  // 未改善的排前面；已改善沉到最下面，同組內較新的在上
-  return list.sort((a, b) => {
-    const aDone = a.status === 'completed' ? 1 : 0
-    const bDone = b.status === 'completed' ? 1 : 0
-    if (aDone !== bDone) return aDone - bDone
-    return b.updatedAt.localeCompare(a.updatedAt)
-  })
-}
-
-function describeFilters(
-  f: DefectFilters,
-  ctx: {
-    buildings: { id: string; name: string }[]
-    units: { id: string; buildingName: string; floor: string; code: string }[]
-    categories: { id: string; name: string }[]
-    items: { id: string; description: string }[]
-  },
-): { key: string; label: string; clear: DefectFilters }[] {
-  const chips: { key: string; label: string; clear: DefectFilters }[] = []
-  const clearOne = (patch: Partial<DefectFilters>): DefectFilters => ({ ...f, ...patch })
-
-  if (f.buildingIds.length) {
-    const names = f.buildingIds.map((id) => ctx.buildings.find((b) => b.id === id)?.name ?? id)
-    chips.push({
-      key: 'buildings',
-      label: `棟別 ${names.join('、')}`,
-      clear: clearOne({ buildingIds: [] }),
-    })
-  }
-  if (f.floors.length) {
-    chips.push({
-      key: 'floors',
-      label: `樓層 ${f.floors.join('、')}`,
-      clear: clearOne({ floors: [] }),
-    })
-  }
-  if (f.unitIds.length) {
-    chips.push({
-      key: 'units',
-      label: `戶別 ${f.unitIds.length} 戶`,
-      clear: clearOne({ unitIds: [] }),
-    })
-  }
-  if (f.categoryIds.length) {
-    const names = f.categoryIds.map((id) => ctx.categories.find((c) => c.id === id)?.name ?? id)
-    chips.push({
-      key: 'cats',
-      label: `大項 ${names.join('、')}`,
-      clear: clearOne({ categoryIds: [] }),
-    })
-  }
-  if (f.checklistItemIds.length) {
-    chips.push({
-      key: 'items',
-      label: `細項 ${f.checklistItemIds.length}`,
-      clear: clearOne({ checklistItemIds: [] }),
-    })
-  }
-  if (f.areas.length) {
-    chips.push({
-      key: 'areas',
-      label: `區域 ${f.areas.join('、')}`,
-      clear: clearOne({ areas: [] }),
-    })
-  }
-  if (f.statuses.length) {
-    chips.push({
-      key: 'statuses',
-      label: `狀態 ${f.statuses.map(statusLabel).join('、')}`,
-      clear: clearOne({ statuses: [] }),
-    })
-  }
-  if (f.inspectors.length) {
-    chips.push({
-      key: 'inspectors',
-      label: `人員 ${f.inspectors.join('、')}`,
-      clear: clearOne({ inspectors: [] }),
-    })
-  }
-  if (f.createdFrom || f.createdTo) {
-    chips.push({
-      key: 'created',
-      label: `建立 ${f.createdFrom || '…'}～${f.createdTo || '…'}`,
-      clear: clearOne({ createdFrom: '', createdTo: '' }),
-    })
-  }
-  if (f.reinspectFrom || f.reinspectTo) {
-    chips.push({
-      key: 'reinspect',
-      label: `複驗 ${f.reinspectFrom || '…'}～${f.reinspectTo || '…'}`,
-      clear: clearOne({ reinspectFrom: '', reinspectTo: '' }),
-    })
-  }
-  return chips
 }
 
 function Thumb({ label, src }: { label: string; src?: string }) {
