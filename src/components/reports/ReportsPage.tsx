@@ -23,6 +23,16 @@ export function ReportsPage() {
     return m
   }, [matrix.cells])
 
+  /** 各戶缺失總數（含已改善，不含作廢） */
+  const defectTotalByUnit = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const d of state.defects) {
+      if (d.status === 'voided') continue
+      m.set(d.unitId, (m.get(d.unitId) ?? 0) + 1)
+    }
+    return m
+  }, [state.defects])
+
   const reportName = project?.name ?? state.projectName
 
   const handleExportExcel = async () => {
@@ -131,13 +141,20 @@ export function ReportsPage() {
                       selected.unitCode === code
                         ? { boxShadow: '0 0 0 2px var(--slate)' }
                         : undefined
+                    const defectTotal = cell?.unitId
+                      ? (defectTotalByUnit.get(cell.unitId) ?? 0)
+                      : 0
                     return (
                       <td key={`${b.id}-${floor}-${code}`}>
                         <button
                           type="button"
                           className={`matrix-cell ${cls}`}
                           style={selectedCls}
-                          title={cell ? `${b.name} ${floor} ${code}｜${cell.percent}%` : `${b.name} ${floor} ${code}`}
+                          title={
+                            cell
+                              ? `${b.name} ${floor} ${code}｜進度 ${cell.percent}%｜缺失 ${defectTotal}`
+                              : `${b.name} ${floor} ${code}`
+                          }
                           onClick={() => {
                             if (!cell || cell.status === 'na') {
                               setSelected(cell ?? null)
@@ -146,7 +163,9 @@ export function ReportsPage() {
                             setSelected(cell)
                             if (cell.unitId) setCurrentUnit(cell.unitId)
                           }}
-                        />
+                        >
+                          {status !== 'na' && defectTotal > 0 ? defectTotal : ''}
+                        </button>
                       </td>
                     )
                   }),
@@ -165,7 +184,9 @@ export function ReportsPage() {
           <div style={{ color: 'var(--ink-soft)', fontSize: 13, marginTop: 4 }}>
             {selected.status === 'na'
               ? '此格標記為不適用'
-              : `進度 ${selected.percent}%（${selected.checkedItems}/${selected.totalItems}）· 缺失 ${selected.defectCount}`}
+              : `進度 ${selected.percent}%（${selected.checkedItems}/${selected.totalItems}）· 缺失 ${
+                  selected.unitId ? (defectTotalByUnit.get(selected.unitId) ?? 0) : selected.defectCount
+                }`}
           </div>
         </div>
       )}
