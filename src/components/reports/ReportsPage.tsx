@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { FileDown, FileSpreadsheet } from 'lucide-react'
+import { FileDown, FileSpreadsheet, Images } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
-import { useCurrentProject } from '../../store/useAuthStore'
+import { useCurrentProject, useCurrentUser } from '../../store/useAuthStore'
 import { buildMatrix, formatActivity, unitProgress } from '../../lib/progress'
 import { exportInspectionExcel } from '../../lib/excelReport'
 import {
@@ -11,6 +11,7 @@ import {
 import { sortFloorsDesc } from '../../lib/floors'
 import type { BuildingRule, ProgressCell, Unit } from '../../types'
 import { ReportPreview } from './ReportPreview'
+import { PhotoReportPreview } from './PhotoReportPreview'
 import { TitleHint } from '../ui/TitleHint'
 import { Modal } from '../ui/Modal'
 
@@ -21,13 +22,18 @@ function unitKey(buildingId: string, floor: string, code: string) {
 export function ReportsPage() {
   const state = useProjectStore()
   const project = useCurrentProject()
+  const currentUser = useCurrentUser()
   const matrix = useMemo(() => buildMatrix(state), [state])
   const [selected, setSelected] = useState<ProgressCell | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [photoPreviewOpen, setPhotoPreviewOpen] = useState(false)
+  const [photoUnitIds, setPhotoUnitIds] = useState<string[] | undefined>(undefined)
+  const [reportChooserOpen, setReportChooserOpen] = useState(false)
   const [excelBusy, setExcelBusy] = useState(false)
   const [excelChooserOpen, setExcelChooserOpen] = useState(false)
   const [excelKind, setExcelKind] = useState<'general' | 'jsl' | null>(null)
   const [unitPickOpen, setUnitPickOpen] = useState(false)
+  const [unitPickMode, setUnitPickMode] = useState<'excel' | 'photo'>('excel')
   const [picked, setPicked] = useState<Record<string, boolean>>({})
   const [pickBuildingId, setPickBuildingId] = useState('')
   const setCurrentUnit = useProjectStore((s) => s.setCurrentUnit)
@@ -95,6 +101,17 @@ export function ReportsPage() {
   function openUnitPicker(kind: 'general' | 'jsl') {
     setExcelChooserOpen(false)
     setExcelKind(kind)
+    setUnitPickMode('excel')
+    const initial: Record<string, boolean> = {}
+    for (const key of inspectedKeys) initial[key] = true
+    setPicked(initial)
+    setPickBuildingId(activeBuildings[0]?.id ?? '')
+    setUnitPickOpen(true)
+  }
+
+  function openPhotoUnitPicker() {
+    setReportChooserOpen(false)
+    setUnitPickMode('photo')
     const initial: Record<string, boolean> = {}
     for (const key of inspectedKeys) initial[key] = true
     setPicked(initial)
@@ -191,6 +208,23 @@ export function ReportsPage() {
     }
   }
 
+  function openPhotoReport() {
+    const unitIds =
+      pickedIds.length > 0
+        ? pickedIds
+        : inspectedKeys
+            .map((k) => unitByKey.get(k)?.id)
+            .filter((id): id is string => Boolean(id))
+
+    if (unitIds.length === 0) {
+      window.alert('沒有可列入的戶別。請勾選戶別，或先完成至少一戶查驗。')
+      return
+    }
+    setUnitPickOpen(false)
+    setPhotoUnitIds(unitIds)
+    setPhotoPreviewOpen(true)
+  }
+
   return (
     <div className="rise">
       <header style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
@@ -209,7 +243,7 @@ export function ReportsPage() {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => setPreviewOpen(true)}
+            onClick={() => setReportChooserOpen(true)}
           >
             <FileDown size={16} /> 匯出報告
           </button>
@@ -224,6 +258,56 @@ export function ReportsPage() {
           </button>
         </div>
       </header>
+
+      {reportChooserOpen && (
+        <Modal
+          onClose={() => setReportChooserOpen(false)}
+          aria-label="選擇報告類型"
+          variant="center"
+        >
+          <TitleHint
+            as="h3"
+            className="serif"
+            style={{ margin: '0 0 8px', fontSize: 20 }}
+            hint="完整報告含進度矩陣；圖片報告只列專案／紀錄者與位置圖＋現況照。"
+          >
+            選擇報告類型
+          </TitleHint>
+          <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600 }}>
+            圖片報告可再選戶別，一戶一戶依序列出
+          </p>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%', marginBottom: 10 }}
+            onClick={() => {
+              setReportChooserOpen(false)
+              setPreviewOpen(true)
+            }}
+          >
+            <FileDown size={16} /> 完整報告（含矩陣）
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ width: '100%', marginBottom: 10 }}
+            onClick={openPhotoUnitPicker}
+          >
+            <Images size={16} /> 純圖片報告
+          </button>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
+            純圖片：表頭顯示專案與紀錄者；內容為位置、缺失數、位置圖與現況照
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ width: '100%', marginTop: 12 }}
+            onClick={() => setReportChooserOpen(false)}
+          >
+            取消
+          </button>
+        </Modal>
+      )}
 
       {excelChooserOpen && (
         <Modal
@@ -289,10 +373,15 @@ export function ReportsPage() {
             style={{ margin: '0 0 6px', fontSize: 20 }}
             hint="預設勾選已查驗戶。可改勾其他戶，或按「已查驗」一鍵重設。"
           >
-            選擇匯出戶別
+            選擇{unitPickMode === 'photo' ? '報告' : '匯出'}戶別
           </TitleHint>
           <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600 }}>
-            {excelKind === 'jsl' ? '甲山林報表' : '一般報表'}｜已選 {pickedIds.length} 戶
+            {unitPickMode === 'photo'
+              ? '純圖片報告'
+              : excelKind === 'jsl'
+                ? '甲山林報表'
+                : '一般報表'}
+            ｜已選 {pickedIds.length} 戶
             {inspectedKeys.length > 0
               ? `（已查驗 ${inspectedKeys.length} 戶）`
               : '（尚無已查驗戶）'}
@@ -404,15 +493,33 @@ export function ReportsPage() {
             type="button"
             className="btn btn-primary"
             style={{ width: '100%', marginBottom: 8 }}
-            disabled={excelBusy || (pickedIds.length === 0 && inspectedKeys.length === 0)}
-            onClick={() => void handleExportExcel()}
+            disabled={
+              unitPickMode === 'excel'
+                ? excelBusy || (pickedIds.length === 0 && inspectedKeys.length === 0)
+                : pickedIds.length === 0 && inspectedKeys.length === 0
+            }
+            onClick={() => {
+              if (unitPickMode === 'photo') openPhotoReport()
+              else void handleExportExcel()
+            }}
           >
-            <FileSpreadsheet size={16} />
-            {excelBusy
-              ? '匯出中…'
-              : pickedIds.length > 0
-                ? `下載 ${pickedIds.length} 戶`
-                : '下載已查驗戶'}
+            {unitPickMode === 'photo' ? (
+              <>
+                <Images size={16} />
+                {pickedIds.length > 0
+                  ? `產生 ${pickedIds.length} 戶圖片報告`
+                  : '產生已查驗戶圖片報告'}
+              </>
+            ) : (
+              <>
+                <FileSpreadsheet size={16} />
+                {excelBusy
+                  ? '匯出中…'
+                  : pickedIds.length > 0
+                    ? `下載 ${pickedIds.length} 戶`
+                    : '下載已查驗戶'}
+              </>
+            )}
           </button>
           <button
             type="button"
@@ -581,6 +688,19 @@ export function ReportsPage() {
           location={project?.location}
           state={state}
           onClose={() => setPreviewOpen(false)}
+        />
+      )}
+
+      {photoPreviewOpen && (
+        <PhotoReportPreview
+          projectName={reportName}
+          recorderName={currentUser?.displayName || '現場查驗'}
+          state={state}
+          unitIds={photoUnitIds}
+          onClose={() => {
+            setPhotoPreviewOpen(false)
+            setPhotoUnitIds(undefined)
+          }}
         />
       )}
     </div>
