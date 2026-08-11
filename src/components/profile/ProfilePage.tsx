@@ -1,5 +1,13 @@
 import { useState } from 'react'
-import { ChevronDown, Cloud, CloudOff, CloudUpload, Pencil, RefreshCw } from 'lucide-react'
+import {
+  ChevronDown,
+  Cloud,
+  CloudOff,
+  CloudUpload,
+  Map,
+  Pencil,
+  RefreshCw,
+} from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import {
   useAuthStore,
@@ -11,6 +19,7 @@ import { firebaseModeLabel, isFirebaseConfigured } from '../../lib/firebase'
 import { APP_VERSION } from '../../lib/appVersion'
 import { syncProjectPhotosToDrive } from '../../services/driveSync'
 import { SettingsPage } from '../settings/SettingsPage'
+import { UnitPlanGallerySheet } from '../settings/UnitPlanGallerySheet'
 import { ProjectSwitcher } from '../home/ProjectSwitcher'
 import { forceReloadApp } from '../pwa/UpdateAppBanner'
 import { ROLE_LABEL } from '../../types/auth'
@@ -32,15 +41,17 @@ export function ProfilePage() {
   const [driveSyncing, setDriveSyncing] = useState(false)
   const [driveMsg, setDriveMsg] = useState('')
   const [projectOpen, setProjectOpen] = useState(false)
+  const [planGalleryOpen, setPlanGalleryOpen] = useState(false)
   const cloud = isFirebaseConfigured()
   const mode = firebaseModeLabel()
 
   if (!user) return null
 
   const initial = user.displayName.slice(0, 1)
-  const canSyncDrive =
+  const canManagePlans =
     Boolean(project) &&
     (role === 'admin' || role === 'inspector' || Boolean(user.systemAdmin))
+  const canSyncDrive = canManagePlans
 
   async function runDriveSync() {
     if (!project) return
@@ -196,6 +207,41 @@ export function ProfilePage() {
         </section>
       )}
       <SettingsPage embedded />
+
+      {canManagePlans && (
+        <section className="glass" style={{ padding: 14, marginBottom: 14, marginTop: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Map size={20} color="var(--green-deep)" />
+            <div style={{ flex: 1 }}>
+              <TitleHint
+                as="div"
+                style={{ fontWeight: 800 }}
+                hint="一次預覽全部戶別預設位置圖；尚未上傳的可直接在此上傳。單戶上傳中仍可繼續點其他戶。"
+              >
+                全部戶別位置圖
+              </TitleHint>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--ink-soft)',
+                  marginTop: 4,
+                }}
+              >
+                預覽／上傳各戶預設位置圖；沒圖的會顯示「尚未上傳」
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%', marginTop: 12 }}
+            onClick={() => setPlanGalleryOpen(true)}
+          >
+            <Map size={16} /> 開啟位置圖總覽
+          </button>
+        </section>
+      )}
 
       {cloud && (
         <button
@@ -389,6 +435,9 @@ export function ProfilePage() {
       </button>
 
       {projectOpen && <ProjectSwitcher onClose={() => setProjectOpen(false)} />}
+      {planGalleryOpen && (
+        <UnitPlanGallerySheet onClose={() => setPlanGalleryOpen(false)} />
+      )}
     </div>
   )
 }
