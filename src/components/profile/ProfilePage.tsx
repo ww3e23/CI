@@ -275,7 +275,7 @@ export function ProfilePage() {
           >
             資料夾結構：棟別 → 樓層 → 戶別 → 大項 → <code>#編號 小項名稱</code>
             <br />
-            授權成功後，現場拍照也會自動補傳到此資料夾。
+            後台綁定擁有者後，現場拍照也會自動補傳到該雲端硬碟（不必每人登 Google）。
           </div>
           {driveMsg && (
             <div
