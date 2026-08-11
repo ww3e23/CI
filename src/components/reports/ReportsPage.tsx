@@ -4,9 +4,11 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentProject } from '../../store/useAuthStore'
 import { buildMatrix, formatActivity } from '../../lib/progress'
 import { exportInspectionExcel } from '../../lib/excelReport'
+import { exportJiaShanLinExcel } from '../../lib/excelReportJiaShanLin'
 import type { ProgressCell } from '../../types'
 import { ReportPreview } from './ReportPreview'
 import { TitleHint } from '../ui/TitleHint'
+import { Modal } from '../ui/Modal'
 
 export function ReportsPage() {
   const state = useProjectStore()
@@ -15,6 +17,7 @@ export function ReportsPage() {
   const [selected, setSelected] = useState<ProgressCell | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [excelBusy, setExcelBusy] = useState(false)
+  const [excelChooserOpen, setExcelChooserOpen] = useState(false)
   const setCurrentUnit = useProjectStore((s) => s.setCurrentUnit)
 
   const cellMap = useMemo(() => {
@@ -35,16 +38,30 @@ export function ReportsPage() {
 
   const reportName = project?.name ?? state.projectName
 
-  const handleExportExcel = async () => {
+  const handleExportExcel = async (kind: 'general' | 'jsl') => {
     if (excelBusy) return
+    setExcelChooserOpen(false)
     setExcelBusy(true)
     try {
-      await exportInspectionExcel(useProjectStore.getState(), {
-        displayName: reportName,
-      })
+      const snap = useProjectStore.getState()
+      if (kind === 'jsl') {
+        await exportJiaShanLinExcel(snap, {
+          displayName: reportName,
+          projectCode: project?.code,
+          location: project?.location,
+        })
+      } else {
+        await exportInspectionExcel(snap, {
+          displayName: reportName,
+        })
+      }
     } catch (err) {
       console.error('[excel] export failed', err)
-      window.alert('Excel 匯出失敗，請稍後再試')
+      window.alert(
+        err instanceof Error && err.message
+          ? `Excel 匯出失敗：${err.message}`
+          : 'Excel 匯出失敗，請稍後再試',
+      )
     } finally {
       setExcelBusy(false)
     }
@@ -76,13 +93,62 @@ export function ReportsPage() {
             type="button"
             className="btn btn-ghost"
             disabled={excelBusy}
-            onClick={() => void handleExportExcel()}
-            title="分層分戶缺失數量 Excel；查驗完成戶別以綠底標示"
+            onClick={() => setExcelChooserOpen(true)}
+            title="選擇匯出一般報表或甲山林報表"
           >
             <FileSpreadsheet size={16} /> {excelBusy ? '匯出中…' : '匯出 Excel'}
           </button>
         </div>
       </header>
+
+      {excelChooserOpen && (
+        <Modal
+          onClose={() => setExcelChooserOpen(false)}
+          aria-label="選擇 Excel 報表格式"
+          variant="center"
+        >
+          <TitleHint
+            as="h3"
+            className="serif"
+            style={{ margin: '0 0 8px', fontSize: 20 }}
+            hint="一般報表含彙總與各棟矩陣；甲山林為每戶一張區域×細項表，另附總表矩陣。"
+          >
+            選擇匯出格式
+          </TitleHint>
+          <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600 }}>
+            點選要下載的 Excel 類型
+          </p>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%', marginBottom: 10 }}
+            disabled={excelBusy}
+            onClick={() => void handleExportExcel('general')}
+          >
+            <FileSpreadsheet size={16} /> 一般報表
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ width: '100%', marginBottom: 10 }}
+            disabled={excelBusy}
+            onClick={() => void handleExportExcel('jsl')}
+          >
+            <FileSpreadsheet size={16} /> 甲山林報表
+          </button>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
+            甲山林：總表（樓層×棟戶缺失數）＋每戶一分頁（區域欄位含編號／數量）
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ width: '100%', marginTop: 12 }}
+            onClick={() => setExcelChooserOpen(false)}
+          >
+            取消
+          </button>
+        </Modal>
+      )}
 
       <section className="glass-green" style={{ padding: 14, marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
