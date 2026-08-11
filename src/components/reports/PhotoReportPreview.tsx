@@ -135,10 +135,21 @@ export function PhotoReportPreview({
     () => ({ projectName, recorderName, state: reportState, unitIds }),
     [projectName, recorderName, reportState, unitIds],
   )
-  const html = useMemo(
-    () => (ready ? buildPhotoReportHtml({ ...input, mode: 'embed' }) : ''),
-    [input, ready],
-  )
+  const { html, htmlError } = useMemo(() => {
+    if (!ready) return { html: '', htmlError: null as string | null }
+    try {
+      return {
+        html: buildPhotoReportHtml({ ...input, mode: 'embed' }),
+        htmlError: null,
+      }
+    } catch (err) {
+      console.error('[photo-report] build html failed', err)
+      return {
+        html: '',
+        htmlError: err instanceof Error ? err.message : '產生報告失敗',
+      }
+    }
+  }, [input, ready])
 
   // HTML 進 iframe 後，等全部圖片載入完才允許列印 PDF
   useEffect(() => {
@@ -293,7 +304,26 @@ export function PhotoReportPreview({
           </button>
         </div>
       </header>
-      {ready ? (
+      {htmlError ? (
+        <div
+          className="report-preview-frame"
+          style={{
+            display: 'grid',
+            placeItems: 'center',
+            color: '#fff',
+            fontWeight: 700,
+            padding: 24,
+            textAlign: 'center',
+            gap: 12,
+          }}
+        >
+          <div>報告產生失敗</div>
+          <div style={{ fontSize: 13, fontWeight: 600, opacity: 0.85 }}>{htmlError}</div>
+          <button type="button" className="btn btn-primary" onClick={onClose}>
+            關閉
+          </button>
+        </div>
+      ) : ready ? (
         <iframe
           key={`photo-report-${html.length}-${unitIds?.join(',') ?? 'all'}`}
           ref={iframeRef}

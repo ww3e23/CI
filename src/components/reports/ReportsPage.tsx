@@ -131,19 +131,45 @@ export function ReportsPage() {
     return ids
   }, [picked, unitByKey])
 
+  function resolveDefaultPhotoUnitIds(): string[] {
+    const fromInspected = inspectedKeys
+      .map((k) => unitByKey.get(k)?.id)
+      .filter((id): id is string => Boolean(id))
+    if (fromInspected.length > 0) return fromInspected
+
+    // 後援：只要有未作廢缺失的戶也算可出報告
+    const withDefects = new Set<string>()
+    for (const d of state.defects) {
+      if (d.status === 'voided') continue
+      if (d.unitId) withDefects.add(d.unitId)
+    }
+    return [...withDefects].filter((id) => state.units.some((u) => u.id === id && u.active))
+  }
+
+  /** 關閉舊 Modal 後延遲再開，避免手機「點穿」立刻關掉新層（看起來像沒反應） */
+  function afterModalClose(openNext: () => void) {
+    window.setTimeout(openNext, 360)
+  }
+
   function openPhotoUnitPicker() {
     setReportChooserOpen(false)
     setUnitPickMode('photo')
     const initial: Record<string, boolean> = {}
     for (const key of inspectedKeys) initial[key] = true
+    // 若尚無「已查驗」標記，預勾有缺失的戶
+    if (Object.keys(initial).length === 0) {
+      for (const id of resolveDefaultPhotoUnitIds()) {
+        const u = state.units.find((x) => x.id === id)
+        if (u) initial[unitKey(u.buildingId, u.floor, u.code)] = true
+      }
+    }
     setPicked(initial)
     const preferred =
       activeBuildings.find((b) =>
-        inspectedKeys.some((k) => k.startsWith(`${b.id}|`)),
+        Object.keys(initial).some((k) => k.startsWith(`${b.id}|`)),
       ) ?? activeBuildings[0]
     setPickBuildingId(preferred?.id ?? '')
-    // 下一幀再開選戶，避免與「選擇報告類型」Modal 同幀切換時偶發無反應
-    window.requestAnimationFrame(() => setUnitPickOpen(true))
+    afterModalClose(() => setUnitPickOpen(true))
   }
 
   function openUnitPicker(kind: 'general' | 'jsl') {
@@ -158,7 +184,31 @@ export function ReportsPage() {
         inspectedKeys.some((k) => k.startsWith(`${b.id}|`)),
       ) ?? activeBuildings[0]
     setPickBuildingId(preferred?.id ?? '')
-    window.requestAnimationFrame(() => setUnitPickOpen(true))
+    afterModalClose(() => setUnitPickOpen(true))
+  }
+
+  /** 一鍵開啟：不經選戶層，直接出已查驗／有缺失戶報告 */
+  function openPhotoReportDirect() {
+    try {
+      const unitIds = resolveDefaultPhotoUnitIds()
+      setReportChooserOpen(false)
+      if (unitIds.length === 0) {
+        window.alert('尚無可列入的戶別。請先完成至少一戶查驗（或新增缺失），也可改按「先選戶別」。')
+        return
+      }
+      // 延遲開全螢幕預覽，避開同一手勢點穿
+      afterModalClose(() => {
+        setPhotoUnitIds(unitIds)
+        setPhotoPreviewOpen(true)
+      })
+    } catch (err) {
+      console.error('[photo-report] open direct failed', err)
+      window.alert(
+        err instanceof Error && err.message
+          ? `圖片報告開啟失敗：${err.message}`
+          : '圖片報告開啟失敗，請稍後再試',
+      )
+    }
   }
 
   function selectInspectedOnly() {
@@ -255,17 +305,18 @@ export function ReportsPage() {
       const unitIds =
         pickedIds.length > 0
           ? pickedIds
-          : inspectedKeys
-              .map((k) => unitByKey.get(k)?.id)
-              .filter((id): id is string => Boolean(id))
+          : resolveDefaultPhotoUnitIds()
 
       if (unitIds.length === 0) {
         window.alert('沒有可列入的戶別。請勾選戶別，或先完成至少一戶查驗。')
         return
       }
       setUnitPickOpen(false)
-      setPhotoUnitIds(unitIds)
-      setPhotoPreviewOpen(true)
+      // 選戶 Sheet 關掉後延遲再開預覽，避免點穿把預覽立刻關掉
+      afterModalClose(() => {
+        setPhotoUnitIds(unitIds)
+        setPhotoPreviewOpen(true)
+      })
     } catch (err) {
       console.error('[photo-report] open failed', err)
       window.alert(
@@ -353,13 +404,29 @@ export function ReportsPage() {
           <button
             type="button"
             className="btn btn-ghost"
-            style={{ width: '100%', marginBottom: 10 }}
-            onClick={openPhotoUnitPicker}
+            style={{ width: '100%', marginBottom: 8 }}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              openPhotoReportDirect()
+            }}
           >
             <Images size={16} /> 純圖片報告
           </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ width: '100%', marginBottom: 10, minHeight: 40 }}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              openPhotoUnitPicker()
+            }}
+          >
+            先選戶別再產生圖片報告
+          </button>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-            純圖片：表頭顯示專案與紀錄者；內容為位置、缺失數、位置圖與現況照
+            純圖片會直接開啟預覽（已查驗／有缺失戶）。若要挑特定戶，請用「先選戶別」。
           </div>
           <button
             type="button"
