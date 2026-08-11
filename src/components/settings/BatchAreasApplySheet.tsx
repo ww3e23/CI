@@ -242,6 +242,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
       setMsg('')
       return
     }
+    setSelected({})
     setError('')
     setMsg(
       `已綁定 ${selectedTemplate.code}：${result.applied} 戶（跟著範本，不算自訂）` +
@@ -270,6 +271,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
       setError(result.error || '還原失敗')
       return
     }
+    setSelected({})
     setError('')
     setMsg(result.reset ? `已還原 ${result.reset} 戶` : '選取戶別本來就沒有自訂')
   }
@@ -465,11 +467,9 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
                             ? 'done'
                             : customized
                               ? 'defect'
-                              : sameTpl
-                                ? 'progress'
-                                : otherTpl
-                                  ? 'empty'
-                                  : 'empty'
+                              : following
+                                ? 'tpl'
+                                : 'empty'
                         const label = on
                           ? '✓'
                           : customized
@@ -477,7 +477,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
                             : sameTpl
                               ? '範'
                               : otherTpl
-                                ? (tplCode?.replace(/^G/i, '') ?? '範')
+                                ? (tplCode ?? '範')
                                 : ''
                         return (
                           <td key={key}>
@@ -513,7 +513,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
           )}
 
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-soft)', marginBottom: 10 }}>
-            綠勾＝勾選中　藍「範」＝已綁目前範本（跟著走）　橘「自」＝手動改過　灰＝專案預設／其他
+            綠勾＝勾選中（套用／還原後會自動清除）　藍「範」＝已綁目前範本　橘「自」＝手動改過　空白＝專案預設
           </div>
         </>
       )}

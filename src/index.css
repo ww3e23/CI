@@ -23,6 +23,7 @@
   --matrix-done: var(--green-deep);
   --matrix-defect: var(--terracotta);
   --matrix-progress: var(--amber);
+  --matrix-tpl: var(--slate);
   --matrix-empty: #ffffff;
   --matrix-na: #d9d5cb;
 
@@ -1042,6 +1043,7 @@ button.status-pill:active {
 .matrix-cell.done { background: var(--matrix-done); color: #fff; }
 .matrix-cell.defect { background: var(--matrix-defect); color: #fff; }
 .matrix-cell.progress { background: var(--matrix-progress); color: #fff; }
+.matrix-cell.tpl { background: var(--matrix-tpl); color: #fff; }
 .matrix-cell.empty { background: var(--matrix-empty); border-color: #e2ddd3; color: var(--ink-soft); }
 .matrix-cell.na { background: var(--matrix-na); color: transparent; }
 
