@@ -15,7 +15,7 @@ import { createEmptyProjectState, createProjectBundles } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
 import { cloudReady, syncDefect, syncProjectStructure } from '../services/cloudSync'
-import { recomputeUnitNextDefectNumber } from '../services/projectSync'
+import { recomputeUnitNextDefectNumber, isDefectNumberTaken } from '../services/projectSync'
 import {
   mergeProjectStates,
   pullProjectState,
@@ -61,6 +61,8 @@ interface ProjectActions {
     description: string
     planPhotoDataUrl?: string
     photoDataUrls?: string[]
+    /** 自行指定編號（補缺號）；未傳則自動取最大號+1。不改既有缺失編號。 */
+    defectNumber?: number
   }) => Promise<Defect | null>
   updateDefectStatus: (defectId: string, status: DefectStatus) => void
   /** 修改缺失內容（區域／說明／大項／照片） */
@@ -308,13 +310,21 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         description,
         planPhotoDataUrl,
         photoDataUrls = [],
+        defectNumber: requestedNumber,
       }) => {
         const state = get()
         const unit = state.units.find((u) => u.id === unitId)
         if (!unit) return null
 
-        // 以該戶未作廢最大號 + 1 取號（與畫面預覽同一算法）
-        const defectNumber = recomputeUnitNextDefectNumber(unitId, state.defects)
+        const autoNumber = recomputeUnitNextDefectNumber(unitId, state.defects)
+        let defectNumber = autoNumber
+        if (requestedNumber !== undefined && requestedNumber !== null) {
+          const n = Math.floor(Number(requestedNumber))
+          if (!Number.isFinite(n) || n < 1) return null
+          if (isDefectNumberTaken(unitId, n, state.defects)) return null
+          defectNumber = n
+        }
+
         const syncState: SyncState = cloudReady() ? 'pending' : 'demo'
         const defect: Defect = {
           id: createId('def'),
@@ -337,10 +347,13 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           updatedAt: new Date().toISOString(),
         }
 
+        const nextDefects = [defect, ...state.defects]
+        // 自動下一號永遠跟「未作廢最大號 + 1」，補缺號不影響後續自動編號
+        const nextCounter = recomputeUnitNextDefectNumber(unitId, nextDefects)
         set({
-          defects: [defect, ...state.defects],
+          defects: nextDefects,
           units: state.units.map((u) =>
-            u.id === unitId ? { ...u, nextDefectNumber: defectNumber + 1 } : u,
+            u.id === unitId ? { ...u, nextDefectNumber: nextCounter } : u,
           ),
           activities: [
             {

@@ -168,7 +168,7 @@ export function computeNextDefectNumber(
   return recomputeUnitNextDefectNumber(unitId, defects)
 }
 
-/** 依目前未作廢缺失重算該戶下一號 */
+/** 依目前未作廢缺失重算該戶下一號（自動編號：最大號 + 1） */
 export function recomputeUnitNextDefectNumber(
   unitId: string,
   defects: Array<{ unitId: string; defectNumber: number; status?: string }>,
@@ -180,6 +180,24 @@ export function recomputeUnitNextDefectNumber(
     maxActive = Math.max(maxActive, Number(d.defectNumber) || 0)
   }
   return maxActive + 1
+}
+
+/** 該戶未作廢缺失是否已使用此編號 */
+export function isDefectNumberTaken(
+  unitId: string,
+  defectNumber: number,
+  defects: Array<{ id?: string; unitId: string; defectNumber: number; status?: string }>,
+  exceptDefectId?: string,
+): boolean {
+  const n = Number(defectNumber)
+  if (!Number.isFinite(n) || n < 1) return true
+  for (const d of defects) {
+    if (d.unitId !== unitId) continue
+    if (d.status === 'voided') continue
+    if (exceptDefectId && d.id === exceptDefectId) continue
+    if (Number(d.defectNumber) === n) return true
+  }
+  return false
 }
 
 function unitNextMap(units: ProjectState['units']): Record<string, number> {

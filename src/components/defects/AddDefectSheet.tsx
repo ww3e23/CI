@@ -3,7 +3,7 @@ import { Lock, Settings2 } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { cloudReady } from '../../services/cloudSync'
-import { computeNextDefectNumber } from '../../services/projectSync'
+import { computeNextDefectNumber, isDefectNumberTaken } from '../../services/projectSync'
 import { fileToCompressedDataUrl } from '../../lib/imageCompress'
 import { getUnitAreas } from '../../lib/areas'
 import { Modal } from '../ui/Modal'
@@ -72,17 +72,41 @@ export function AddDefectSheet({
     setPlanPhoto(defaultPlan)
   }, [defaultPlan, planTouched])
 
-  // 即時下一號：跟實際儲存同一套算法（作廢不佔號）
-  const nextNumber = useMemo(() => {
+  // 即時下一號：自動編號永遠用未作廢最大號 + 1
+  const autoNumber = useMemo(() => {
     if (!unit) return 1
     return computeNextDefectNumber(unit.id, unit.nextDefectNumber, defects)
   }, [unit, defects])
+  const [manualNumberOn, setManualNumberOn] = useState(false)
+  const [manualNumberText, setManualNumberText] = useState('')
   const canEdit = role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
+
+  const manualNumber = useMemo(() => {
+    const n = Math.floor(Number(manualNumberText))
+    return Number.isFinite(n) ? n : NaN
+  }, [manualNumberText])
+
+  const numberConflict =
+    manualNumberOn &&
+    unit &&
+    Number.isFinite(manualNumber) &&
+    manualNumber >= 1 &&
+    isDefectNumberTaken(unit.id, manualNumber, defects)
+
+  const displayNumber =
+    manualNumberOn && Number.isFinite(manualNumber) && manualNumber >= 1
+      ? manualNumber
+      : autoNumber
 
   const itemHint = useMemo(() => {
     if (!checklistItemId) return null
     return useProjectStore.getState().checklistItems.find((i) => i.id === checklistItemId)
   }, [checklistItemId])
+
+  // 自動下一號變了且未開手動時，同步顯示用（手動輸入框不強制覆寫）
+  useEffect(() => {
+    if (!manualNumberOn) setManualNumberText(String(autoNumber))
+  }, [autoNumber, manualNumberOn])
 
   if (!unit || !cat) {
     return (
@@ -125,6 +149,18 @@ export function AddDefectSheet({
       return
     }
 
+    if (manualNumberOn) {
+      const n = Math.floor(Number(manualNumberText))
+      if (!Number.isFinite(n) || n < 1) {
+        setError('請輸入有效的缺失編號（正整數）')
+        return
+      }
+      if (isDefectNumberTaken(unit.id, n, useProjectStore.getState().defects)) {
+        setError(`編號 #${n} 已被此戶其他缺失使用，請改其他號或改回自動編號`)
+        return
+      }
+    }
+
     // 說明欄只存使用者備註；細項另以 checklistItemId 顯示，避免和細項混在一起
     const text = description.trim()
 
@@ -133,6 +169,7 @@ export function AddDefectSheet({
     setSyncMsg(cloudReady() ? '正在同步…' : '正在儲存到本機…')
 
     try {
+      const n = manualNumberOn ? Math.floor(Number(manualNumberText)) : undefined
       const d = await addDefect({
         unitId: unit.id,
         categoryId: cat.id,
@@ -142,10 +179,15 @@ export function AddDefectSheet({
         description: text,
         planPhotoDataUrl: planPhoto,
         photoDataUrls: photos,
+        defectNumber: n,
       })
       setSaving(false)
       if (!d) {
-        setError('儲存失敗，請確認已選擇可查驗戶別後再試')
+        setError(
+          manualNumberOn
+            ? '儲存失敗：編號可能已被使用或無效，請檢查後再試'
+            : '儲存失敗，請確認已選擇可查驗戶別後再試',
+        )
         setSyncMsg('儲存失敗')
         return
       }
@@ -171,13 +213,77 @@ export function AddDefectSheet({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>新增缺失</h3>
           <span className="chip on" style={{ minHeight: 34 }}>
-            <Lock size={14} /> 編號 #{nextNumber}
+            <Lock size={14} /> 編號 #{displayNumber}
           </span>
         </div>
         <p style={{ margin: '8px 0 12px', color: 'var(--ink-soft)', fontSize: 13 }}>
           {unit.buildingName}・{unit.floor}・{unit.code}戶
           {itemHint ? `｜${itemHint.description}` : ''}
         </p>
+
+        <div className="field" style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <TitleHint
+              as="label"
+              style={{ margin: 0 }}
+              hint="預設自動取「目前最大號 + 1」。若中間缺號，可自行輸入補上；不會改動已有缺失的編號。"
+            >
+              缺失編號
+            </TitleHint>
+            <button
+              type="button"
+              className="link"
+              style={{ fontSize: 12, fontWeight: 700 }}
+              disabled={!canEdit}
+              onClick={() => {
+                if (manualNumberOn) {
+                  setManualNumberOn(false)
+                  setManualNumberText(String(autoNumber))
+                } else {
+                  setManualNumberOn(true)
+                  setManualNumberText(String(autoNumber))
+                }
+              }}
+            >
+              {manualNumberOn ? '改回自動編號' : '自行輸入編號'}
+            </button>
+          </div>
+          {manualNumberOn ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+              <span style={{ fontWeight: 800 }}>#</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                step={1}
+                value={manualNumberText}
+                disabled={!canEdit}
+                onChange={(e) => setManualNumberText(e.target.value)}
+                style={{
+                  width: 120,
+                  border: '1px solid rgba(34,41,31,0.12)',
+                  borderRadius: 12,
+                  padding: '10px 12px',
+                  fontWeight: 800,
+                  fontSize: 16,
+                }}
+                aria-label="自行輸入缺失編號"
+              />
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>
+                自動下一號仍為 #{autoNumber}
+              </span>
+            </div>
+          ) : (
+            <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600, color: 'var(--ink-soft)' }}>
+              自動編號（最大號 + 1）
+            </div>
+          )}
+          {numberConflict && (
+            <div style={{ marginTop: 6, color: 'var(--terracotta)', fontWeight: 700, fontSize: 13 }}>
+              此編號已被使用，請換一個
+            </div>
+          )}
+        </div>
 
         {!canEdit && (
           <div style={{ color: 'var(--terracotta)', fontWeight: 700, fontSize: 13, marginBottom: 10 }}>
@@ -345,7 +451,7 @@ export function AddDefectSheet({
           type="button"
           className="btn btn-primary"
           style={{ width: '100%' }}
-          disabled={saving || !canEdit}
+          disabled={saving || !canEdit || Boolean(numberConflict)}
           onClick={handleSave}
         >
           {saving ? '儲存中…' : '儲存並同步雲端'}
