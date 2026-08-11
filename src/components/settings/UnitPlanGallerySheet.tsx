@@ -3,21 +3,23 @@ import { ImagePlus, Map as MapIcon, X } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { fileToCompressedDataUrl } from '../../lib/imageCompress'
-import { sortFloorsDesc } from '../../lib/floors'
+import { floorRank as floorSortKey, sortFloorsDesc } from '../../lib/floors'
 import { Modal } from '../ui/Modal'
+import { GlassSelect } from '../ui/GlassSelect'
 import { TitleHint } from '../ui/TitleHint'
 import type { Unit } from '../../types'
+
+const ALL = ''
 
 function compareUnits(
   a: Unit,
   b: Unit,
   buildingOrder: Map<string, number>,
-  floorRank: Map<string, number>,
 ) {
   const bo =
     (buildingOrder.get(a.buildingId) ?? 999) - (buildingOrder.get(b.buildingId) ?? 999)
   if (bo !== 0) return bo
-  const fo = (floorRank.get(a.floor) ?? 0) - (floorRank.get(b.floor) ?? 0)
+  const fo = floorSortKey(b.floor) - floorSortKey(a.floor)
   if (fo !== 0) return fo
   return a.code.localeCompare(b.code, 'zh-Hant', { numeric: true })
 }
@@ -30,28 +32,52 @@ export function UnitPlanGallerySheet({ onClose }: { onClose: () => void }) {
   const user = useCurrentUser()
   const canEdit = role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
 
+  const [buildingId, setBuildingId] = useState(ALL)
+  const [floor, setFloor] = useState(ALL)
   const [uploading, setUploading] = useState<Record<string, boolean>>({})
   const [messages, setMessages] = useState<Record<string, string>>({})
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
-  const sortedUnits = useMemo(() => {
-    const activeBuildings = [...buildings]
-      .filter((b) => b.active)
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-    const buildingOrder = new Map(activeBuildings.map((b, i) => [b.id, i]))
-    const floorRank = new Map<string, number>()
-    for (const b of activeBuildings) {
-      const floors = sortFloorsDesc(b.floors)
-      floors.forEach((f, i) => {
-        if (!floorRank.has(f)) floorRank.set(f, i)
-      })
-    }
+  const activeBuildings = useMemo(
+    () =>
+      [...buildings]
+        .filter((b) => b.active)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [buildings],
+  )
+
+  const buildingOrder = useMemo(
+    () => new Map(activeBuildings.map((b, i) => [b.id, i])),
+    [activeBuildings],
+  )
+
+  const buildingOptions = useMemo(
+    () => [
+      { value: ALL, label: '全部棟別' },
+      ...activeBuildings.map((b) => ({ value: b.id, label: b.name })),
+    ],
+    [activeBuildings],
+  )
+
+  const floorOptions = useMemo(() => {
+    const source = buildingId
+      ? activeBuildings.filter((b) => b.id === buildingId)
+      : activeBuildings
+    const floors = sortFloorsDesc([...new Set(source.flatMap((b) => b.floors))])
+    return [{ value: ALL, label: '全部樓層' }, ...floors.map((f) => ({ value: f, label: f }))]
+  }, [activeBuildings, buildingId])
+
+  const effectiveFloor = floorOptions.some((o) => o.value === floor) ? floor : ALL
+
+  const filteredUnits = useMemo(() => {
     return units
       .filter((u) => u.active)
-      .sort((a, b) => compareUnits(a, b, buildingOrder, floorRank))
-  }, [buildings, units])
+      .filter((u) => (buildingId ? u.buildingId === buildingId : true))
+      .filter((u) => (effectiveFloor ? u.floor === effectiveFloor : true))
+      .sort((a, b) => compareUnits(a, b, buildingOrder))
+  }, [units, buildingId, effectiveFloor, buildingOrder])
 
-  const withPlan = sortedUnits.filter((u) => u.defaultPlanPhotoUrl).length
+  const withPlan = filteredUnits.filter((u) => u.defaultPlanPhotoUrl).length
 
   async function onPickPlan(unitId: string, file: File | undefined) {
     if (!file || !canEdit || uploading[unitId]) return
@@ -113,7 +139,7 @@ export function UnitPlanGallerySheet({ onClose }: { onClose: () => void }) {
           as="h3"
           className="serif"
           style={{ margin: '0 0 6px', fontSize: 20 }}
-          hint="一次預覽全部戶別預設位置圖。上傳中可繼續點其他戶上傳，不必等完。"
+          hint="可先篩選棟別／樓層再預覽。上傳中可繼續點其他戶上傳，不必等完。"
         >
           全部戶別位置圖
         </TitleHint>
@@ -125,11 +151,38 @@ export function UnitPlanGallerySheet({ onClose }: { onClose: () => void }) {
             fontWeight: 600,
           }}
         >
-          已上傳 {withPlan}／{sortedUnits.length} 戶
+          已上傳 {withPlan}／{filteredUnits.length} 戶
           {canEdit ? ' · 可直接在此上傳或更換' : ' · 僅可預覽'}
         </p>
 
-        {sortedUnits.length === 0 ? (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 8,
+            marginBottom: 12,
+          }}
+        >
+          <GlassSelect
+            label="棟別"
+            value={buildingId}
+            options={buildingOptions}
+            aria-label="篩選棟別"
+            onChange={(value) => {
+              setBuildingId(value)
+              setFloor(ALL)
+            }}
+          />
+          <GlassSelect
+            label="樓層"
+            value={effectiveFloor}
+            options={floorOptions}
+            aria-label="篩選樓層"
+            onChange={setFloor}
+          />
+        </div>
+
+        {filteredUnits.length === 0 ? (
           <div
             className="glass"
             style={{
@@ -139,20 +192,22 @@ export function UnitPlanGallerySheet({ onClose }: { onClose: () => void }) {
               fontWeight: 700,
             }}
           >
-            目前沒有可查驗戶別
+            {units.some((u) => u.active)
+              ? '此篩選條件下沒有戶別'
+              : '目前沒有可查驗戶別'}
           </div>
         ) : (
           <div
             style={{
               display: 'grid',
               gap: 10,
-              maxHeight: 'min(68vh, 560px)',
+              maxHeight: 'min(62vh, 520px)',
               overflow: 'auto',
               paddingRight: 2,
               paddingBottom: 8,
             }}
           >
-            {sortedUnits.map((unit) => {
+            {filteredUnits.map((unit) => {
               const planUrl = unit.defaultPlanPhotoUrl
               const busy = Boolean(uploading[unit.id])
               const msg = messages[unit.id]
