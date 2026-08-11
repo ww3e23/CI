@@ -134,7 +134,7 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
       <div className="section-row" style={{ marginTop: 22 }}>
         <TitleHint
           as="h2"
-          hint="此戶編輯、專案預設、批量套用區域，以及全部戶別位置圖，都集中在這裡。"
+          hint="此戶編輯、專案預設、格局範本（矩陣套用），以及位置圖總覽，都集中在這裡。"
         >
           查驗區域／位置圖
         </TitleHint>
@@ -182,7 +182,7 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
             style={{ minHeight: 40 }}
             onClick={() => setBatchAreasOpen(true)}
           >
-            批量套用
+            格局範本
           </button>
           <button
             type="button"

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import type {
+  AreaTemplate,
   BuildingRule,
   ChecklistCategory,
   ChecklistItem,
@@ -29,7 +30,12 @@ import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
 import { hasUploadableLocalMedia } from '../lib/defectMedia'
 import { statusLabel } from '../lib/progress'
-import { isUnitAreasCustomized, normalizeAreaName, sanitizeAreaList } from '../lib/areas'
+import {
+  isUnitAreasCustomized,
+  nextAreaTemplateCode,
+  normalizeAreaName,
+  sanitizeAreaList,
+} from '../lib/areas'
 import {
   clearPendingDefectMedia,
   listPendingDefectMedia,
@@ -103,6 +109,14 @@ interface ProjectActions {
   ) => Promise<{ ok: boolean; error?: string }>
   /** 更新專案預設查驗區域（尚未自訂的戶別會沿用） */
   setProjectAreas: (areas: string[]) => { ok: boolean; error?: string }
+  /** 新增／更新格局區域範本（新增時系統自動編碼） */
+  saveAreaTemplate: (input: {
+    id?: string
+    name: string
+    areas: string[]
+  }) => { ok: boolean; error?: string; template?: AreaTemplate }
+  /** 刪除格局區域範本 */
+  deleteAreaTemplate: (templateId: string) => { ok: boolean; error?: string }
   markUnitChecked: (unitId: string, checked: number) => void
   /** 標記／取消此戶某大項已查畢 */
   setUnitCategoryDone: (unitId: string, categoryId: string, done: boolean) => void
@@ -244,6 +258,7 @@ function snapshotProject(state: ProjectState): ProjectState {
     currentUnitId: state.currentUnitId,
     recentUnitIds: state.recentUnitIds,
     areas: state.areas,
+    areaTemplates: state.areaTemplates ?? [],
   }
 }
 
@@ -892,6 +907,51 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         return { ok: true }
       },
 
+      saveAreaTemplate: (input) => {
+        const cleaned = sanitizeAreaList(input.areas)
+        if (cleaned.length === 0) {
+          return { ok: false, error: '至少需要一個查驗區域' }
+        }
+        const name = normalizeAreaName(input.name) || '未命名格局'
+        const list = [...(get().areaTemplates ?? [])]
+        const now = new Date().toISOString()
+        let template: AreaTemplate
+        if (input.id) {
+          const idx = list.findIndex((t) => t.id === input.id)
+          if (idx < 0) return { ok: false, error: '找不到此範本' }
+          template = {
+            ...list[idx],
+            name,
+            areas: cleaned,
+            updatedAt: now,
+          }
+          list[idx] = template
+        } else {
+          template = {
+            id: createId('atpl'),
+            code: nextAreaTemplateCode(list),
+            name,
+            areas: cleaned,
+            updatedAt: now,
+          }
+          list.push(template)
+        }
+        list.sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }))
+        set({ areaTemplates: list })
+        afterProjectChange(get, set)
+        return { ok: true, template }
+      },
+
+      deleteAreaTemplate: (templateId) => {
+        const list = get().areaTemplates ?? []
+        if (!list.some((t) => t.id === templateId)) {
+          return { ok: false, error: '找不到此範本' }
+        }
+        set({ areaTemplates: list.filter((t) => t.id !== templateId) })
+        afterProjectChange(get, set)
+        return { ok: true }
+      },
+
       markUnitChecked: (unitId, checked) => {
         set({
           unitCheckedCount: {
@@ -1501,7 +1561,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
     }),
     {
       name: 'site-inspection-v5',
-      version: 7,
+      version: 8,
       // 大圖 base64 不寫入 localStorage，避免配額爆掉（QuotaExceededError）
       partialize: (state) => ({
         ...lightenProjectState(state),
@@ -1519,12 +1579,14 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         const withCategoryDone = {
           ...s,
           unitCategoryDone: s.unitCategoryDone ?? {},
+          areaTemplates: s.areaTemplates ?? [],
           bundles: Object.fromEntries(
             Object.entries(s.bundles ?? {}).map(([id, bundle]) => [
               id,
               {
                 ...bundle,
                 unitCategoryDone: bundle.unitCategoryDone ?? {},
+                areaTemplates: bundle.areaTemplates ?? [],
               },
             ]),
           ),

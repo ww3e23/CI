@@ -1,4 +1,4 @@
-import type { ProjectState, Unit } from '../types'
+import type { AreaTemplate, ProjectState, Unit } from '../types'
 
 export const DEFAULT_AREAS = [
   '玄關',
@@ -55,4 +55,14 @@ export function collectAllAreas(state: Pick<ProjectState, 'areas' | 'units' | 'd
 
 export function normalizeAreaName(name: string): string {
   return name.trim().replace(/\s+/g, ' ')
+}
+
+/** 下一組格局範本編碼：G01、G02… */
+export function nextAreaTemplateCode(templates: AreaTemplate[]): string {
+  let max = 0
+  for (const t of templates) {
+    const m = /^G(\d+)$/i.exec(String(t.code ?? '').trim())
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return `G${String(max + 1).padStart(2, '0')}`
 }

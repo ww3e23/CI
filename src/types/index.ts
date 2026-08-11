@@ -96,6 +96,16 @@ export interface ActivityLog {
   actorName: string
 }
 
+/** 格局／查驗區域範本（可批量套用到多戶） */
+export interface AreaTemplate {
+  id: string
+  /** 系統自動編碼，例如 G01 */
+  code: string
+  name: string
+  areas: string[]
+  updatedAt: string
+}
+
 export interface ProjectState {
   projectName: string
   buildings: BuildingRule[]
@@ -113,4 +123,6 @@ export interface ProjectState {
   currentUnitId: string | null
   recentUnitIds: string[]
   areas: string[]
+  /** 格局區域範本清單 */
+  areaTemplates: AreaTemplate[]
 }

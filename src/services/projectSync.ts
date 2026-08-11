@@ -13,6 +13,7 @@ import { expandUnitsFromBuildings } from '../lib/units'
 import { DEFAULT_AREAS } from '../lib/areas'
 import type {
   ActivityLog,
+  AreaTemplate,
   BuildingRule,
   ChecklistCategory,
   ChecklistItem,
@@ -323,6 +324,7 @@ export async function pushProjectState(
     {
       projectName: state.projectName,
       areas: state.areas,
+      areaTemplates: state.areaTemplates ?? [],
       unitCheckedCount: state.unitCheckedCount,
       unitCategoryDone: state.unitCategoryDone ?? {},
       activities: state.activities.slice(0, 40),
@@ -431,6 +433,7 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
         ? meta.recentUnitIds.map(String)
         : [],
       areas: Array.isArray(meta.areas) ? meta.areas.map(String) : [...DEFAULT_AREAS],
+      areaTemplates: parseAreaTemplates(meta.areaTemplates),
       cloudUpdatedAt: meta.clientUpdatedAt ? String(meta.clientUpdatedAt) : undefined,
     }
   } catch (err) {
@@ -594,7 +597,55 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
       ? local.recentUnitIds
       : remote.recentUnitIds,
     areas: local.areas.length ? local.areas : remote.areas,
+    areaTemplates: mergeAreaTemplates(local.areaTemplates, remote.areaTemplates),
   }
+}
+
+function parseAreaTemplates(raw: unknown): AreaTemplate[] {
+  if (!Array.isArray(raw)) return []
+  const out: AreaTemplate[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const o = item as Record<string, unknown>
+    const id = String(o.id ?? '').trim()
+    const code = String(o.code ?? '').trim()
+    const name = String(o.name ?? '').trim()
+    const areas = Array.isArray(o.areas)
+      ? o.areas.map((a) => String(a).trim()).filter(Boolean)
+      : []
+    if (!id || !code || areas.length === 0) continue
+    out.push({
+      id,
+      code,
+      name: name || code,
+      areas,
+      updatedAt: String(o.updatedAt ?? ''),
+    })
+  }
+  return out
+}
+
+function mergeAreaTemplates(
+  local: AreaTemplate[] | undefined,
+  remote: AreaTemplate[] | undefined,
+): AreaTemplate[] {
+  const map = new Map<string, AreaTemplate>()
+  for (const t of remote ?? []) map.set(t.id, t)
+  for (const t of local ?? []) {
+    const prev = map.get(t.id)
+    if (!prev) {
+      map.set(t.id, t)
+      continue
+    }
+    const localMs = Date.parse(t.updatedAt)
+    const remoteMs = Date.parse(prev.updatedAt)
+    if (Number.isFinite(localMs) && Number.isFinite(remoteMs)) {
+      map.set(t.id, localMs >= remoteMs ? t : prev)
+    } else {
+      map.set(t.id, t)
+    }
+  }
+  return [...map.values()].sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }))
 }
 
 function mergeUnitCategoryDone(
