@@ -224,15 +224,15 @@ export function ProfilePage() {
               <TitleHint
                 as="div"
                 style={{ fontWeight: 800 }}
-                hint="查驗新增／修改／刪除會自動寫入雲端硬碟。此按鈕僅供強制補齊或排查用。"
+                hint="儲存缺失後會即時寫入雲端硬碟；另每 5 分鐘只掃近 5 分鐘有動作的專案做兜底。此按鈕僅供強制補齊。"
               >
-                雲端硬碟自動存檔
+                雲端硬碟即時存檔
               </TitleHint>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', marginTop: 4 }}>
                 {!project?.driveFolderId
                   ? '尚未綁定資料夾（請後台管理者先設定）'
                   : project.driveOwnerConnected
-                    ? `已綁定擁有者${project.driveOwnerEmail ? `（${project.driveOwnerEmail}）` : ''}：新增／修改會自動存檔，下方可強制補齊`
+                    ? `已綁定擁有者${project.driveOwnerEmail ? `（${project.driveOwnerEmail}）` : ''}：查驗後即時同步，5 分鐘兜底`
                     : '資料夾已設，但後台尚未綁定擁有者（請管理者先授權一次）'}
               </div>
             </div>
