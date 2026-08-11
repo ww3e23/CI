@@ -3,17 +3,11 @@ import type { ChecklistItem, Defect, ProjectState, Unit } from '../types'
 import { getUnitAreas } from './areas'
 import { triggerAnchorDownload } from './download'
 import { floorRank } from './floors'
-import { openDefectCount } from './progress'
-
-const HEADER_FILL: ExcelJS.Fill = {
-  type: 'pattern',
-  pattern: 'solid',
-  fgColor: { argb: 'FF1F4E79' },
-}
+import { openDefectCount, unitProgress } from './progress'
 
 const HEADER_FONT: Partial<ExcelJS.Font> = {
   bold: true,
-  color: { argb: 'FFFFFFFF' },
+  color: { argb: 'FF222222' },
   size: 10,
 }
 
@@ -59,8 +53,8 @@ function resolveExportProjectLabel(
   return ''
 }
 
+/** 表頭：只加粗＋框線，不加底色 */
 function styleHeaderCell(cell: ExcelJS.Cell) {
-  cell.fill = HEADER_FILL
   cell.font = HEADER_FONT
   cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
   cell.border = THIN_BORDER
@@ -70,14 +64,6 @@ function buildingLabel(name: string): string {
   const n = name.trim()
   if (!n) return '—'
   return /棟$/.test(n) ? n : `${n}棟`
-}
-
-function zoneLabel(projectLabel: string, options?: { code?: string; location?: string }): string {
-  const code = options?.code?.trim()
-  if (code) return /區$/.test(code) ? code : `${code}區`
-  const loc = options?.location?.trim()
-  if (loc) return loc
-  return projectLabel || '專案'
 }
 
 function compareUnits(a: Unit, b: Unit, buildingOrder: Map<string, number>): number {
@@ -91,6 +77,13 @@ function compareUnits(a: Unit, b: Unit, buildingOrder: Map<string, number>): num
 
 function unitDefects(defects: Defect[], unitId: string): Defect[] {
   return defects.filter((d) => d.unitId === unitId && d.status !== 'voided')
+}
+
+/** 該戶是否已開始查驗（有進度或有缺失） */
+export function unitHasBeenInspected(project: ProjectState, unit: Unit): boolean {
+  if (!unit.active) return false
+  const prog = unitProgress(unit, project)
+  return prog.status !== 'not_started' && prog.status !== 'na'
 }
 
 /** 將缺失對到細項：優先 checklistItemId，否則同大項名稱模糊比對 */
@@ -130,23 +123,20 @@ function addSummaryMatrixSheet(
   workbook: ExcelJS.Workbook,
   project: ProjectState,
   projectLabel: string,
+  units: Unit[],
   usedNames: Set<string>,
 ) {
+  const buildingIds = new Set(units.map((u) => u.buildingId))
   const buildings = [...project.buildings]
-    .filter((b) => b.active)
+    .filter((b) => b.active && buildingIds.has(b.id))
     .sort((a, b) => a.sortOrder - b.sortOrder)
-  const buildingOrder = new Map(buildings.map((b, i) => [b.id, i]))
-  const units = [...project.units]
-    .filter((u) => u.active)
-    .sort((a, b) => compareUnits(a, b, buildingOrder))
 
   const floors = [...new Set(units.map((u) => u.floor))].sort(
     (a, b) => floorRank(b) - floorRank(a),
   )
 
   const sheet = workbook.addWorksheet(sanitizeSheetName('總表', usedNames))
-  const colCount =
-    1 + buildings.reduce((sum, b) => sum + Math.max(1, b.unitCodes.length), 0)
+  const colCount = 1 + Math.max(1, units.length)
 
   sheet.getCell(1, 1).value = projectLabel
     ? `${projectLabel}｜甲山林總表（樓層 × 棟戶缺失數）`
@@ -154,11 +144,11 @@ function addSummaryMatrixSheet(
   sheet.getCell(1, 1).font = { bold: true, size: 13 }
   sheet.mergeCells(1, 1, 1, Math.max(2, colCount))
 
-  sheet.getCell(2, 1).value = '數字＝未改善缺失數（不含已改善、已作廢）'
+  sheet.getCell(2, 1).value = '數字＝未改善缺失數（不含已改善、已作廢）；僅含本次匯出戶別'
   sheet.getCell(2, 1).font = { color: { argb: 'FF666666' }, size: 10 }
   sheet.mergeCells(2, 1, 2, Math.max(2, colCount))
 
-  // 列 4：棟別；列 5：戶別
+  // 列 4：棟別；列 5：戶別（依實際匯出戶展開）
   const rowB = sheet.getRow(4)
   const rowU = sheet.getRow(5)
   rowB.getCell(1).value = '棟別'
@@ -168,7 +158,15 @@ function addSummaryMatrixSheet(
 
   let col = 2
   for (const b of buildings) {
-    const codes = b.unitCodes.length ? b.unitCodes : ['—']
+    const codes = [
+      ...new Set(
+        units
+          .filter((u) => u.buildingId === b.id)
+          .map((u) => u.code)
+          .sort((a, c) => a.localeCompare(c, 'zh-Hant', { numeric: true })),
+      ),
+    ]
+    if (codes.length === 0) continue
     const start = col
     const end = col + codes.length - 1
     rowB.getCell(start).value = buildingLabel(b.name)
@@ -193,7 +191,14 @@ function addSummaryMatrixSheet(
 
     let c = 2
     for (const b of buildings) {
-      const codes = b.unitCodes.length ? b.unitCodes : ['—']
+      const codes = [
+        ...new Set(
+          units
+            .filter((u) => u.buildingId === b.id)
+            .map((u) => u.code)
+            .sort((a, x) => a.localeCompare(x, 'zh-Hant', { numeric: true })),
+        ),
+      ]
       for (const code of codes) {
         const cell = row.getCell(c)
         cell.border = THIN_BORDER
@@ -218,7 +223,6 @@ function addUnitSheet(
   project: ProjectState,
   unit: Unit,
   projectLabel: string,
-  zone: string,
   usedNames: Set<string>,
 ) {
   const areas = getUnitAreas(unit, project.areas, project.areaTemplates ?? [])
@@ -237,10 +241,10 @@ function addUnitSheet(
   )
   const sheet = workbook.addWorksheet(sheetName)
 
-  // 標題列：自主驗屋｜區｜棟｜戶｜樓
+  // 標題列：自主驗屋｜專案名稱｜棟｜戶｜樓（不再顯示專案代碼／區）
   const title = [
     '自主驗屋',
-    zone,
+    projectLabel || '專案',
     buildingLabel(buildingName),
     `${unit.code}戶`,
     unit.floor.includes('樓') || /F$/i.test(unit.floor) ? unit.floor : `${unit.floor}樓`,
@@ -254,7 +258,7 @@ function addUnitSheet(
   })
   sheet.getRow(1).height = 22
 
-  // 表頭兩列：區域名 + 編號／數量
+  // 表頭兩列：區域名 + 編號／數量（無底色）
   const head1 = sheet.getRow(3)
   const head2 = sheet.getRow(4)
   head1.getCell(1).value = '大項'
@@ -293,7 +297,6 @@ function addUnitSheet(
   sheet.getColumn(totalCol).width = 10
 
   const defects = unitDefects(project.defects, unit.id)
-  // key: itemId|area -> { numbers, count }
   const cellMap = new Map<string, { numbers: number[]; count: number }>()
   for (const d of defects) {
     const itemId = resolveItemId(d, items)
@@ -358,7 +361,6 @@ function addUnitSheet(
     }
   }
 
-  // 共計
   const sumRow = sheet.getRow(rowIdx + 1)
   sumRow.getCell(1).value = '共計'
   sumRow.getCell(1).font = { bold: true }
@@ -371,10 +373,7 @@ function addUnitSheet(
   sumRow.getCell(totalCol).font = { bold: true, size: 12 }
   sumRow.getCell(totalCol).alignment = { horizontal: 'center', vertical: 'middle' }
 
-  // 備註
-  sheet.getCell(rowIdx + 3, 1).value = projectLabel
-    ? `專案：${projectLabel}`
-    : ''
+  sheet.getCell(rowIdx + 3, 1).value = projectLabel ? `專案：${projectLabel}` : ''
   sheet.getCell(rowIdx + 3, 1).font = { color: { argb: 'FF666666' }, size: 9 }
 
   sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 4 }]
@@ -383,35 +382,45 @@ function addUnitSheet(
 /** 甲山林格式：總表矩陣 + 每戶一張分頁 */
 export async function exportJiaShanLinExcel(
   project: ProjectState,
-  options?: { displayName?: string; projectCode?: string; location?: string },
+  options?: {
+    displayName?: string
+    /** 指定要匯出的戶別；空／未傳則預設「已查驗過」的戶 */
+    unitIds?: string[]
+  },
 ): Promise<void> {
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'CI 現場查驗'
   workbook.created = new Date()
 
   const projectLabel = resolveExportProjectLabel(project, options?.displayName)
-  const zone = zoneLabel(projectLabel, {
-    code: options?.projectCode,
-    location: options?.location,
-  })
   const usedNames = new Set<string>()
 
   const buildings = [...project.buildings]
     .filter((b) => b.active)
     .sort((a, b) => a.sortOrder - b.sortOrder)
   const buildingOrder = new Map(buildings.map((b, i) => [b.id, i]))
-  const units = [...project.units]
+
+  const activeUnits = [...project.units]
     .filter((u) => u.active)
     .sort((a, b) => compareUnits(a, b, buildingOrder))
 
-  if (units.length === 0) {
-    throw new Error('目前沒有可匯出的戶別')
+  const selectedIds = options?.unitIds
+  let units: Unit[]
+  if (selectedIds && selectedIds.length > 0) {
+    const idSet = new Set(selectedIds)
+    units = activeUnits.filter((u) => idSet.has(u.id))
+  } else {
+    units = activeUnits.filter((u) => unitHasBeenInspected(project, u))
   }
 
-  addSummaryMatrixSheet(workbook, project, projectLabel, usedNames)
+  if (units.length === 0) {
+    throw new Error('沒有可匯出的戶別（請勾選戶別，或先完成至少一戶查驗）')
+  }
+
+  addSummaryMatrixSheet(workbook, project, projectLabel, units, usedNames)
 
   for (const unit of units) {
-    addUnitSheet(workbook, project, unit, projectLabel, zone, usedNames)
+    addUnitSheet(workbook, project, unit, projectLabel, usedNames)
   }
 
   const stamp = new Date().toISOString().slice(0, 10)

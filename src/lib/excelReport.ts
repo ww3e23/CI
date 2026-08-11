@@ -107,7 +107,7 @@ function resolveExportProjectLabel(
 /** 分棟／分層／分戶缺失數量矩陣 + 查驗完成綠底 + 缺失明細 */
 export async function exportInspectionExcel(
   project: ProjectState,
-  options?: { displayName?: string },
+  options?: { displayName?: string; unitIds?: string[] },
 ): Promise<void> {
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'CI 現場查驗'
@@ -119,6 +119,16 @@ export async function exportInspectionExcel(
   const buildings = [...project.buildings]
     .filter((b) => b.active)
     .sort((a, b) => a.sortOrder - b.sortOrder)
+
+  const unitIdFilter =
+    options?.unitIds && options.unitIds.length > 0 ? new Set(options.unitIds) : null
+
+  const includeUnit = (unitId: string) => !unitIdFilter || unitIdFilter.has(unitId)
+
+  const hasAnyUnit = project.units.some((u) => u.active && includeUnit(u.id))
+  if (!hasAnyUnit) {
+    throw new Error('沒有可匯出的戶別（請勾選戶別，或先完成至少一戶查驗）')
+  }
 
   // 1) 說明
   {
@@ -167,7 +177,7 @@ export async function exportInspectionExcel(
     })
 
     const sortedUnits = [...project.units]
-      .filter((u) => u.active)
+      .filter((u) => u.active && includeUnit(u.id))
       .sort((a, b) => {
         const ba = project.buildings.find((x) => x.id === a.buildingId)?.name ?? ''
         const bb = project.buildings.find((x) => x.id === b.buildingId)?.name ?? ''
@@ -230,7 +240,7 @@ export async function exportInspectionExcel(
     })
 
     const defects = [...project.defects]
-      .filter((d) => d.status !== 'voided')
+      .filter((d) => d.status !== 'voided' && includeUnit(d.unitId))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
     for (const defect of defects) {
@@ -269,12 +279,13 @@ export async function exportInspectionExcel(
   // 4+) 各棟矩陣
   for (const building of buildings) {
     const units = project.units
-      .filter((u) => u.buildingId === building.id && u.active)
+      .filter((u) => u.buildingId === building.id && u.active && includeUnit(u.id))
       .sort((a, b) => {
         const floorCmp = compareFloor(a.floor, b.floor)
         if (floorCmp !== 0) return floorCmp
         return a.code.localeCompare(b.code, 'zh-Hant', { numeric: true })
       })
+    if (units.length === 0) continue
 
     const floors = Array.from(new Set(units.map((u) => u.floor))).sort(compareFloor)
     const codes = Array.from(new Set(units.map((u) => u.code))).sort((a, b) =>

@@ -2,13 +2,21 @@ import { useMemo, useState } from 'react'
 import { FileDown, FileSpreadsheet } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentProject } from '../../store/useAuthStore'
-import { buildMatrix, formatActivity } from '../../lib/progress'
+import { buildMatrix, formatActivity, unitProgress } from '../../lib/progress'
 import { exportInspectionExcel } from '../../lib/excelReport'
-import { exportJiaShanLinExcel } from '../../lib/excelReportJiaShanLin'
-import type { ProgressCell } from '../../types'
+import {
+  exportJiaShanLinExcel,
+  unitHasBeenInspected,
+} from '../../lib/excelReportJiaShanLin'
+import { sortFloorsDesc } from '../../lib/floors'
+import type { BuildingRule, ProgressCell, Unit } from '../../types'
 import { ReportPreview } from './ReportPreview'
 import { TitleHint } from '../ui/TitleHint'
 import { Modal } from '../ui/Modal'
+
+function unitKey(buildingId: string, floor: string, code: string) {
+  return `${buildingId}|${floor}|${code}`
+}
 
 export function ReportsPage() {
   const state = useProjectStore()
@@ -18,6 +26,10 @@ export function ReportsPage() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [excelBusy, setExcelBusy] = useState(false)
   const [excelChooserOpen, setExcelChooserOpen] = useState(false)
+  const [excelKind, setExcelKind] = useState<'general' | 'jsl' | null>(null)
+  const [unitPickOpen, setUnitPickOpen] = useState(false)
+  const [picked, setPicked] = useState<Record<string, boolean>>({})
+  const [pickBuildingId, setPickBuildingId] = useState('')
   const setCurrentUnit = useProjectStore((s) => s.setCurrentUnit)
 
   const cellMap = useMemo(() => {
@@ -38,21 +50,132 @@ export function ReportsPage() {
 
   const reportName = project?.name ?? state.projectName
 
-  const handleExportExcel = async (kind: 'general' | 'jsl') => {
-    if (excelBusy) return
+  const activeBuildings = useMemo(
+    () =>
+      [...state.buildings]
+        .filter((b) => b.active)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [state.buildings],
+  )
+
+  const unitByKey = useMemo(() => {
+    const m = new Map<string, Unit>()
+    for (const u of state.units) {
+      if (!u.active) continue
+      m.set(unitKey(u.buildingId, u.floor, u.code), u)
+    }
+    return m
+  }, [state.units])
+
+  const inspectedKeys = useMemo(() => {
+    const keys: string[] = []
+    for (const [key, u] of unitByKey) {
+      if (unitHasBeenInspected(state, u)) keys.push(key)
+    }
+    return keys
+  }, [unitByKey, state])
+
+  const pickBuilding =
+    activeBuildings.find((b) => b.id === pickBuildingId) ?? activeBuildings[0] ?? null
+  const pickFloors = useMemo(
+    () => (pickBuilding ? sortFloorsDesc(pickBuilding.floors) : []),
+    [pickBuilding],
+  )
+
+  const pickedIds = useMemo(() => {
+    const ids: string[] = []
+    for (const [key, on] of Object.entries(picked)) {
+      if (!on) continue
+      const u = unitByKey.get(key)
+      if (u) ids.push(u.id)
+    }
+    return ids
+  }, [picked, unitByKey])
+
+  function openUnitPicker(kind: 'general' | 'jsl') {
     setExcelChooserOpen(false)
+    setExcelKind(kind)
+    const initial: Record<string, boolean> = {}
+    for (const key of inspectedKeys) initial[key] = true
+    setPicked(initial)
+    setPickBuildingId(activeBuildings[0]?.id ?? '')
+    setUnitPickOpen(true)
+  }
+
+  function selectInspectedOnly() {
+    const next: Record<string, boolean> = {}
+    for (const key of inspectedKeys) next[key] = true
+    setPicked(next)
+  }
+
+  function selectAllUnits() {
+    const next: Record<string, boolean> = {}
+    for (const key of unitByKey.keys()) next[key] = true
+    setPicked(next)
+  }
+
+  function clearPicked() {
+    setPicked({})
+  }
+
+  function togglePickCell(key: string, unit: Unit | undefined) {
+    if (!unit) return
+    setPicked((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  function togglePickFloor(b: BuildingRule, floor: string) {
+    const keys = b.unitCodes
+      .map((code) => unitKey(b.id, floor, code))
+      .filter((k) => unitByKey.has(k))
+    if (keys.length === 0) return
+    const allOn = keys.every((k) => picked[k])
+    setPicked((prev) => {
+      const next = { ...prev }
+      for (const k of keys) next[k] = !allOn
+      return next
+    })
+  }
+
+  function togglePickColumn(b: BuildingRule, code: string) {
+    const keys = pickFloors
+      .map((floor) => unitKey(b.id, floor, code))
+      .filter((k) => unitByKey.has(k))
+    if (keys.length === 0) return
+    const allOn = keys.every((k) => picked[k])
+    setPicked((prev) => {
+      const next = { ...prev }
+      for (const k of keys) next[k] = !allOn
+      return next
+    })
+  }
+
+  const handleExportExcel = async () => {
+    if (excelBusy || !excelKind) return
+    const unitIds =
+      pickedIds.length > 0
+        ? pickedIds
+        : inspectedKeys
+            .map((k) => unitByKey.get(k)?.id)
+            .filter((id): id is string => Boolean(id))
+
+    if (unitIds.length === 0) {
+      window.alert('沒有可匯出的戶別。請勾選戶別，或先完成至少一戶查驗。')
+      return
+    }
+
+    setUnitPickOpen(false)
     setExcelBusy(true)
     try {
       const snap = useProjectStore.getState()
-      if (kind === 'jsl') {
+      if (excelKind === 'jsl') {
         await exportJiaShanLinExcel(snap, {
           displayName: reportName,
-          projectCode: project?.code,
-          location: project?.location,
+          unitIds,
         })
       } else {
         await exportInspectionExcel(snap, {
           displayName: reportName,
+          unitIds,
         })
       }
     } catch (err) {
@@ -64,6 +187,7 @@ export function ReportsPage() {
       )
     } finally {
       setExcelBusy(false)
+      setExcelKind(null)
     }
   }
 
@@ -111,19 +235,19 @@ export function ReportsPage() {
             as="h3"
             className="serif"
             style={{ margin: '0 0 8px', fontSize: 20 }}
-            hint="一般報表含彙總與各棟矩陣；甲山林為每戶一張區域×細項表，另附總表矩陣。"
+            hint="選格式後再勾選要下載的戶別；未另選時預設只含已查驗戶。"
           >
             選擇匯出格式
           </TitleHint>
           <p style={{ margin: '0 0 14px', color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600 }}>
-            點選要下載的 Excel 類型
+            下一步可勾選戶別（預設：已查驗）
           </p>
           <button
             type="button"
             className="btn btn-primary"
             style={{ width: '100%', marginBottom: 10 }}
             disabled={excelBusy}
-            onClick={() => void handleExportExcel('general')}
+            onClick={() => openUnitPicker('general')}
           >
             <FileSpreadsheet size={16} /> 一般報表
           </button>
@@ -132,18 +256,172 @@ export function ReportsPage() {
             className="btn btn-ghost"
             style={{ width: '100%', marginBottom: 10 }}
             disabled={excelBusy}
-            onClick={() => void handleExportExcel('jsl')}
+            onClick={() => openUnitPicker('jsl')}
           >
             <FileSpreadsheet size={16} /> 甲山林報表
           </button>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-            甲山林：總表（樓層×棟戶缺失數）＋每戶一分頁（區域欄位含編號／數量）
+            甲山林：標題顯示專案名稱；總表＋每戶一分頁（區域含編號／數量）
           </div>
           <button
             type="button"
             className="btn btn-ghost"
             style={{ width: '100%', marginTop: 12 }}
             onClick={() => setExcelChooserOpen(false)}
+          >
+            取消
+          </button>
+        </Modal>
+      )}
+
+      {unitPickOpen && (
+        <Modal
+          onClose={() => {
+            setUnitPickOpen(false)
+            setExcelKind(null)
+          }}
+          aria-label="選擇匯出戶別"
+          variant="bottom"
+        >
+          <TitleHint
+            as="h3"
+            className="serif"
+            style={{ margin: '0 0 6px', fontSize: 20 }}
+            hint="預設勾選已查驗戶。可改勾其他戶，或按「已查驗」一鍵重設。"
+          >
+            選擇匯出戶別
+          </TitleHint>
+          <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600 }}>
+            {excelKind === 'jsl' ? '甲山林報表' : '一般報表'}｜已選 {pickedIds.length} 戶
+            {inspectedKeys.length > 0
+              ? `（已查驗 ${inspectedKeys.length} 戶）`
+              : '（尚無已查驗戶）'}
+          </p>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+            <button type="button" className="btn btn-ghost" style={{ minHeight: 36 }} onClick={selectInspectedOnly}>
+              已查驗
+            </button>
+            <button type="button" className="btn btn-ghost" style={{ minHeight: 36 }} onClick={selectAllUnits}>
+              全選
+            </button>
+            <button type="button" className="btn btn-ghost" style={{ minHeight: 36 }} onClick={clearPicked}>
+              清除
+            </button>
+          </div>
+
+          {activeBuildings.length > 1 && (
+            <div className="chip-row" style={{ marginBottom: 10 }}>
+              {activeBuildings.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  className={`chip ${pickBuilding?.id === b.id ? 'active' : ''}`}
+                  onClick={() => setPickBuildingId(b.id)}
+                >
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {pickBuilding ? (
+            <div className="glass matrix-scroll" style={{ maxHeight: '42vh', marginBottom: 12 }}>
+              <table className="matrix-table">
+                <thead>
+                  <tr>
+                    <th className="floor-cell">樓層</th>
+                    {pickBuilding.unitCodes.map((code) => (
+                      <th key={code}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ minHeight: 28, padding: '0 6px', fontSize: 12 }}
+                          onClick={() => togglePickColumn(pickBuilding, code)}
+                        >
+                          {code}
+                        </button>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pickFloors.map((floor) => (
+                    <tr key={floor}>
+                      <td className="floor-cell">
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ minHeight: 28, padding: '0 4px', fontSize: 12 }}
+                          onClick={() => togglePickFloor(pickBuilding, floor)}
+                        >
+                          {floor}
+                        </button>
+                      </td>
+                      {pickBuilding.unitCodes.map((code) => {
+                        const key = unitKey(pickBuilding.id, floor, code)
+                        const unit = unitByKey.get(key)
+                        const on = Boolean(picked[key])
+                        const inspected = unit ? unitHasBeenInspected(state, unit) : false
+                        const prog = unit ? unitProgress(unit, state) : null
+                        const cls = !unit
+                          ? 'na'
+                          : on
+                            ? 'done'
+                            : inspected
+                              ? 'progress'
+                              : 'empty'
+                        return (
+                          <td key={key}>
+                            <button
+                              type="button"
+                              className={`matrix-cell ${cls}`}
+                              disabled={!unit}
+                              title={
+                                unit
+                                  ? `${pickBuilding.name} ${floor} ${code}${inspected ? '｜已查驗' : '｜未查驗'}${
+                                      prog ? `｜缺失 ${prog.defectCount}` : ''
+                                    }`
+                                  : '無此戶'
+                              }
+                              onClick={() => togglePickCell(key, unit)}
+                            >
+                              {on ? '✓' : inspected ? '·' : ''}
+                            </button>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p style={{ color: 'var(--ink-soft)', fontWeight: 600 }}>目前沒有可選戶別</p>
+          )}
+
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%', marginBottom: 8 }}
+            disabled={excelBusy || (pickedIds.length === 0 && inspectedKeys.length === 0)}
+            onClick={() => void handleExportExcel()}
+          >
+            <FileSpreadsheet size={16} />
+            {excelBusy
+              ? '匯出中…'
+              : pickedIds.length > 0
+                ? `下載 ${pickedIds.length} 戶`
+                : '下載已查驗戶'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ width: '100%' }}
+            onClick={() => {
+              setUnitPickOpen(false)
+              setExcelKind(null)
+            }}
           >
             取消
           </button>
