@@ -35,12 +35,7 @@ export function DefectsPage() {
       quickStatus === 'all'
         ? unitDefects
         : unitDefects.filter((d) => d.status === quickStatus)
-    return [...list].sort((a, b) => {
-      const aDone = a.status === 'completed' ? 1 : 0
-      const bDone = b.status === 'completed' ? 1 : 0
-      if (aDone !== bDone) return aDone - bDone
-      return b.updatedAt.localeCompare(a.updatedAt)
-    })
+    return [...list].sort((a, b) => a.defectNumber - b.defectNumber)
   }, [unitDefects, quickStatus])
 
   const counts = defectsByStatus(unitDefects)

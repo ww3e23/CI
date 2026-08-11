@@ -42,12 +42,7 @@ export function UnitDefectsSheet({
           if (categoryId && d.categoryId !== categoryId) return false
           return true
         })
-        .sort((a, b) => {
-          const aDone = a.status === 'completed' ? 1 : 0
-          const bDone = b.status === 'completed' ? 1 : 0
-          if (aDone !== bDone) return aDone - bDone
-          return b.defectNumber - a.defectNumber
-        }),
+        .sort((a, b) => a.defectNumber - b.defectNumber),
     [defects, unitId, categoryId],
   )
 

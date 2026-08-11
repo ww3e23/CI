@@ -107,7 +107,9 @@ export function CategoryPage({
 
       <div style={{ display: 'grid', gap: 10 }}>
         {catItems.map((item) => {
-          const related = unitDefects.filter((d) => d.checklistItemId === item.id)
+          const related = unitDefects
+            .filter((d) => d.checklistItemId === item.id)
+            .sort((a, b) => a.defectNumber - b.defectNumber)
           return (
             <article key={item.id} className="glass" style={{ padding: 14 }}>
               <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.45 }}>
