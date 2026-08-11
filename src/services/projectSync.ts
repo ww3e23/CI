@@ -159,17 +159,27 @@ function parseDefect(id: string, data: Record<string, unknown>): Defect {
   }
 }
 
-/** 下一號 = max(既有計數, 該戶最大編號+1)；不改寫既有缺失編號 */
+/** 下一號 = 該戶「未作廢」最大編號 + 1（作廢不佔號；刪除尾號可回收） */
 export function computeNextDefectNumber(
   unitId: string,
-  storedCounter: number,
-  defects: Array<{ unitId: string; defectNumber: number }>,
+  _storedCounter: number,
+  defects: Array<{ unitId: string; defectNumber: number; status?: string }>,
 ): number {
-  let maxNum = 0
+  return recomputeUnitNextDefectNumber(unitId, defects)
+}
+
+/** 依目前未作廢缺失重算該戶下一號 */
+export function recomputeUnitNextDefectNumber(
+  unitId: string,
+  defects: Array<{ unitId: string; defectNumber: number; status?: string }>,
+): number {
+  let maxActive = 0
   for (const d of defects) {
-    if (d.unitId === unitId) maxNum = Math.max(maxNum, Number(d.defectNumber) || 0)
+    if (d.unitId !== unitId) continue
+    if (d.status === 'voided') continue
+    maxActive = Math.max(maxActive, Number(d.defectNumber) || 0)
   }
-  return Math.max(Math.max(1, storedCounter || 1), maxNum + 1)
+  return maxActive + 1
 }
 
 function unitNextMap(units: ProjectState['units']): Record<string, number> {
@@ -407,21 +417,14 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
 
     if (!hasCloudPayload) return null
 
-    const unitNext =
-      meta.unitNextDefect && typeof meta.unitNextDefect === 'object'
-        ? (meta.unitNextDefect as Record<string, number>)
-        : {}
     const unitAreas = parseUnitAreasMap(meta.unitAreas)
     const unitAreaTemplates = parseUnitAreaTemplateMap(meta.unitAreaTemplates)
     const unitPlanPhotos = parseUnitPlanPhotosMap(meta.unitPlanPhotos)
 
     const units = expandUnitsFromBuildings(buildings).map((u) => ({
       ...u,
-      nextDefectNumber: computeNextDefectNumber(
-        u.id,
-        Number(unitNext[u.id] ?? u.nextDefectNumber ?? 1),
-        defects,
-      ),
+      // 以未作廢缺失實況重算，避免雲端舊計數器造成跳號
+      nextDefectNumber: recomputeUnitNextDefectNumber(u.id, defects),
       // 手動自訂優先；有手動 areas 就不掛範本綁定
       areas: unitAreas[u.id]?.length ? unitAreas[u.id] : undefined,
       areaTemplateId: unitAreas[u.id]?.length
@@ -573,18 +576,15 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
 
   const buildings = [...buildingMap.values()].sort((a, b) => a.sortOrder - b.sortOrder)
   const mergedDefects = [...defectMap.values()]
-  const unitNext: Record<string, number> = {}
   const unitAreas: Record<string, string[]> = {}
   const unitTpl: Record<string, string> = {}
   const unitPlans: Record<string, string> = {}
   for (const u of local.units) {
-    unitNext[u.id] = u.nextDefectNumber
     if (u.areas?.length) unitAreas[u.id] = [...u.areas]
     if (u.areaTemplateId) unitTpl[u.id] = u.areaTemplateId
     if (u.defaultPlanPhotoUrl) unitPlans[u.id] = u.defaultPlanPhotoUrl
   }
   for (const u of remote.units) {
-    unitNext[u.id] = Math.max(unitNext[u.id] ?? 1, u.nextDefectNumber)
     // 本機已有自訂區域優先；否則用雲端
     if (!unitAreas[u.id]?.length && u.areas?.length) {
       unitAreas[u.id] = [...u.areas]
@@ -598,7 +598,7 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
   }
   const units = expandUnitsFromBuildings(buildings).map((u) => ({
     ...u,
-    nextDefectNumber: computeNextDefectNumber(u.id, unitNext[u.id] ?? 1, mergedDefects),
+    nextDefectNumber: recomputeUnitNextDefectNumber(u.id, mergedDefects),
     areas: unitAreas[u.id]?.length ? unitAreas[u.id] : undefined,
     areaTemplateId: unitAreas[u.id]?.length ? undefined : unitTpl[u.id] || undefined,
     defaultPlanPhotoUrl: unitPlans[u.id] || undefined,

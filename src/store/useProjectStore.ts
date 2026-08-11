@@ -15,7 +15,7 @@ import { createEmptyProjectState, createProjectBundles } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
 import { cloudReady, syncDefect, syncProjectStructure } from '../services/cloudSync'
-import { computeNextDefectNumber } from '../services/projectSync'
+import { recomputeUnitNextDefectNumber } from '../services/projectSync'
 import {
   mergeProjectStates,
   pullProjectState,
@@ -313,12 +313,8 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         const unit = state.units.find((u) => u.id === unitId)
         if (!unit) return null
 
-        // 以「計數器」與「該戶既有最大編號」取較大者，避免重複 #1（不改寫既有編號）
-        const defectNumber = computeNextDefectNumber(
-          unitId,
-          unit.nextDefectNumber,
-          state.defects,
-        )
+        // 以該戶未作廢最大號 + 1 取號（與畫面預覽同一算法）
+        const defectNumber = recomputeUnitNextDefectNumber(unitId, state.defects)
         const syncState: SyncState = cloudReady() ? 'pending' : 'demo'
         const defect: Defect = {
           id: createId('def'),
@@ -442,8 +438,14 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           status: 'voided',
           updatedAt: new Date().toISOString(),
         }
+        const nextDefects = state.defects.map((d) => (d.id === defectId ? next : d))
+        // 刪除後回收尾號：下一號改回「未作廢最大號 + 1」，避免跳號
+        const nextCounter = recomputeUnitNextDefectNumber(defect.unitId, nextDefects)
         set({
-          defects: state.defects.map((d) => (d.id === defectId ? next : d)),
+          defects: nextDefects,
+          units: state.units.map((u) =>
+            u.id === defect.unitId ? { ...u, nextDefectNumber: nextCounter } : u,
+          ),
           activities: [
             {
               id: createId('act'),

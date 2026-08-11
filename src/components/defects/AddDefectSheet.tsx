@@ -3,6 +3,7 @@ import { Lock, Settings2 } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
 import { cloudReady } from '../../services/cloudSync'
+import { computeNextDefectNumber } from '../../services/projectSync'
 import { fileToCompressedDataUrl } from '../../lib/imageCompress'
 import { getUnitAreas } from '../../lib/areas'
 import { Modal } from '../ui/Modal'
@@ -20,6 +21,7 @@ export function AddDefectSheet({
   checklistItemId?: string
 }) {
   const units = useProjectStore((s) => s.units)
+  const defects = useProjectStore((s) => s.defects)
   const categories = useProjectStore((s) => s.categories)
   const projectAreas = useProjectStore((s) => s.areas)
   const areaTemplates = useProjectStore((s) => s.areaTemplates) ?? []
@@ -70,7 +72,11 @@ export function AddDefectSheet({
     setPlanPhoto(defaultPlan)
   }, [defaultPlan, planTouched])
 
-  const nextNumber = unit?.nextDefectNumber ?? 1
+  // 即時下一號：跟實際儲存同一套算法（作廢不佔號）
+  const nextNumber = useMemo(() => {
+    if (!unit) return 1
+    return computeNextDefectNumber(unit.id, unit.nextDefectNumber, defects)
+  }, [unit, defects])
   const canEdit = role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
 
   const itemHint = useMemo(() => {
