@@ -40,6 +40,34 @@ function floorLabel(floor: string): string {
   return `${floor}樓`
 }
 
+/** 可嵌入報告的圖片網址（排除上傳中占位字串） */
+function isUsableMediaUrl(url?: string | null): url is string {
+  const v = String(url || '').trim()
+  if (!v) return false
+  if (v === '[local-pending-upload]') return false
+  return v.startsWith('http://') || v.startsWith('https://') || v.startsWith('data:')
+}
+
+/**
+ * 缺失位置圖：優先用該筆已標註／上傳的圖；
+ * 若無則回退該戶預設位置圖（現場常只設戶別預設圖）。
+ */
+function resolveDefectPlanPhoto(defect: Defect, unit?: Unit | null): string | undefined {
+  if (isUsableMediaUrl(defect.planPhotoDataUrl)) return defect.planPhotoDataUrl.trim()
+  if (unit && isUsableMediaUrl(unit.defaultPlanPhotoUrl)) {
+    return unit.defaultPlanPhotoUrl.trim()
+  }
+  return undefined
+}
+
+function resolveStatusPhotos(defect: Defect): string[] {
+  return (defect.photoDataUrls ?? []).filter((src) => isUsableMediaUrl(src))
+}
+
+function imgTag(src: string, alt: string): string {
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy" referrerpolicy="no-referrer" />`
+}
+
 /** 產生純圖片查驗報表 HTML（無矩陣／統計） */
 export function buildPhotoReportHtml(input: PhotoReportInput): string {
   const { projectName, recorderName, state, mode = 'window' } = input
@@ -76,17 +104,22 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
 
       const cards = defects
         .map((d) => {
-          const itemLabel = resolveDefectItemLabel(d, state.checklistItems) || d.description || '未命名缺失'
+          const itemLabel =
+            resolveDefectItemLabel(d, state.checklistItems) || d.description || '未命名缺失'
           const remark = resolveDefectRemark(d, state.checklistItems)
-          const plan = d.planPhotoDataUrl
-          const photos = (d.photoDataUrls ?? []).filter(Boolean)
+          const plan = resolveDefectPlanPhoto(d, unit)
+          const photos = resolveStatusPhotos(d)
+          const usedUnitDefault =
+            Boolean(plan) &&
+            !isUsableMediaUrl(d.planPhotoDataUrl) &&
+            isUsableMediaUrl(unit.defaultPlanPhotoUrl)
 
           const planHtml = plan
             ? `<figure class="shot plan">
-                <img src="${escapeHtml(plan)}" alt="位置圖 #${d.defectNumber}" />
-                <figcaption>位置圖</figcaption>
+                ${imgTag(plan, `位置圖 #${d.defectNumber}`)}
+                <figcaption>位置圖${usedUnitDefault ? '（戶別預設）' : ''}</figcaption>
               </figure>`
-            : `<div class="shot empty">無位置圖</div>`
+            : `<div class="shot empty plan">無位置圖</div>`
 
           const photoHtml =
             photos.length > 0
@@ -94,12 +127,12 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
                   .map(
                     (src, i) => `
                 <figure class="shot status">
-                  <img src="${escapeHtml(src)}" alt="現況 #${d.defectNumber}-${i + 1}" />
+                  ${imgTag(src, `現況 #${d.defectNumber}-${i + 1}`)}
                   <figcaption>現況 ${i + 1}</figcaption>
                 </figure>`,
                   )
                   .join('')
-              : `<div class="shot empty">無現況照</div>`
+              : `<div class="shot empty status">無現況照</div>`
 
           return `
           <article class="defect">
@@ -112,8 +145,14 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
               <span class="status">${escapeHtml(statusLabel(d.status))}</span>
             </header>
             <div class="shots">
-              ${planHtml}
-              ${photoHtml}
+              <div class="shot-col">
+                <div class="shot-label">位置圖</div>
+                ${planHtml}
+              </div>
+              <div class="shot-col">
+                <div class="shot-label">現況照</div>
+                <div class="status-stack">${photoHtml}</div>
+              </div>
             </div>
           </article>`
         })
@@ -182,7 +221,7 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
       font: inherit; font-weight: 700; cursor: pointer;
     }
     .btn-ghost { background: #fff; color: var(--ink); border: 1px solid var(--line) !important; }
-    .page { max-width: 920px; margin: 0 auto; padding: 20px 16px 56px; }
+    .page { max-width: 960px; margin: 0 auto; padding: 20px 16px 56px; }
 
     .cover {
       padding: 28px 22px 22px;
@@ -224,9 +263,7 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
       font-size: 12px; font-weight: 800;
     }
 
-    .unit {
-      margin: 0 0 28px;
-    }
+    .unit { margin: 0 0 28px; }
     .unit:not(.first) {
       break-before: page;
       page-break-before: always;
@@ -289,8 +326,21 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
 
     .shots {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+    .shot-col { min-width: 0; }
+    .shot-label {
+      margin: 0 0 6px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      color: var(--green);
+    }
+    .status-stack {
+      display: grid;
+      gap: 8px;
     }
     .shot {
       margin: 0;
@@ -305,7 +355,7 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
       display: block;
       width: 100%;
       height: auto;
-      max-height: 340px;
+      max-height: 360px;
       object-fit: contain;
       background: #121814;
     }
@@ -319,14 +369,13 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
       border-top: 1px solid var(--line);
     }
     .shot.empty {
-      min-height: 140px;
+      min-height: 160px;
       display: grid; place-items: center;
       color: rgba(255,255,255,0.55);
       font-size: 13px; font-weight: 700;
       background: #2a312c;
     }
-    .shot.plan { grid-column: 1 / -1; }
-    .shot.plan img { max-height: 420px; }
+    .shot.plan img { max-height: 400px; }
 
     .empty-all {
       padding: 40px 20px; text-align: center;
@@ -342,7 +391,6 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
 
     @media (max-width: 720px) {
       .shots { grid-template-columns: 1fr; }
-      .shot.plan { grid-column: auto; }
       .defect-head { grid-template-columns: auto 1fr; }
       .status { grid-column: 2; justify-self: start; }
     }
@@ -373,8 +421,9 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
         break-inside: avoid;
         page-break-inside: avoid;
       }
-      .shot img { max-height: 260px; }
-      .shot.plan img { max-height: 320px; }
+      .shot img { max-height: 240px; }
+      .shot.plan img { max-height: 280px; }
+      .shots { gap: 8px; }
     }
   </style>
 </head>
@@ -384,7 +433,7 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
     <header class="cover">
       <div class="eyebrow">Photo Inspection Report</div>
       <h1>${escapeHtml(projectName || '查驗專案')}</h1>
-      <p class="sub">純圖片查驗報告 · 僅列位置圖與現況照片</p>
+      <p class="sub">純圖片查驗報告 · 每筆含位置圖與現況照片</p>
       <div class="chips">
         <span class="chip">紀錄：${escapeHtml(recorderName || '現場查驗')}</span>
         <span class="chip">產出：${escapeHtml(dateLabel)}</span>
