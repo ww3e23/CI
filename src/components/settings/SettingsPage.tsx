@@ -7,6 +7,7 @@ import { TemplateEditor } from './TemplateEditor'
 import { UnitAreasEditor } from './UnitAreasEditor'
 import { ProjectAreasEditor } from './ProjectAreasEditor'
 import { BatchAreasApplySheet } from './BatchAreasApplySheet'
+import { UnitPlanGallerySheet } from './UnitPlanGallerySheet'
 import { createId } from '../../lib/id'
 import type { BuildingRule, ChecklistCategory } from '../../types'
 import { TitleHint } from '../ui/TitleHint'
@@ -31,6 +32,7 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const [unitAreasOpen, setUnitAreasOpen] = useState(false)
   const [projectAreasOpen, setProjectAreasOpen] = useState(false)
   const [batchAreasOpen, setBatchAreasOpen] = useState(false)
+  const [planGalleryOpen, setPlanGalleryOpen] = useState(false)
 
   const currentUnit =
     units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active)
@@ -132,58 +134,66 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
       <div className="section-row" style={{ marginTop: 22 }}>
         <TitleHint
           as="h2"
-          hint="每戶可自訂不同區域名稱與編號（例如臥室1／臥室2）。未自訂的戶別會沿用專案預設。"
+          hint="此戶編輯、專案預設、批量套用區域，以及全部戶別位置圖，都集中在這裡。"
         >
-          查驗區域
+          查驗區域／位置圖
         </TitleHint>
       </div>
-      <div style={{ display: 'grid', gap: 10, marginBottom: 8 }}>
-        <article className="glass" style={{ padding: 14 }}>
-          <div style={{ fontWeight: 800, fontSize: 15 }}>目前戶別區域</div>
-          <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-            {currentUnit
-              ? `${currentUnit.buildingName} ${currentUnit.floor} ${currentUnit.code}戶 · ${getUnitAreas(currentUnit, projectAreas).join('、')}`
-              : '尚未選擇可查驗戶別'}
-          </div>
+      <article className="glass" style={{ padding: 14, marginBottom: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
+          {currentUnit
+            ? `目前戶：${currentUnit.buildingName} ${currentUnit.floor} ${currentUnit.code}戶 · ${getUnitAreas(currentUnit, projectAreas).join('、')}`
+            : '尚未選擇可查驗戶別'}
+          {projectAreas.length > 0 ? (
+            <>
+              <br />
+              專案預設：{projectAreas.join('、')}
+            </>
+          ) : null}
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 8,
+            marginTop: 12,
+          }}
+        >
           <button
             type="button"
             className="btn btn-ghost"
-            style={{ marginTop: 10, minHeight: 40, width: '100%' }}
+            style={{ minHeight: 40 }}
             disabled={!currentUnit}
             onClick={() => setUnitAreasOpen(true)}
           >
-            編輯此戶區域／位置圖
+            此戶設定
           </button>
-        </article>
-        <article className="glass" style={{ padding: 14 }}>
-          <div style={{ fontWeight: 800, fontSize: 15 }}>專案預設區域</div>
-          <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-            {projectAreas.join('、')}
-          </div>
           <button
             type="button"
             className="btn btn-ghost"
-            style={{ marginTop: 10, minHeight: 40, width: '100%' }}
+            style={{ minHeight: 40 }}
             onClick={() => setProjectAreasOpen(true)}
           >
-            編輯專案預設
+            專案預設
           </button>
-        </article>
-        <article className="glass" style={{ padding: 14 }}>
-          <div style={{ fontWeight: 800, fontSize: 15 }}>批量套用區域</div>
-          <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-            依棟別／樓層勾選戶別一次套用；已手動自訂的預設不覆蓋，也可還原專案預設
-          </div>
           <button
             type="button"
             className="btn btn-ghost"
-            style={{ marginTop: 10, minHeight: 40, width: '100%' }}
+            style={{ minHeight: 40 }}
             onClick={() => setBatchAreasOpen(true)}
           >
-            開啟批量套用
+            批量套用
           </button>
-        </article>
-      </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ minHeight: 40 }}
+            onClick={() => setPlanGalleryOpen(true)}
+          >
+            位置圖總覽
+          </button>
+        </div>
+      </article>
 
       <div className="section-row">
         <TitleHint
@@ -358,6 +368,7 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
       )}
       {projectAreasOpen && <ProjectAreasEditor onClose={() => setProjectAreasOpen(false)} />}
       {batchAreasOpen && <BatchAreasApplySheet onClose={() => setBatchAreasOpen(false)} />}
+      {planGalleryOpen && <UnitPlanGallerySheet onClose={() => setPlanGalleryOpen(false)} />}
     </div>
   )
 }
