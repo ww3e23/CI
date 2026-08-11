@@ -26,6 +26,7 @@ import {
   provisionFirebaseAuthUser,
 } from '../services/firebaseAuthProvision'
 import { useProjectStore } from './useProjectStore'
+import { bindCurrentActorGetter } from '../lib/currentActor'
 
 interface AuthState {
   users: UserAccount[]
@@ -786,3 +787,15 @@ export function useCurrentRole(): MemberRole | null {
     )
   })
 }
+
+// 專案 store 寫活動／缺失時用目前登入者姓名（避免循環 import）
+bindCurrentActorGetter(() => {
+  const s = useAuthStore.getState()
+  const u = s.users.find((x) => x.id === s.currentUserId)
+  if (!u) return '現場查驗'
+  const name = (u.displayName || '').trim()
+  if (name) return name
+  const email = (u.email || '').trim()
+  if (email.includes('@')) return email.split('@')[0] || '現場查驗'
+  return email || '現場查驗'
+})

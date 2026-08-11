@@ -53,3 +53,12 @@ export function defectListTitle(defect: Defect, items: ChecklistItem[]): string 
   if (defect.area) return `#${defect.defectNumber} ${defect.area}`
   return `#${defect.defectNumber}`
 }
+
+/** 列表／詳情顯示的查驗人員（優先新增者，其次最近修改者） */
+export function defectInspectorLabel(defect: Defect): string {
+  const created = (defect.createdByName || '').trim()
+  if (created) return created
+  const updated = (defect.updatedByName || '').trim()
+  if (updated) return updated
+  return ''
+}

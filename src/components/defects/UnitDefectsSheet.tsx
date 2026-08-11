@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { ChevronRight, X } from 'lucide-react'
 import type { Defect, DefectStatus } from '../../types'
 import {
+  defectInspectorLabel,
   defectListTitle,
   resolveDefectRemark,
 } from '../../lib/defectDisplay'
@@ -158,6 +159,7 @@ export function UnitDefectsSheet({
             const improved = d.status === 'completed'
             const rowTitle = defectListTitle(d, items)
             const remark = resolveDefectRemark(d, items)
+            const inspector = defectInspectorLabel(d)
             return (
               <button
                 key={d.id}
@@ -217,6 +219,7 @@ export function UnitDefectsSheet({
                     }}
                   >
                     {d.categoryName} · {d.area} · {statusLabel(d.status)}
+                    {inspector ? ` · 查驗 ${inspector}` : ''}
                   </div>
                 </div>
                 <ChevronRight size={18} color="var(--stone)" />

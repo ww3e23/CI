@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import {
+  defectInspectorLabel,
   defectListTitle,
   resolveDefectRemark,
 } from '../../lib/defectDisplay'
@@ -110,6 +111,7 @@ export function DefectsPage() {
           const improved = d.status === 'completed'
           const title = defectListTitle(d, items)
           const remark = resolveDefectRemark(d, items)
+          const inspector = defectInspectorLabel(d)
           return (
             <button
               key={d.id}
@@ -162,6 +164,7 @@ export function DefectsPage() {
                 ) : null}
                 <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 11, fontWeight: 600 }}>
                   {d.categoryName} · {d.area} · {statusLabel(d.status)}
+                  {inspector ? ` · 查驗 ${inspector}` : ''}
                 </div>
               </div>
               <ChevronRight size={18} color="var(--stone)" />

@@ -846,7 +846,9 @@ export function ReportsPage() {
               <strong>{formatActivity(a)}</strong>
               <span style={{ color: 'var(--ink-soft)' }}> · {a.summary}</span>
             </span>
-            <span style={{ color: 'var(--ink-soft)' }}>{a.actorName}</span>
+            <span style={{ color: 'var(--green-deep)', fontWeight: 800, whiteSpace: 'nowrap' }}>
+              {a.actorName || '—'}
+            </span>
           </div>
         ))}
       </div>

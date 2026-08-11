@@ -1,5 +1,5 @@
 import type { Defect, ProjectState, Unit } from '../types'
-import { resolveDefectItemLabel, resolveDefectRemark } from './defectDisplay'
+import { resolveDefectItemLabel, resolveDefectRemark, defectInspectorLabel } from './defectDisplay'
 import { escapeHtml } from './escapeHtml'
 import { floorRank } from './floors'
 import { statusLabel } from './progress'
@@ -108,6 +108,7 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
           const itemLabel =
             resolveDefectItemLabel(d, state.checklistItems) || d.description || '未命名缺失'
           const remark = resolveDefectRemark(d, state.checklistItems)
+          const inspector = defectInspectorLabel(d)
           const plan = resolveDefectPlanPhoto(d, unit)
           const photos = resolveStatusPhotos(d)
           const usedUnitDefault =
@@ -150,7 +151,9 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
               <div class="num">${d.defectNumber}</div>
               <div class="meta">
                 <h3>${escapeHtml(d.area || '未指定區域')}｜${escapeHtml(itemLabel)}</h3>
-                <p>${escapeHtml(d.categoryName || '')}${remark ? ` · ${escapeHtml(remark)}` : ''}</p>
+                <p>${escapeHtml(d.categoryName || '')}${remark ? ` · ${escapeHtml(remark)}` : ''}${
+                  inspector ? ` · 查驗 ${escapeHtml(inspector)}` : ''
+                }</p>
               </div>
               <span class="badge">${escapeHtml(statusLabel(d.status))}</span>
             </header>

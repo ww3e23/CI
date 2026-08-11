@@ -91,12 +91,16 @@ export function AdvancedFilterSheet({
   }, [units, draft.buildingIds, draft.floors, unitQuery])
 
   const inspectors = useMemo(() => {
-    const names = new Set(activities.map((a) => a.actorName).filter(Boolean))
-    names.add('現場查驗')
-    names.add('謝采辰')
-    names.add('王建宏')
-    return [...names]
-  }, [activities])
+    const names = new Set<string>()
+    for (const a of activities) {
+      if (a.actorName?.trim()) names.add(a.actorName.trim())
+    }
+    for (const d of defects) {
+      if (d.createdByName?.trim()) names.add(d.createdByName.trim())
+      if (d.updatedByName?.trim()) names.add(d.updatedByName.trim())
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, 'zh-Hant'))
+  }, [activities, defects])
 
   const statusOpts: { key: DefectStatus; label: string; cls: string }[] = [
     { key: 'pending_repair', label: '待改善', cls: 'amber' },

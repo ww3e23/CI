@@ -79,6 +79,10 @@ export interface Defect {
   syncState: SyncState
   createdAt: string
   updatedAt: string
+  /** 新增此筆缺失的查驗人員姓名 */
+  createdByName?: string
+  /** 最近修改此筆的人員姓名 */
+  updatedByName?: string
 }
 
 export interface ProgressCell {

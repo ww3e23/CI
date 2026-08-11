@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Download, ImageDown, Pencil, Trash2 } from 'lucide-react'
 import type { Defect, DefectStatus } from '../../types'
 import {
+  defectInspectorLabel,
   resolveDefectItemLabel,
   resolveDefectRemark,
 } from '../../lib/defectDisplay'
@@ -35,6 +36,7 @@ export function DefectDetailModal({
   const live = useProjectStore((s) => s.defects.find((d) => d.id === defect.id) ?? defect)
   const itemLabel = resolveDefectItemLabel(live, checklistItems)
   const remark = resolveDefectRemark(live, checklistItems)
+  const inspector = defectInspectorLabel(live)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState(false)
   const [saveOpen, setSaveOpen] = useState(false)
@@ -161,6 +163,21 @@ export function DefectDetailModal({
             {live.buildingName} {live.floor} {live.unitCode}戶
             <br />
             狀態：{statusLabel(live.status)}
+            {inspector ? (
+              <>
+                <br />
+                查驗人員：{inspector}
+                {live.updatedByName &&
+                live.updatedByName !== inspector ? (
+                  <>（最近修改：{live.updatedByName}）</>
+                ) : null}
+              </>
+            ) : live.updatedByName ? (
+              <>
+                <br />
+                最近修改：{live.updatedByName}
+              </>
+            ) : null}
             {showFailedRetry && (
               <>
                 <br />
