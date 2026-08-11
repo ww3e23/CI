@@ -91,13 +91,18 @@ export function unitProgress(
   const catProg = unitCategoryProgress(unit.id, state)
   const defectCount = openDefectCount(state.defects, unit.id)
 
-  // 進度以「大項查畢」為準；舊的 unitCheckedCount 僅作後援
+  // 完成率以「大項查畢」為準（與首頁「完成 2/6」一致）；
+  // 「已查（有缺失）」只算開始查，不算完成。舊 unitCheckedCount 僅作後援。
   const legacyChecked = state.unitCheckedCount[unit.id] ?? 0
   const percentFromCats =
-    catProg.total === 0 ? 0 : Math.round((catProg.started / catProg.total) * 100)
+    catProg.total === 0 ? 0 : Math.round((catProg.done / catProg.total) * 100)
   const percentFromLegacy =
     itemTotal === 0 ? 0 : Math.round((Math.min(legacyChecked, itemTotal) / itemTotal) * 100)
-  const percent = Math.max(percentFromCats, percentFromLegacy)
+  // 有大項進度時以查畢為準，不再被「已查未畢」或舊計數拉高
+  const percent =
+    catProg.total > 0
+      ? percentFromCats
+      : percentFromLegacy
   const complete = catProg.complete || (itemTotal > 0 && legacyChecked >= itemTotal)
 
   let status: CellStatus = 'not_started'
@@ -106,8 +111,12 @@ export function unitProgress(
   else if (catProg.started > 0 || legacyChecked > 0) status = 'in_progress'
 
   return {
-    checked: complete ? itemTotal : Math.min(legacyChecked, itemTotal),
-    total: itemTotal,
+    checked: complete
+      ? itemTotal
+      : catProg.total > 0
+        ? catProg.done
+        : Math.min(legacyChecked, itemTotal),
+    total: catProg.total > 0 ? catProg.total : itemTotal,
     percent,
     defectCount,
     status,
