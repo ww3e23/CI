@@ -18,7 +18,18 @@ function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([bytes], { type: mime })
 }
 
-/** 將 data URL 上傳到 Firebase Storage（Blob + uploadBytes，比 data_url 字串上傳快） */
+function guessExtFromContentType(contentType: string | null | undefined, fallbackUrl?: string): string {
+  const ct = String(contentType ?? '').toLowerCase()
+  if (ct.includes('png')) return 'png'
+  if (ct.includes('webp')) return 'webp'
+  if (ct.includes('jpeg') || ct.includes('jpg')) return 'jpg'
+  const path = String(fallbackUrl ?? '').split('?')[0].toLowerCase()
+  if (path.endsWith('.png')) return 'png'
+  if (path.endsWith('.webp')) return 'webp'
+  return 'jpg'
+}
+
+/** 將 data URL／http(s) 圖上傳到 Firebase Storage（http 預設位置圖也要物化，Drive 才能同步） */
 export async function uploadDataUrl(params: {
   projectId: string
   defectId: string
@@ -29,18 +40,41 @@ export async function uploadDataUrl(params: {
   if (!isFirebaseConfigured()) return null
   const storage = getFirebaseStorage()
   if (!storage) return null
-  if (!params.dataUrl.startsWith('data:')) {
+
+  let blob: Blob
+  let ext: string
+  if (params.dataUrl.startsWith('data:')) {
+    ext = guessExt(params.dataUrl)
+    blob = dataUrlToBlob(params.dataUrl)
+  } else if (/^https?:\/\//i.test(params.dataUrl)) {
+    // 已在本缺失 Storage 路徑下則不必重傳
+    const alreadyHere = params.dataUrl.includes(
+      `/projects%2F${params.projectId}%2Fdefects%2F${params.defectId}%2F`,
+    ) || params.dataUrl.includes(
+      `/projects/${params.projectId}/defects/${params.defectId}/`,
+    )
+    if (alreadyHere) {
+      return { url: params.dataUrl, path: '' }
+    }
+    try {
+      const res = await fetch(params.dataUrl)
+      if (!res.ok) throw new Error(`fetch ${res.status}`)
+      blob = await res.blob()
+      ext = guessExtFromContentType(blob.type || res.headers.get('content-type'), params.dataUrl)
+    } catch (err) {
+      console.warn('[uploadDataUrl] remote fetch failed, keep url', err)
+      return { url: params.dataUrl, path: '' }
+    }
+  } else {
     return { url: params.dataUrl, path: '' }
   }
 
-  const ext = guessExt(params.dataUrl)
   const name =
     params.kind === 'plan'
       ? `plan.${ext}`
       : `photo-${String(params.index ?? 0).padStart(2, '0')}.${ext}`
   const path = `projects/${params.projectId}/defects/${params.defectId}/${name}`
   const storageRef = ref(storage, path)
-  const blob = dataUrlToBlob(params.dataUrl)
   await uploadBytes(storageRef, blob, {
     contentType: blob.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
     customMetadata: {

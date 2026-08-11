@@ -380,6 +380,9 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         const hasLocalMedia =
           Boolean(planPhotoDataUrl?.startsWith('data:')) ||
           photoDataUrls.some((p) => p.startsWith('data:'))
+        const hasRemoteMedia =
+          Boolean(planPhotoDataUrl && /^https?:\/\//i.test(planPhotoDataUrl)) ||
+          photoDataUrls.some((p) => /^https?:\/\//i.test(p))
 
         // 大圖必須先穩存 IndexedDB，再關表單；否則重開 App 會因 localStorage 剝掉 data URL 而丟圖
         if (projectId && hasLocalMedia) {
@@ -415,17 +418,46 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
                 })
               })
           } else {
-            // 無照片也要立刻寫入雲端，否則只靠本機、重開／合併時容易編號錯亂
+            // 無本機 data URL 也要立刻寫入雲端；若只有 http 預設圖，物化進 Storage 再同步 Drive
             void syncDefect(projectId, { ...defect, syncState: 'synced' })
-              .then(() => {
+              .then(async () => {
                 const latest = get().defects.find((d) => d.id === defect.id)
                 if (!latest || latest.status === 'voided') return
+                let synced = { ...latest, syncState: 'synced' as const }
+                if (hasRemoteMedia) {
+                  try {
+                    const { planUrl, photoUrls } = await uploadDefectImages({
+                      projectId,
+                      defectId: defect.id,
+                      planPhotoDataUrl: latest.planPhotoDataUrl,
+                      photoDataUrls: latest.photoDataUrls,
+                    })
+                    const afterUpload = get().defects.find((d) => d.id === defect.id)
+                    if (!afterUpload || afterUpload.status === 'voided') return
+                    synced = {
+                      ...afterUpload,
+                      planPhotoDataUrl: planUrl ?? afterUpload.planPhotoDataUrl,
+                      photoDataUrls: photoUrls.length
+                        ? photoUrls
+                        : afterUpload.photoDataUrls,
+                      syncState: 'synced',
+                      updatedAt: new Date().toISOString(),
+                    }
+                    await syncDefect(projectId, synced)
+                  } catch (err) {
+                    console.warn('[addDefect] materialize remote media failed', err)
+                  }
+                }
                 set({
                   defects: get().defects.map((d) =>
-                    d.id === defect.id ? { ...d, syncState: 'synced' } : d,
+                    d.id === defect.id ? synced : d,
                   ),
                 })
                 scheduleCloudSync(get)
+                void autoSyncDefectPhotosToDrive({
+                  projectId,
+                  defectId: defect.id,
+                }).catch((err) => console.warn('[drive-auto] add', err))
               })
               .catch(() => {
                 set({
@@ -1442,6 +1474,11 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             }
 
             try {
+              // 先寫 Firestore，再上傳 Storage，避免 mirror 觸發時還找不到缺失文件
+              await syncDefect(projectId, {
+                ...withLocal,
+                syncState: 'syncing',
+              })
               const { planUrl, photoUrls } = await uploadDefectImages({
                 projectId,
                 defectId: entry.defectId,

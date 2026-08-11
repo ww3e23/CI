@@ -196,6 +196,72 @@ async function uploadBufferToDrive(params: {
   return res.data.id
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isHttpUrl(value: unknown): value is string {
+  return typeof value === 'string' && /^https?:\/\//i.test(value.trim())
+}
+
+/** 缺失文件上的遠端圖（預設位置圖等尚未物化進 Storage） */
+function collectRemoteMedia(defect: DefectRow): Array<{
+  kind: 'plan' | 'photo'
+  index: number
+  url: string
+  sourcePath: string
+  fileName: string
+}> {
+  const out: Array<{
+    kind: 'plan' | 'photo'
+    index: number
+    url: string
+    sourcePath: string
+    fileName: string
+  }> = []
+  if (isHttpUrl(defect.planPhotoDataUrl)) {
+    const url = defect.planPhotoDataUrl.trim()
+    out.push({
+      kind: 'plan',
+      index: 0,
+      url,
+      sourcePath: `remote:plan:${url}`,
+      fileName: 'plan-remote.jpg',
+    })
+  }
+  const photos = Array.isArray(defect.photoDataUrls) ? defect.photoDataUrls : []
+  photos.forEach((raw, index) => {
+    if (!isHttpUrl(raw)) return
+    const url = raw.trim()
+    out.push({
+      kind: 'photo',
+      index,
+      url,
+      sourcePath: `remote:photo-${index}:${url}`,
+      fileName: `photo-${String(index).padStart(2, '0')}-remote.jpg`,
+    })
+  })
+  return out
+}
+
+async function fetchRemoteImage(
+  url: string,
+): Promise<{ buffer: Buffer; contentType: string } | null> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) {
+      logger.warn('fetch remote image failed', { url, status: res.status })
+      return null
+    }
+    const contentType = res.headers.get('content-type') || 'image/jpeg'
+    const ab = await res.arrayBuffer()
+    return { buffer: Buffer.from(ab), contentType }
+  } catch (err) {
+    logger.warn('fetch remote image error', { url, err })
+    return null
+  }
+}
+
 /**
  * Storage 上傳完成後自動鏡像（分棟／樓／戶／大項／小項資料夾）
  * 路徑：projects/{projectId}/defects/{defectId}/{filename}
@@ -229,9 +295,17 @@ export const mirrorDefectPhotoToDrive = onObjectFinalized(
       return
     }
 
-    const defectSnap = await getFirestore().doc(`projects/${projectId}/defects/${defectId}`).get()
+    // 上傳常早於 Firestore 寫入：短暫重試避免整筆跳過
+    let defectSnap = await getFirestore().doc(`projects/${projectId}/defects/${defectId}`).get()
     if (!defectSnap.exists) {
-      logger.warn('defect missing', defectId)
+      for (const waitMs of [800, 1600, 3200]) {
+        await sleep(waitMs)
+        defectSnap = await getFirestore().doc(`projects/${projectId}/defects/${defectId}`).get()
+        if (defectSnap.exists) break
+      }
+    }
+    if (!defectSnap.exists) {
+      logger.warn('defect missing after retry', defectId)
       return
     }
     const defect = { id: defectId, ...(defectSnap.data() as Omit<DefectRow, 'id'>) }
@@ -373,7 +447,8 @@ async function runPhotoSync(params: {
       continue
     }
 
-    if (files.length === 0) continue
+    const remoteMedia = files.length === 0 ? collectRemoteMedia(defect) : []
+    if (files.length === 0 && remoteMedia.length === 0) continue
 
     // 一筆缺失一個葉層資料夾；不可只用 checklistItemId（同小項多編號會被併進同一資料夾）
     const cacheKey = [
@@ -452,6 +527,54 @@ async function runPhotoSync(params: {
           )
         }
         errors.push(`上傳失敗 ${driveFileName}: ${msg}`)
+      }
+    }
+
+    // Storage 空但 Firestore 有 http 圖（常見：只用戶別預設位置圖）
+    for (const remote of remoteMedia) {
+      scanned += 1
+      const driveFileName = buildDriveFileName(
+        Number(defect.defectNumber ?? 0),
+        remote.fileName,
+      )
+      if (bySource.has(remote.sourcePath) || byName.has(driveFileName)) {
+        skipped += 1
+        continue
+      }
+      try {
+        const fetched = await fetchRemoteImage(remote.url)
+        if (!fetched) {
+          errors.push(`下載遠端圖失敗 #${defect.defectNumber} ${remote.fileName}`)
+          continue
+        }
+        const fileId = await uploadBufferToDrive({
+          drive,
+          folderId,
+          fileName: driveFileName,
+          sourcePath: remote.sourcePath,
+          buffer: fetched.buffer,
+          contentType: fetched.contentType,
+        })
+        bySource.add(remote.sourcePath)
+        byName.add(driveFileName)
+        uploaded += 1
+        await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
+          {
+            driveLastFileId: fileId,
+            driveLeafFolderId: folderId,
+            driveSyncedAt: new Date().toISOString(),
+          },
+          { merge: true },
+        )
+      } catch (err) {
+        const msg = String((err as Error)?.message ?? err)
+        if (/storage quota/i.test(msg)) {
+          throw new HttpsError(
+            'failed-precondition',
+            '服務帳戶無法寫入「我的雲端硬碟」。請後台先「綁定雲端硬碟擁有者」。',
+          )
+        }
+        errors.push(`遠端圖上傳失敗 ${driveFileName}: ${msg}`)
       }
     }
   }
@@ -905,6 +1028,8 @@ async function reconcileOneDefectOnDrive(params: {
   const [listed] = await bucket.getFiles({ prefix })
   const storageFiles = listed.filter((f) => f.name && !f.name.endsWith('/'))
   const storagePaths = new Set(storageFiles.map((f) => f.name))
+  const remoteMedia = collectRemoteMedia(defect)
+  const remoteSourcePaths = new Set(remoteMedia.map((r) => r.sourcePath))
 
   const existing = await listFolderFiles(drive, folderId)
   let uploaded = 0
@@ -912,14 +1037,18 @@ async function reconcileOneDefectOnDrive(params: {
   let lastFileId: string | null = String(defect.driveLastFileId || '').trim() || null
 
   // 清掉 Storage 已不存在的 Drive 檔（使用者刪除單張照片時）
+  // remote:* 來源改以 Firestore 目前 url 判斷，避免誤刪預設位置圖
   for (const f of existing) {
-    if (f.sourcePath && !storagePaths.has(f.sourcePath)) {
-      try {
-        await trashDriveItem(drive, f.id)
-        removed += 1
-      } catch (err) {
-        logger.warn('trash obsolete drive file failed', { fileId: f.id, err })
-      }
+    if (!f.sourcePath) continue
+    const keep =
+      storagePaths.has(f.sourcePath) ||
+      (f.sourcePath.startsWith('remote:') && remoteSourcePaths.has(f.sourcePath))
+    if (keep) continue
+    try {
+      await trashDriveItem(drive, f.id)
+      removed += 1
+    } catch (err) {
+      logger.warn('trash obsolete drive file failed', { fileId: f.id, err })
     }
   }
 
@@ -944,6 +1073,31 @@ async function reconcileOneDefectOnDrive(params: {
     lastFileId = fileId
     bySource.add(file.name)
     byName.add(driveFileName)
+  }
+
+  // Storage 尚無檔時，把 Firestore 上的 http 預設圖補上 Drive
+  if (storageFiles.length === 0) {
+    for (const remote of remoteMedia) {
+      const driveFileName = buildDriveFileName(
+        Number(defect.defectNumber ?? 0),
+        remote.fileName,
+      )
+      if (bySource.has(remote.sourcePath) || byName.has(driveFileName)) continue
+      const fetched = await fetchRemoteImage(remote.url)
+      if (!fetched) continue
+      const fileId = await uploadBufferToDrive({
+        drive,
+        folderId,
+        fileName: driveFileName,
+        sourcePath: remote.sourcePath,
+        buffer: fetched.buffer,
+        contentType: fetched.contentType,
+      })
+      uploaded += 1
+      lastFileId = fileId
+      bySource.add(remote.sourcePath)
+      byName.add(driveFileName)
+    }
   }
 
   await getFirestore().doc(`projects/${projectId}/defects/${defect.id}`).set(
