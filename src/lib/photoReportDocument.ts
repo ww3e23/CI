@@ -114,12 +114,17 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
             !isUsableMediaUrl(d.planPhotoDataUrl) &&
             isUsableMediaUrl(unit.defaultPlanPhotoUrl)
 
+          // 標題列只標一次「位置圖／現況照」，圖下不再重複 figcaption
           const planHtml = plan
             ? `<figure class="shot plan">
                 ${imgTag(plan, `位置圖 #${d.defectNumber}`)}
-                <figcaption>位置圖${usedUnitDefault ? '（戶別預設）' : ''}</figcaption>
+                ${
+                  usedUnitDefault
+                    ? '<figcaption class="hint">採用此戶預設位置圖</figcaption>'
+                    : ''
+                }
               </figure>`
-            : `<div class="shot empty plan">無位置圖</div>`
+            : `<div class="shot empty">尚未提供位置圖</div>`
 
           const photoHtml =
             photos.length > 0
@@ -128,21 +133,25 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
                     (src, i) => `
                 <figure class="shot status">
                   ${imgTag(src, `現況 #${d.defectNumber}-${i + 1}`)}
-                  <figcaption>現況 ${i + 1}</figcaption>
+                  ${
+                    photos.length > 1
+                      ? `<figcaption class="hint">現況 ${i + 1}/${photos.length}</figcaption>`
+                      : ''
+                  }
                 </figure>`,
                   )
                   .join('')
-              : `<div class="shot empty status">無現況照</div>`
+              : `<div class="shot empty">尚未提供現況照</div>`
 
           return `
           <article class="defect">
             <header class="defect-head">
-              <div class="num">#${d.defectNumber}</div>
+              <div class="num">${d.defectNumber}</div>
               <div class="meta">
                 <h3>${escapeHtml(d.area || '未指定區域')}｜${escapeHtml(itemLabel)}</h3>
                 <p>${escapeHtml(d.categoryName || '')}${remark ? ` · ${escapeHtml(remark)}` : ''}</p>
               </div>
-              <span class="status">${escapeHtml(statusLabel(d.status))}</span>
+              <span class="badge">${escapeHtml(statusLabel(d.status))}</span>
             </header>
             <div class="shots">
               <div class="shot-col">
@@ -187,14 +196,16 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --ink: #1c241f;
-      --soft: #5a635c;
-      --line: rgba(28, 36, 31, 0.12);
+      --ink: #1a211c;
+      --soft: #5e6861;
+      --mute: #8a928b;
+      --line: rgba(26, 33, 28, 0.10);
+      --line-strong: rgba(47, 93, 76, 0.35);
       --green: #2f5d4c;
       --green-soft: rgba(47, 93, 76, 0.08);
-      --paper: #f7f8f6;
-      --card: #ffffff;
-      --shadow: 0 18px 40px -28px rgba(28, 36, 31, 0.45);
+      --paper: #f4f2ec;
+      --card: #fffcf7;
+      --photo-mat: #efece4;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
@@ -202,8 +213,8 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
       color: var(--ink);
       font-family: 'Noto Sans TC', sans-serif;
       background:
-        radial-gradient(80% 45% at 0% 0%, rgba(47,93,76,0.10), transparent 55%),
-        radial-gradient(60% 40% at 100% 0%, rgba(60,110,143,0.08), transparent 50%),
+        linear-gradient(180deg, rgba(255,255,255,0.55), transparent 180px),
+        radial-gradient(70% 40% at 0% 0%, rgba(47,93,76,0.07), transparent 55%),
         var(--paper);
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
@@ -212,32 +223,31 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
       position: sticky; top: 0; z-index: 5;
       display: flex; justify-content: flex-end; gap: 8px;
       padding: 12px 18px;
-      background: rgba(247,248,246,0.92);
+      background: rgba(244,242,236,0.92);
       backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--line);
     }
     .toolbar button {
-      border: 0; border-radius: 999px; padding: 10px 16px;
+      border: 0; border-radius: 10px; padding: 10px 16px;
       font: inherit; font-weight: 700; cursor: pointer;
     }
-    .btn-ghost { background: #fff; color: var(--ink); border: 1px solid var(--line) !important; }
-    .page { max-width: 960px; margin: 0 auto; padding: 20px 16px 56px; }
+    .btn-ghost {
+      background: var(--card);
+      color: var(--ink);
+      border: 1px solid var(--line) !important;
+    }
+    .page { max-width: 920px; margin: 0 auto; padding: 22px 16px 56px; }
 
     .cover {
-      padding: 28px 22px 22px;
-      margin-bottom: 22px;
-      border-radius: 22px;
-      background:
-        linear-gradient(145deg, rgba(47,93,76,0.12), transparent 42%),
-        var(--card);
-      border: 1px solid var(--line);
-      box-shadow: var(--shadow);
+      padding: 8px 2px 20px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--line-strong);
       break-inside: avoid;
       page-break-inside: avoid;
     }
     .cover .eyebrow {
-      font-size: 11px; letter-spacing: 0.14em; font-weight: 800;
-      color: var(--green); text-transform: uppercase; margin: 0 0 8px;
+      font-size: 11px; letter-spacing: 0.16em; font-weight: 700;
+      color: var(--green); text-transform: uppercase; margin: 0 0 10px;
     }
     .cover h1 {
       margin: 0;
@@ -245,33 +255,35 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
       font-size: clamp(26px, 4vw, 34px);
       line-height: 1.25;
       font-weight: 700;
+      letter-spacing: 0.01em;
     }
     .cover .sub {
       margin: 10px 0 0;
       color: var(--soft);
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 500;
       line-height: 1.55;
     }
-    .cover .chips {
-      display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px;
+    .cover .meta-row {
+      display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 14px;
+      color: var(--soft); font-size: 12px; font-weight: 600;
     }
-    .cover .chip {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 7px 12px; border-radius: 999px;
-      background: var(--green-soft); color: var(--green);
-      font-size: 12px; font-weight: 800;
+    .cover .meta-row span + span::before {
+      content: '·';
+      margin-right: 14px;
+      color: var(--mute);
     }
 
-    .unit { margin: 0 0 28px; }
+    .unit { margin: 0 0 22px; }
     .unit:not(.first) {
       break-before: page;
       page-break-before: always;
+      padding-top: 4px;
     }
     .unit-head {
       display: flex; align-items: baseline; justify-content: space-between;
-      gap: 12px; padding: 14px 4px 12px;
-      border-bottom: 2px solid var(--green);
+      gap: 12px; padding: 16px 2px 10px;
+      border-bottom: 1px solid var(--ink);
       margin-bottom: 14px;
       break-after: avoid;
       page-break-after: avoid;
@@ -281,72 +293,78 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
       font-size: 22px; font-weight: 700; line-height: 1.3;
     }
     .unit-count {
-      flex-shrink: 0; color: var(--soft); font-size: 13px; font-weight: 700;
+      flex-shrink: 0; color: var(--soft); font-size: 13px; font-weight: 600;
     }
-    .unit-count strong { color: var(--green); font-size: 18px; }
+    .unit-count strong { color: var(--green); font-size: 16px; }
 
     .defect {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 16px;
-      margin: 0 0 16px;
-      box-shadow: var(--shadow);
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      padding: 0 2px 18px;
+      margin: 0 0 18px;
       break-inside: avoid;
       page-break-inside: avoid;
     }
+    .defect:last-child { border-bottom: 0; margin-bottom: 0; }
     .defect-head {
       display: grid;
       grid-template-columns: auto 1fr auto;
-      gap: 12px;
+      gap: 10px 12px;
       align-items: start;
       margin-bottom: 12px;
       break-after: avoid;
       page-break-after: avoid;
     }
     .num {
-      width: 46px; height: 46px; border-radius: 14px;
+      width: 34px; height: 34px; border-radius: 999px;
       background: var(--green); color: #fff;
       display: grid; place-items: center;
-      font-weight: 800; font-size: 14px;
+      font-weight: 700; font-size: 13px;
+      font-variant-numeric: tabular-nums;
     }
     .meta h3 {
-      margin: 0; font-size: 16px; line-height: 1.35; font-weight: 800;
+      margin: 0; font-size: 15px; line-height: 1.4; font-weight: 700;
     }
     .meta p {
-      margin: 4px 0 0; color: var(--soft); font-size: 12px; font-weight: 600;
-      line-height: 1.45;
+      margin: 4px 0 0; color: var(--soft); font-size: 12px; font-weight: 500;
+      line-height: 1.5;
     }
-    .status {
+    .badge {
       align-self: start;
-      padding: 6px 10px; border-radius: 999px;
-      background: var(--green-soft); color: var(--green);
-      font-size: 11px; font-weight: 800; white-space: nowrap;
+      padding: 4px 9px;
+      border-radius: 6px;
+      border: 1px solid rgba(47, 93, 76, 0.22);
+      background: var(--green-soft);
+      color: var(--green);
+      font-size: 11px; font-weight: 700; white-space: nowrap;
     }
 
     .shots {
       display: grid;
-      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-      gap: 12px;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: 14px;
       align-items: start;
     }
     .shot-col { min-width: 0; }
     .shot-label {
-      margin: 0 0 6px;
+      margin: 0 0 8px;
       font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.06em;
-      color: var(--green);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--mute);
+      text-transform: none;
     }
     .status-stack {
       display: grid;
-      gap: 8px;
+      gap: 10px;
     }
     .shot {
       margin: 0;
-      border-radius: 14px;
+      border-radius: 6px;
       overflow: hidden;
-      background: #121814;
+      background: var(--photo-mat);
       border: 1px solid var(--line);
       break-inside: avoid;
       page-break-inside: avoid;
@@ -355,75 +373,90 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
       display: block;
       width: 100%;
       height: auto;
-      max-height: 360px;
+      max-height: 380px;
       object-fit: contain;
-      background: #121814;
+      object-position: center;
+      background: var(--photo-mat);
+      vertical-align: top;
     }
-    .shot figcaption {
-      padding: 7px 10px;
-      background: #fff;
-      color: var(--soft);
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.04em;
+    .shot figcaption.hint {
+      padding: 6px 8px;
+      background: transparent;
+      color: var(--mute);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
       border-top: 1px solid var(--line);
+      text-align: center;
     }
     .shot.empty {
-      min-height: 160px;
+      min-height: 120px;
       display: grid; place-items: center;
-      color: rgba(255,255,255,0.55);
-      font-size: 13px; font-weight: 700;
-      background: #2a312c;
+      color: var(--mute);
+      font-size: 12px; font-weight: 600;
+      background: rgba(239, 236, 228, 0.65);
+      border-style: dashed;
     }
-    .shot.plan img { max-height: 400px; }
 
     .empty-all {
       padding: 40px 20px; text-align: center;
-      color: var(--soft); font-weight: 700;
-      background: var(--card); border-radius: 18px; border: 1px dashed var(--line);
+      color: var(--soft); font-weight: 600;
+      background: var(--card); border-radius: 10px; border: 1px dashed var(--line);
     }
     .footer {
       margin-top: 28px; padding-top: 12px;
       border-top: 1px solid var(--line);
-      color: var(--soft); font-size: 11px; font-weight: 600;
+      color: var(--mute); font-size: 11px; font-weight: 500;
       text-align: center;
     }
 
     @media (max-width: 720px) {
       .shots { grid-template-columns: 1fr; }
       .defect-head { grid-template-columns: auto 1fr; }
-      .status { grid-column: 2; justify-self: start; }
+      .badge { grid-column: 2; justify-self: start; }
     }
 
     @media print {
-      body { background: #fff; }
+      @page { margin: 12mm 11mm; }
+      body { background: #fff; color: #111; }
       .no-print { display: none !important; }
       .page { max-width: none; padding: 0; }
       .cover {
-        box-shadow: none;
-        border: 0;
-        border-bottom: 2px solid var(--green);
-        border-radius: 0;
-        margin-bottom: 18px;
-        padding: 0 0 14px;
-        background: none;
+        border-bottom: 1.5px solid var(--green);
+        margin-bottom: 10px;
+        padding: 0 0 12px;
       }
       .unit:not(.first) {
         break-before: page;
         page-break-before: always;
       }
       .defect {
-        box-shadow: none;
         break-inside: avoid;
         page-break-inside: avoid;
+        padding-bottom: 12px;
+        margin-bottom: 12px;
       }
+      .shots {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .shot {
+        background: #f7f5f0;
+        border: 0.6pt solid rgba(0,0,0,0.12);
+        border-radius: 3px;
+        box-shadow: none;
+      }
+      .shot img {
+        background: #f7f5f0;
+        max-height: 260px;
+      }
+      .shot.plan img { max-height: 300px; }
       .shot, .shot img {
         break-inside: avoid;
         page-break-inside: avoid;
       }
-      .shot img { max-height: 240px; }
-      .shot.plan img { max-height: 280px; }
-      .shots { gap: 8px; }
+      .num { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .badge { background: transparent; }
     }
   </style>
 </head>
@@ -434,10 +467,10 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
       <div class="eyebrow">Photo Inspection Report</div>
       <h1>${escapeHtml(projectName || '查驗專案')}</h1>
       <p class="sub">純圖片查驗報告 · 每筆含位置圖與現況照片</p>
-      <div class="chips">
-        <span class="chip">紀錄：${escapeHtml(recorderName || '現場查驗')}</span>
-        <span class="chip">產出：${escapeHtml(dateLabel)}</span>
-        <span class="chip">${units.length} 戶 · ${totalDefects} 筆缺失</span>
+      <div class="meta-row">
+        <span>紀錄：${escapeHtml(recorderName || '現場查驗')}</span>
+        <span>產出：${escapeHtml(dateLabel)}</span>
+        <span>${units.length} 戶 · ${totalDefects} 筆缺失</span>
       </div>
     </header>
 
