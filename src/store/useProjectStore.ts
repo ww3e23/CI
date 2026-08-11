@@ -29,7 +29,7 @@ import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
 import { hasUploadableLocalMedia } from '../lib/defectMedia'
 import { statusLabel } from '../lib/progress'
-import { normalizeAreaName } from '../lib/areas'
+import { isUnitAreasCustomized, normalizeAreaName, sanitizeAreaList } from '../lib/areas'
 import {
   clearPendingDefectMedia,
   listPendingDefectMedia,
@@ -83,6 +83,19 @@ interface ProjectActions {
   ) => { ok: boolean; error?: string }
   /** 清除此戶自訂區域，改回專案預設 */
   resetUnitAreasToProjectDefault: (unitId: string) => { ok: boolean; error?: string }
+  /**
+   * 批量套用查驗區域到選取戶別。
+   * 預設略過已自訂戶別（手動優先）；overwriteCustomized=true 才覆蓋。
+   */
+  applyAreasToUnits: (
+    unitIds: string[],
+    areas: string[],
+    options?: { overwriteCustomized?: boolean },
+  ) => { ok: boolean; error?: string; applied: number; skipped: number }
+  /** 批量清除自訂區域，改回專案預設 */
+  resetUnitsAreasToProjectDefault: (
+    unitIds: string[],
+  ) => { ok: boolean; error?: string; reset: number }
   /** 設定／清除此戶預設位置圖（圖面）；傳 null 清除 */
   setUnitDefaultPlan: (
     unitId: string,
@@ -698,6 +711,108 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         })
         afterProjectChange(get, set)
         return { ok: true }
+      },
+
+      applyAreasToUnits: (unitIds, areas, options = {}) => {
+        const overwrite = Boolean(options.overwriteCustomized)
+        const cleaned = sanitizeAreaList(areas)
+        if (cleaned.length === 0) {
+          return { ok: false, error: '至少需要保留一個查驗區域', applied: 0, skipped: 0 }
+        }
+        if (unitIds.length === 0) {
+          return { ok: false, error: '請先選擇戶別', applied: 0, skipped: 0 }
+        }
+
+        const state = get()
+        const idSet = new Set(unitIds)
+        let applied = 0
+        let skipped = 0
+        const nextUnits = state.units.map((u) => {
+          if (!idSet.has(u.id) || !u.active) return u
+          if (!overwrite && isUnitAreasCustomized(u)) {
+            skipped += 1
+            return u
+          }
+          applied += 1
+          return { ...u, areas: [...cleaned] }
+        })
+
+        if (applied === 0) {
+          return {
+            ok: false,
+            error:
+              skipped > 0
+                ? `選取的 ${skipped} 戶皆已自訂區域，未覆寫（可勾選「覆蓋已自訂」）`
+                : '沒有可套用的戶別',
+            applied: 0,
+            skipped,
+          }
+        }
+
+        set({
+          units: nextUnits,
+          activities: [
+            {
+              id: createId('act'),
+              at: new Date().toLocaleString('zh-TW', {
+                month: 'numeric',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+              buildingName: '—',
+              floor: '—',
+              unitCode: '—',
+              summary: `批量套用查驗區域：${applied} 戶（${cleaned.length} 項）${
+                skipped ? `，略過已自訂 ${skipped} 戶` : ''
+              }`,
+              actorName: '現場查驗',
+            },
+            ...state.activities,
+          ].slice(0, 40),
+        })
+        afterProjectChange(get, set)
+        return { ok: true, applied, skipped }
+      },
+
+      resetUnitsAreasToProjectDefault: (unitIds) => {
+        if (unitIds.length === 0) {
+          return { ok: false, error: '請先選擇戶別', reset: 0 }
+        }
+        const state = get()
+        const idSet = new Set(unitIds)
+        let reset = 0
+        const nextUnits = state.units.map((u) => {
+          if (!idSet.has(u.id) || !u.active) return u
+          if (!isUnitAreasCustomized(u)) return u
+          reset += 1
+          return { ...u, areas: undefined }
+        })
+        if (reset === 0) {
+          return { ok: true, reset: 0 }
+        }
+        set({
+          units: nextUnits,
+          activities: [
+            {
+              id: createId('act'),
+              at: new Date().toLocaleString('zh-TW', {
+                month: 'numeric',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+              buildingName: '—',
+              floor: '—',
+              unitCode: '—',
+              summary: `批量還原查驗區域為專案預設：${reset} 戶`,
+              actorName: '現場查驗',
+            },
+            ...state.activities,
+          ].slice(0, 40),
+        })
+        afterProjectChange(get, set)
+        return { ok: true, reset }
       },
 
       setUnitDefaultPlan: async (unitId, planUrl) => {

@@ -4,6 +4,7 @@ import {
   Cloud,
   CloudOff,
   CloudUpload,
+  LayoutGrid,
   Map,
   Pencil,
   RefreshCw,
@@ -20,6 +21,7 @@ import { APP_VERSION } from '../../lib/appVersion'
 import { syncProjectPhotosToDrive } from '../../services/driveSync'
 import { SettingsPage } from '../settings/SettingsPage'
 import { UnitPlanGallerySheet } from '../settings/UnitPlanGallerySheet'
+import { BatchAreasApplySheet } from '../settings/BatchAreasApplySheet'
 import { ProjectSwitcher } from '../home/ProjectSwitcher'
 import { forceReloadApp } from '../pwa/UpdateAppBanner'
 import { ROLE_LABEL } from '../../types/auth'
@@ -42,6 +44,7 @@ export function ProfilePage() {
   const [driveMsg, setDriveMsg] = useState('')
   const [projectOpen, setProjectOpen] = useState(false)
   const [planGalleryOpen, setPlanGalleryOpen] = useState(false)
+  const [batchAreasOpen, setBatchAreasOpen] = useState(false)
   const cloud = isFirebaseConfigured()
   const mode = firebaseModeLabel()
 
@@ -216,7 +219,7 @@ export function ProfilePage() {
               <TitleHint
                 as="div"
                 style={{ fontWeight: 800 }}
-                hint="一次預覽全部戶別預設位置圖；尚未上傳的可直接在此上傳。單戶上傳中仍可繼續點其他戶。"
+                hint="一次預覽全部戶別預設位置圖；尚未上傳的可直接在此上傳。單戶上傳中仍可繼續點其他戶。缺失若已手動換圖／標註，會獨立留存，不被戶別預設覆蓋。"
               >
                 全部戶別位置圖
               </TitleHint>
@@ -239,6 +242,41 @@ export function ProfilePage() {
             onClick={() => setPlanGalleryOpen(true)}
           >
             <Map size={16} /> 開啟位置圖總覽
+          </button>
+        </section>
+      )}
+
+      {canManagePlans && (
+        <section className="glass" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <LayoutGrid size={20} color="var(--green-deep)" />
+            <div style={{ flex: 1 }}>
+              <TitleHint
+                as="div"
+                style={{ fontWeight: 800 }}
+                hint="一次把客廳／臥室1 等區域清單套用到多戶。已手動自訂的戶別預設略過；可勾選覆蓋，或還原專案預設。"
+              >
+                批量套用查驗區域
+              </TitleHint>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--ink-soft)',
+                  marginTop: 4,
+                }}
+              >
+                依棟別／樓層勾選套用；手動自訂優先保留
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%', marginTop: 12 }}
+            onClick={() => setBatchAreasOpen(true)}
+          >
+            <LayoutGrid size={16} /> 開啟批量套用區域
           </button>
         </section>
       )}
@@ -437,6 +475,9 @@ export function ProfilePage() {
       {projectOpen && <ProjectSwitcher onClose={() => setProjectOpen(false)} />}
       {planGalleryOpen && (
         <UnitPlanGallerySheet onClose={() => setPlanGalleryOpen(false)} />
+      )}
+      {batchAreasOpen && (
+        <BatchAreasApplySheet onClose={() => setBatchAreasOpen(false)} />
       )}
     </div>
   )

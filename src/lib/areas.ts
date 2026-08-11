@@ -12,14 +12,32 @@ export const DEFAULT_AREAS = [
   '前陽台',
 ]
 
+/** 此戶是否已手動自訂查驗區域（優先於專案預設／批量套用） */
+export function isUnitAreasCustomized(unit: Unit | undefined | null): boolean {
+  return Boolean(unit?.areas && unit.areas.length > 0)
+}
+
 /** 取得某戶可用的查驗區域；未自訂時回傳專案預設 */
 export function getUnitAreas(
   unit: Unit | undefined | null,
   projectAreas: string[] = [],
 ): string[] {
-  if (unit?.areas && unit.areas.length > 0) return [...unit.areas]
+  if (isUnitAreasCustomized(unit)) return [...unit!.areas!]
   if (projectAreas.length > 0) return [...projectAreas]
   return [...DEFAULT_AREAS]
+}
+
+/** 清洗區域名稱清單（去空白、去重、保序） */
+export function sanitizeAreaList(areas: string[]): string[] {
+  const cleaned: string[] = []
+  const seen = new Set<string>()
+  for (const raw of areas) {
+    const name = normalizeAreaName(raw)
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    cleaned.push(name)
+  }
+  return cleaned
 }
 
 /** 篩選器用：彙整專案預設、各戶自訂與已登錄缺失中的區域名稱 */

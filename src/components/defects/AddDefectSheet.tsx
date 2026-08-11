@@ -47,12 +47,24 @@ export function AddDefectSheet({
     cloudReady() ? '儲存後將同步至雲端' : '示範模式：資料存在本機，尚未接 Firebase',
   )
 
-  // 此戶若有預設位置圖，新增時自動帶入（尚未手動更換前）
+  const unitId = unit?.id
+
+  // 換戶時重新帶入該戶預設位置圖
   useEffect(() => {
+    if (!unitId) return
+    const live = useProjectStore.getState().units.find((u) => u.id === unitId)
+    const plan = live?.defaultPlanPhotoUrl
     setPlanTouched(false)
+    setPlanOriginal(plan)
+    setPlanPhoto(plan)
+  }, [unitId])
+
+  // 預設位置圖更新：僅在尚未手動更換／標註時同步帶入（手動圖優先）
+  useEffect(() => {
+    if (planTouched) return
     setPlanOriginal(defaultPlan)
     setPlanPhoto(defaultPlan)
-  }, [unit?.id, defaultPlan])
+  }, [defaultPlan, planTouched])
 
   const nextNumber = unit?.nextDefectNumber ?? 1
   const canEdit = role === 'admin' || role === 'inspector' || Boolean(user?.systemAdmin)
@@ -216,7 +228,7 @@ export function AddDefectSheet({
 
         <div className="field">
           <label>圖面位置照片（與現況照片分開）</label>
-          {defaultPlan && !planTouched && planPhoto === defaultPlan && (
+          {planTouched && planPhoto ? (
             <div
               style={{
                 marginBottom: 8,
@@ -225,9 +237,20 @@ export function AddDefectSheet({
                 color: 'var(--green-deep)',
               }}
             >
-              已帶入此戶預設位置圖，可直接標註位置
+              已使用本筆手動圖面／標註（優先於戶別預設，儲存後獨立留存）
             </div>
-          )}
+          ) : defaultPlan && planPhoto === defaultPlan ? (
+            <div
+              style={{
+                marginBottom: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                color: 'var(--green-deep)',
+              }}
+            >
+              已帶入此戶預設位置圖，可直接標註；手動更換後不會被預設蓋掉
+            </div>
+          ) : null}
           <div className="upload-actions">
             <label className="upload-box" style={{ cursor: 'pointer' }}>
               {planPhoto

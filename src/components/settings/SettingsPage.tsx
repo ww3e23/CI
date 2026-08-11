@@ -6,6 +6,7 @@ import { BuildingEditor } from './BuildingEditor'
 import { TemplateEditor } from './TemplateEditor'
 import { UnitAreasEditor } from './UnitAreasEditor'
 import { ProjectAreasEditor } from './ProjectAreasEditor'
+import { BatchAreasApplySheet } from './BatchAreasApplySheet'
 import { createId } from '../../lib/id'
 import type { BuildingRule, ChecklistCategory } from '../../types'
 import { TitleHint } from '../ui/TitleHint'
@@ -29,6 +30,7 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const [isNewCat, setIsNewCat] = useState(false)
   const [unitAreasOpen, setUnitAreasOpen] = useState(false)
   const [projectAreasOpen, setProjectAreasOpen] = useState(false)
+  const [batchAreasOpen, setBatchAreasOpen] = useState(false)
 
   const currentUnit =
     units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active)
@@ -165,6 +167,20 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
             onClick={() => setProjectAreasOpen(true)}
           >
             編輯專案預設
+          </button>
+        </article>
+        <article className="glass" style={{ padding: 14 }}>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>批量套用區域</div>
+          <div style={{ marginTop: 4, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
+            依棟別／樓層勾選戶別一次套用；已手動自訂的預設不覆蓋，也可還原專案預設
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ marginTop: 10, minHeight: 40, width: '100%' }}
+            onClick={() => setBatchAreasOpen(true)}
+          >
+            開啟批量套用
           </button>
         </article>
       </div>
@@ -341,6 +357,7 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
         <UnitAreasEditor unitId={currentUnit.id} onClose={() => setUnitAreasOpen(false)} />
       )}
       {projectAreasOpen && <ProjectAreasEditor onClose={() => setProjectAreasOpen(false)} />}
+      {batchAreasOpen && <BatchAreasApplySheet onClose={() => setBatchAreasOpen(false)} />}
     </div>
   )
 }

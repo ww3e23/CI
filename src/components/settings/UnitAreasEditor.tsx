@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { GripVertical, Plus, Trash2 } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
-import { getUnitAreas, normalizeAreaName } from '../../lib/areas'
+import { getUnitAreas, isUnitAreasCustomized, normalizeAreaName } from '../../lib/areas'
 import { fileToCompressedDataUrl } from '../../lib/imageCompress'
 import { createId } from '../../lib/id'
 import { Modal } from '../ui/Modal'
@@ -249,7 +249,9 @@ export function UnitAreasEditor({
 
       <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>查驗區域</div>
       <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-        {unit.areas?.length ? '已自訂此戶區域' : '目前使用專案預設，儲存後將獨立套用此戶'}
+        {isUnitAreasCustomized(unit)
+          ? '已自訂此戶區域（優先於專案預設／批量套用）'
+          : '目前使用專案預設，儲存後將獨立套用此戶'}
       </p>
 
       {!canEdit && (
