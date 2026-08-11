@@ -31,7 +31,7 @@ import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
 import { hasUploadableLocalMedia } from '../lib/defectMedia'
 import { statusLabel } from '../lib/progress'
-import { currentActorName } from '../lib/currentActor'
+import { currentActorInfo, currentActorName } from '../lib/currentActor'
 import {
   backfillProjectActors,
   inferActorNameFromState,
@@ -1305,9 +1305,12 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
       },
 
       backfillActorNames: () => {
+        const info = currentActorInfo()
+        // 用系統管理者登入時，不要把現場紀錄改成「系統管理者」
+        if (info.isSystemAdmin) return 0
         const snap = snapshotProject(get())
         const preferred =
-          resolveBackfillActorName([inferActorNameFromState(snap)]) || ''
+          resolveBackfillActorName([inferActorNameFromState(snap), info.accountHint]) || ''
         if (isPlaceholderActor(preferred)) return 0
         const { state, changed } = backfillProjectActors(snap, preferred)
         if (changed === 0) return 0

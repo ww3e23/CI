@@ -1,27 +1,44 @@
 import type { ActivityLog, Defect, ProjectState } from '../types'
-import { currentActorName } from './currentActor'
+import { currentActorInfo, currentActorName } from './currentActor'
 
-const PLACEHOLDER_ACTORS = new Set([
+/** 佔位／誤回填名：應被真實現場帳號覆寫 */
+const INVALID_ACTOR_NAMES = new Set([
   '',
   '現場查驗',
   '现场查验',
   'SITE INSPECTION',
   'Site Inspection',
+  '系統管理者',
+  '系统管理者',
+  'System Admin',
+  'admin',
 ])
 
 export function isPlaceholderActor(name?: string | null): boolean {
   const n = String(name || '').trim()
   if (!n) return true
-  return PLACEHOLDER_ACTORS.has(n)
+  return INVALID_ACTOR_NAMES.has(n)
 }
 
-/** 回填用的真實姓名：目前登入者（已略過佔位字） */
+/** 是否為「誤用系統管理者」之類、不該出現在現場查驗紀錄的名字 */
+export function isInvalidInspectorName(name?: string | null): boolean {
+  return isPlaceholderActor(name)
+}
+
+/** 回填用的真實姓名：必須是非系統管理者的現場帳號 */
 export function resolveBackfillActorName(fallbackNames: string[] = []): string {
-  const current = currentActorName().trim()
-  if (!isPlaceholderActor(current)) return current
+  const info = currentActorInfo()
+  // 系統管理者帳號登入時，禁止拿「系統管理者」去蓋現場紀錄
+  if (!info.isSystemAdmin && !isInvalidInspectorName(info.name)) {
+    return info.name
+  }
+  // 若顯示名無效，但帳號提示可用（例如 a11897）
+  if (!info.isSystemAdmin && info.accountHint && !isInvalidInspectorName(info.accountHint)) {
+    return info.accountHint
+  }
   for (const n of fallbackNames) {
     const t = String(n || '').trim()
-    if (!isPlaceholderActor(t)) return t
+    if (!isInvalidInspectorName(t)) return t
   }
   return ''
 }
@@ -29,12 +46,12 @@ export function resolveBackfillActorName(fallbackNames: string[] = []): string {
 function preferActorName(a?: string | null, b?: string | null): string | undefined {
   const left = (a || '').trim()
   const right = (b || '').trim()
-  if (!isPlaceholderActor(left)) return left
-  if (!isPlaceholderActor(right)) return right
-  return left || right || undefined
+  if (!isInvalidInspectorName(left)) return left
+  if (!isInvalidInspectorName(right)) return right
+  return undefined
 }
 
-/** 合併兩筆缺失的查驗人欄位（優先非佔位名） */
+/** 合併兩筆缺失的查驗人欄位（優先真實現場人名） */
 export function mergeDefectActorFields(local: Defect, remote: Defect): Pick<
   Defect,
   'createdByName' | 'updatedByName'
@@ -67,7 +84,6 @@ export function mergeActivityLists(
         prev.actorName,
     })
   }
-  // 遠端較長時大致維持遠端順序；否則本機順序
   const preferRemote = remote.length >= local.length
   const order = preferRemote ? remote.map((a) => a.id) : local.map((a) => a.id)
   const seen = new Set<string>()
@@ -86,22 +102,21 @@ export function mergeActivityLists(
 }
 
 /**
- * 把舊資料裡的「現場查驗」佔位名，改成真實查驗人姓名。
- * 回傳 changed > 0 時呼叫端應寫回並上雲。
+ * 把舊資料裡的佔位名／誤標「系統管理者」，改成真實現場查驗人。
  */
 export function backfillProjectActors(
   state: ProjectState,
   preferredName: string,
 ): { state: ProjectState; changed: number } {
   const name = preferredName.trim()
-  if (isPlaceholderActor(name)) {
+  if (isInvalidInspectorName(name)) {
     return { state, changed: 0 }
   }
 
   let changed = 0
 
   const activities = state.activities.map((a) => {
-    if (!isPlaceholderActor(a.actorName)) return a
+    if (!isInvalidInspectorName(a.actorName)) return a
     changed += 1
     return { ...a, actorName: name }
   })
@@ -109,14 +124,14 @@ export function backfillProjectActors(
   const defects = state.defects.map((d) => {
     let next = d
     let touched = false
-    if (isPlaceholderActor(d.createdByName)) {
+    if (isInvalidInspectorName(d.createdByName)) {
       next = { ...next, createdByName: name }
       touched = true
     }
-    if (isPlaceholderActor(d.updatedByName)) {
+    if (isInvalidInspectorName(d.updatedByName)) {
       next = {
         ...next,
-        updatedByName: isPlaceholderActor(next.createdByName)
+        updatedByName: isInvalidInspectorName(next.createdByName)
           ? name
           : (next.createdByName as string),
       }
@@ -137,12 +152,12 @@ export function backfillProjectActors(
   }
 }
 
-/** 從現有資料推一個可用的回填名（當前使用者無效時） */
+/** 從現有資料推一個可用的回填名（排除系統管理者／佔位） */
 export function inferActorNameFromState(state: ProjectState): string {
   const counts = new Map<string, number>()
   const bump = (raw?: string) => {
     const n = (raw || '').trim()
-    if (isPlaceholderActor(n)) return
+    if (isInvalidInspectorName(n)) return
     counts.set(n, (counts.get(n) ?? 0) + 1)
   }
   for (const a of state.activities) bump(a.actorName)
@@ -160,3 +175,6 @@ export function inferActorNameFromState(state: ProjectState): string {
   }
   return best
 }
+
+/** @deprecated 用 currentActorInfo；保留相容 */
+export { currentActorName }

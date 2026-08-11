@@ -792,15 +792,27 @@ export function useCurrentRole(): MemberRole | null {
 bindCurrentActorGetter(() => {
   const s = useAuthStore.getState()
   const u = s.users.find((x) => x.id === s.currentUserId)
-  if (!u) return '現場查驗'
-  const name = (u.displayName || '').trim()
-  // 不要把佔位顯示名當成真實查驗人
-  if (name && name !== '現場查驗' && name !== '现场查验') return name
-  const email = (u.email || '').trim()
-  if (email.includes('@')) {
-    const local = email.split('@')[0] || ''
-    if (local) return local
+  if (!u) {
+    return { name: '現場查驗', accountHint: '', isSystemAdmin: false }
   }
-  if (email) return email
-  return accountDisplay(u.email) || '現場查驗'
+  const email = (u.email || '').trim()
+  const accountHint =
+    (email.includes('@') ? email.split('@')[0] : '') ||
+    accountDisplay(email) ||
+    email ||
+    ''
+  const rawName = (u.displayName || '').trim()
+  // 系統管理者／佔位顯示名：現場紀錄改用帳號提示（a11897…）
+  const invalidDisplay =
+    !rawName ||
+    rawName === '現場查驗' ||
+    rawName === '现场查验' ||
+    rawName === '系統管理者' ||
+    rawName === '系统管理者'
+  const name = !invalidDisplay ? rawName : accountHint || '現場查驗'
+  return {
+    name,
+    accountHint,
+    isSystemAdmin: Boolean(u.systemAdmin),
+  }
 })
