@@ -123,13 +123,30 @@ export function unitProgress(
   }
 }
 
+function unitLookupKey(buildingId: string, floor: string, code: string) {
+  return `${buildingId}|${floor}|${code}`
+}
+
 export function buildMatrix(state: ProjectState): {
   floors: string[]
   buildings: BuildingRule[]
   cells: ProgressCell[]
-  buildingPercents: { buildingId: string; name: string; percent: number }[]
+  buildingPercents: {
+    buildingId: string
+    name: string
+    /** 該棟全部有效戶平均（含未開始） */
+    percent: number
+    /** 該棟已開工戶平均；尚無開工則為 0 */
+    startedPercent: number
+    startedUnitCount: number
+    activeUnitCount: number
+  }[]
+  /** 全案有效戶平均完成率（含大量未開始時容易被稀釋成 0%） */
   overallPercent: number
+  /** 僅統計已開工戶（進行中／有缺失／已完成）的平均完成率 */
+  startedOverallPercent: number
   activeUnitCount: number
+  startedUnitCount: number
   naCount: number
 } {
   const buildings = [...state.buildings]
@@ -142,17 +159,29 @@ export function buildMatrix(state: ProjectState): {
   }
   const floors = sortFloorsDesc([...floorSet])
 
-  const unitMap = new Map(state.units.map((u) => [u.id, u]))
+  // 以棟+樓+戶對應，避免僅靠合成 id 時對不到雲端／舊資料戶別
+  const unitByKey = new Map<string, Unit>()
+  const unitById = new Map<string, Unit>()
+  for (const u of state.units) {
+    unitById.set(u.id, u)
+    unitByKey.set(unitLookupKey(u.buildingId, u.floor, u.code), u)
+  }
+
   const cells: ProgressCell[] = []
   let weighted = 0
   let weightTotal = 0
+  let startedWeighted = 0
+  let startedUnitCount = 0
   let activeUnitCount = 0
   let naCount = 0
 
-  const buildingStats = new Map<string, { done: number; total: number }>()
+  const buildingStats = new Map<
+    string,
+    { done: number; total: number; startedDone: number; startedTotal: number }
+  >()
 
   for (const b of buildings) {
-    buildingStats.set(b.id, { done: 0, total: 0 })
+    buildingStats.set(b.id, { done: 0, total: 0, startedDone: 0, startedTotal: 0 })
     for (const floor of floors) {
       if (!b.floors.includes(floor)) {
         for (const code of b.unitCodes) {
@@ -173,9 +202,12 @@ export function buildMatrix(state: ProjectState): {
         continue
       }
       for (const code of b.unitCodes) {
-        const id = `${b.id}_${floor}_${code}`
-        const unit = unitMap.get(id)
-        const isNa = b.naKeys.includes(naKey(floor, code)) || !unit?.active
+        const syntheticId = `${b.id}_${floor}_${code}`
+        const unit =
+          unitByKey.get(unitLookupKey(b.id, floor, code)) ??
+          unitById.get(syntheticId)
+        const markedNa = b.naKeys.includes(naKey(floor, code))
+        const isNa = markedNa || !unit?.active
         if (isNa || !unit) {
           cells.push({
             unitId: unit?.id ?? null,
@@ -211,6 +243,12 @@ export function buildMatrix(state: ProjectState): {
         const st = buildingStats.get(b.id)!
         st.done += p.percent
         st.total += 1
+        if (p.status !== 'not_started') {
+          startedWeighted += p.percent
+          startedUnitCount += 1
+          st.startedDone += p.percent
+          st.startedTotal += 1
+        }
       }
     }
   }
@@ -221,6 +259,10 @@ export function buildMatrix(state: ProjectState): {
       buildingId: b.id,
       name: b.name,
       percent: st.total === 0 ? 0 : Math.round(st.done / st.total),
+      startedPercent:
+        st.startedTotal === 0 ? 0 : Math.round(st.startedDone / st.startedTotal),
+      startedUnitCount: st.startedTotal,
+      activeUnitCount: st.total,
     }
   })
 
@@ -230,7 +272,10 @@ export function buildMatrix(state: ProjectState): {
     cells,
     buildingPercents,
     overallPercent: weightTotal === 0 ? 0 : Math.round(weighted / weightTotal),
+    startedOverallPercent:
+      startedUnitCount === 0 ? 0 : Math.round(startedWeighted / startedUnitCount),
     activeUnitCount,
+    startedUnitCount,
     naCount,
   }
 }

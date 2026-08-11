@@ -237,9 +237,6 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(projectName)}｜圖片查驗報告</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
       --ink: #1a211c;
@@ -257,7 +254,9 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
     html, body { margin: 0; padding: 0; }
     body {
       color: var(--ink);
-      font-family: 'Noto Sans TC', sans-serif;
+      font-family:
+        'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', 'Heiti TC',
+        'Source Han Sans TC', sans-serif;
       background:
         linear-gradient(180deg, rgba(255,255,255,0.55), transparent 180px),
         radial-gradient(70% 40% at 0% 0%, rgba(47,93,76,0.07), transparent 55%),
@@ -297,7 +296,8 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
     }
     .cover h1 {
       margin: 0;
-      font-family: 'Noto Serif TC', serif;
+      font-family:
+        'Noto Serif TC', 'Songti TC', 'PMingLiU', 'Source Han Serif TC', serif;
       font-size: clamp(26px, 4vw, 34px);
       line-height: 1.25;
       font-weight: 700;
@@ -335,7 +335,8 @@ export function buildPhotoReportHtml(input: PhotoReportInput): string {
       page-break-after: avoid;
     }
     .unit-place {
-      font-family: 'Noto Serif TC', serif;
+      font-family:
+        'Noto Serif TC', 'Songti TC', 'PMingLiU', 'Source Han Serif TC', serif;
       font-size: 22px; font-weight: 700; line-height: 1.3;
     }
     .unit-count {

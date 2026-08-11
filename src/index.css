@@ -30,7 +30,16 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --nav-h: 72px;
 
-  font-family: 'Noto Sans TC', 'Inter', sans-serif;
+  /* 不依賴 Google Fonts CDN，避免舊 CSS／子集 woff2 404 影響版面 */
+  font-family:
+    'Noto Sans TC',
+    'PingFang TC',
+    'Hiragino Sans CNS',
+    'Microsoft JhengHei',
+    'Heiti TC',
+    'Source Han Sans TC',
+    'Noto Sans CJK TC',
+    sans-serif;
   color: var(--ink);
   background: var(--bg-base);
   font-synthesis: none;
@@ -100,8 +109,26 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
   bottom: calc(20px + var(--safe-bottom));
 }
 
-.serif { font-family: 'Noto Serif TC', serif; }
-.nums { font-family: 'Inter', 'Noto Sans TC', sans-serif; font-variant-numeric: tabular-nums; }
+.serif {
+  font-family:
+    'Noto Serif TC',
+    'Songti TC',
+    'LiSong Pro',
+    'PMingLiU',
+    'Source Han Serif TC',
+    'Noto Serif CJK TC',
+    serif;
+}
+.nums {
+  font-family:
+    'SF Pro Text',
+    'Tabular Numbers',
+    'Noto Sans TC',
+    'PingFang TC',
+    'Microsoft JhengHei',
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
 
 .eyebrow {
   font-size: 11px;
@@ -238,7 +265,12 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 .section-row h2 {
   margin: 0;
   font-size: 18px;
-  font-family: 'Noto Serif TC', serif;
+  font-family:
+    'Noto Serif TC',
+    'Songti TC',
+    'PMingLiU',
+    'Source Han Serif TC',
+    serif;
   font-weight: 700;
 }
 
@@ -815,7 +847,12 @@ button.status-pill:active {
 }
 
 .building-editor-card-title {
-  font-family: 'Noto Serif TC', serif;
+  font-family:
+    'Noto Serif TC',
+    'Songti TC',
+    'PMingLiU',
+    'Source Han Serif TC',
+    serif;
   font-size: 15px;
   font-weight: 700;
   margin-bottom: 12px;

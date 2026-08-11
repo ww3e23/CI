@@ -58,15 +58,25 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     minute: '2-digit',
   })
 
+  const overviewPct =
+    matrix.startedUnitCount > 0
+      ? matrix.startedOverallPercent
+      : matrix.overallPercent
+  const overviewLabel =
+    matrix.startedUnitCount > 0
+      ? `已開工 ${matrix.startedUnitCount} 戶平均 · 全案 ${matrix.overallPercent}%`
+      : '整體進度'
+
   const buildingBars = matrix.buildingPercents
-    .map(
-      (b) => `
+    .map((b) => {
+      const pct = b.startedUnitCount > 0 ? b.startedPercent : b.percent
+      return `
       <div class="bar-row">
         <div class="bar-label">${escapeHtml(b.name)}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${b.percent}%"></div></div>
-        <div class="bar-num">${b.percent}%</div>
-      </div>`,
-    )
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <div class="bar-num">${pct}%</div>
+      </div>`
+    })
     .join('')
 
   const matrixRows = matrix.floors
@@ -128,9 +138,6 @@ export function buildInspectionReportHtml(input: ReportInput): string {
 <head>
   <meta charset="utf-8" />
   <title>${escapeHtml(projectName)}｜查驗報告</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600;700;800&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
       --ink: #22291f;
@@ -144,7 +151,9 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     body {
       margin: 0;
       color: var(--ink);
-      font-family: 'Noto Sans TC', sans-serif;
+      font-family:
+        'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', 'Heiti TC',
+        'Source Han Sans TC', sans-serif;
       background:
         radial-gradient(90% 50% at 10% 0%, rgba(47,93,76,0.14), transparent 55%),
         radial-gradient(70% 40% at 100% 10%, rgba(201,123,46,0.12), transparent 50%),
@@ -175,7 +184,9 @@ export function buildInspectionReportHtml(input: ReportInput): string {
       break-after: avoid-page;
     }
     .report-head h1 {
-      font-family: 'Noto Serif TC', serif; font-size: 20px; margin: 0 0 4px; line-height: 1.25;
+      font-family:
+        'Noto Serif TC', 'Songti TC', 'PMingLiU', 'Source Han Serif TC', serif;
+      font-size: 20px; margin: 0 0 4px; line-height: 1.25;
       color: var(--ink);
     }
     .report-head .meta { margin: 0; font-size: 12px; line-height: 1.45; color: var(--soft); }
@@ -187,7 +198,9 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     }
     .section { margin: 18px 0; page-break-inside: avoid; }
     .section h2 {
-      font-family: 'Noto Serif TC', serif; font-size: 20px; margin: 0 0 6px;
+      font-family:
+        'Noto Serif TC', 'Songti TC', 'PMingLiU', 'Source Han Serif TC', serif;
+      font-size: 20px; margin: 0 0 6px;
     }
     .section .lead { color: var(--soft); margin: 0 0 12px; font-size: 13px; }
     .stats {
@@ -276,14 +289,14 @@ export function buildInspectionReportHtml(input: ReportInput): string {
           <br/>可查驗 ${matrix.activeUnitCount} 戶 · ${matrix.floors.length} 層 · 缺失 ${counts.all} 筆
         </p>
       </div>
-      <div class="pct">${matrix.overallPercent}%</div>
+      <div class="pct">${overviewPct}%</div>
     </header>
 
     <section class="section">
       <h2>執行總覽</h2>
       <p class="lead">查驗進度與缺失狀態摘要。</p>
       <div class="stats">
-        <div class="stat"><div class="n">${matrix.overallPercent}%</div><div class="l">整體進度</div></div>
+        <div class="stat"><div class="n">${overviewPct}%</div><div class="l">${escapeHtml(overviewLabel)}</div></div>
         <div class="stat"><div class="n">${counts.pending_repair}</div><div class="l">待改善</div></div>
         <div class="stat"><div class="n">${counts.pending_reinspection}</div><div class="l">待複驗</div></div>
         <div class="stat"><div class="n">${counts.completed}</div><div class="l">已改善缺失</div></div>

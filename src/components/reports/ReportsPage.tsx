@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { FileDown, FileSpreadsheet, Images } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentProject, useCurrentUser } from '../../store/useAuthStore'
@@ -37,12 +37,44 @@ export function ReportsPage() {
   const [picked, setPicked] = useState<Record<string, boolean>>({})
   const [pickBuildingId, setPickBuildingId] = useState('')
   const setCurrentUnit = useProjectStore((s) => s.setCurrentUnit)
+  const matrixScrollRef = useRef<HTMLDivElement>(null)
+  const didAutoScrollRef = useRef(false)
 
   const cellMap = useMemo(() => {
     const m = new Map<string, ProgressCell>()
     for (const c of matrix.cells) m.set(`${c.buildingId}|${c.floor}|${c.unitCode}`, c)
     return m
   }, [matrix.cells])
+
+  /** 總覽數字：有開工戶時顯示「已開工戶平均」，避免全案未開始戶把進度稀釋成 0% */
+  const overviewPercent =
+    matrix.startedUnitCount > 0
+      ? matrix.startedOverallPercent
+      : matrix.overallPercent
+
+  const firstStartedCell = useMemo(
+    () =>
+      matrix.cells.find(
+        (c) =>
+          c.status === 'has_defects' ||
+          c.status === 'in_progress' ||
+          c.status === 'completed',
+      ) ?? null,
+    [matrix.cells],
+  )
+
+  // 矩陣很寬時自動滾到第一格有進度的棟，避免只看到前面全白的 A/B 棟
+  useEffect(() => {
+    if (didAutoScrollRef.current || !firstStartedCell) return
+    const scroller = matrixScrollRef.current
+    if (!scroller) return
+    const sel = `[data-matrix-building="${CSS.escape(firstStartedCell.buildingId)}"]`
+    const anchor = scroller.querySelector<HTMLElement>(sel)
+    if (!anchor) return
+    const left = Math.max(0, anchor.offsetLeft - 56)
+    scroller.scrollTo({ left, behavior: 'smooth' })
+    didAutoScrollRef.current = true
+  }, [firstStartedCell])
 
   /** 各戶缺失總數（含已改善，不含作廢） */
   const defectTotalByUnit = useMemo(() => {
@@ -537,11 +569,18 @@ export function ReportsPage() {
 
       <section className="glass-green" style={{ padding: 14, marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <div className="serif" style={{ fontWeight: 700, fontSize: 18 }}>戶內查驗總覽</div>
-          <div className="nums" style={{ fontSize: 28, fontWeight: 800 }}>{matrix.overallPercent}%</div>
+          <div>
+            <div className="serif" style={{ fontWeight: 700, fontSize: 18 }}>戶內查驗總覽</div>
+            <div style={{ marginTop: 4, fontSize: 12, fontWeight: 600, opacity: 0.88 }}>
+              {matrix.startedUnitCount > 0
+                ? `已開工 ${matrix.startedUnitCount} 戶平均 · 全案 ${matrix.overallPercent}%`
+                : `全案 ${matrix.activeUnitCount} 戶尚未開工`}
+            </div>
+          </div>
+          <div className="nums" style={{ fontSize: 28, fontWeight: 800 }}>{overviewPercent}%</div>
         </div>
         <div style={{ marginTop: 10, height: 8, borderRadius: 999, background: 'rgba(255,255,255,0.22)', overflow: 'hidden' }}>
-          <div style={{ width: `${matrix.overallPercent}%`, height: '100%', background: '#fff', transition: 'width 0.4s ease' }} />
+          <div style={{ width: `${overviewPercent}%`, height: '100%', background: '#fff', transition: 'width 0.4s ease' }} />
         </div>
       </section>
 
@@ -553,13 +592,25 @@ export function ReportsPage() {
         <Legend swatch="na" label="不適用" />
       </div>
 
-      <div className="glass matrix-scroll">
+      {matrix.buildings.length > 3 && (
+        <div style={{ marginBottom: 8, color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
+          矩陣可左右滑動查看各棟
+          {firstStartedCell ? `（已定位到 ${firstStartedCell.buildingName}）` : ''}
+        </div>
+      )}
+
+      <div className="glass matrix-scroll" ref={matrixScrollRef}>
         <table className="matrix-table">
           <thead>
             <tr>
               <th className="floor-cell" rowSpan={2}>樓層</th>
               {matrix.buildings.map((b) => (
-                <th key={b.id} colSpan={b.unitCodes.length} style={{ color: 'var(--ink)', paddingBottom: 2 }}>
+                <th
+                  key={b.id}
+                  data-matrix-building={b.id}
+                  colSpan={b.unitCodes.length}
+                  style={{ color: 'var(--ink)', paddingBottom: 2 }}
+                >
                   {b.name}
                 </th>
               ))}
@@ -644,9 +695,32 @@ export function ReportsPage() {
 
       <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 0' }}>
         {matrix.buildingPercents.map((b) => (
-          <span key={b.buildingId} className={`pill ${b.percent < 70 ? 'warn' : ''}`}>
-            {b.name} {b.percent}%
-          </span>
+          <button
+            key={b.buildingId}
+            type="button"
+            className={`pill ${b.startedUnitCount > 0 ? '' : b.percent < 70 ? 'warn' : ''}`}
+            style={{
+              cursor: 'pointer',
+              border:
+                b.startedUnitCount > 0
+                  ? '1px solid rgba(47, 93, 76, 0.45)'
+                  : undefined,
+            }}
+            onClick={() => {
+              const scroller = matrixScrollRef.current
+              if (!scroller) return
+              const sel = `[data-matrix-building="${CSS.escape(b.buildingId)}"]`
+              const anchor = scroller.querySelector<HTMLElement>(sel)
+              if (!anchor) return
+              scroller.scrollTo({
+                left: Math.max(0, anchor.offsetLeft - 56),
+                behavior: 'smooth',
+              })
+            }}
+          >
+            {b.name}{' '}
+            {b.startedUnitCount > 0 ? `${b.startedPercent}%` : `${b.percent}%`}
+          </button>
         ))}
       </div>
 
@@ -677,8 +751,16 @@ export function ReportsPage() {
       </div>
 
       <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-        <span>{matrix.floors.length}層 × {matrix.activeUnitCount}戶（NA:{matrix.naCount}）</span>
-        <span>總進度 {matrix.overallPercent}%</span>
+        <span>
+          {matrix.floors.length}層 × {matrix.activeUnitCount}戶
+          {matrix.startedUnitCount > 0 ? `｜已開工 ${matrix.startedUnitCount}` : ''}
+          （NA:{matrix.naCount}）
+        </span>
+        <span>
+          {matrix.startedUnitCount > 0
+            ? `已開工 ${matrix.startedOverallPercent}% · 全案 ${matrix.overallPercent}%`
+            : `總進度 ${matrix.overallPercent}%`}
+        </span>
       </div>
 
       {previewOpen && (
