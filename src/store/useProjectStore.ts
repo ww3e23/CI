@@ -495,10 +495,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
                   ),
                 })
                 scheduleCloudSync(get)
-                void autoSyncDefectPhotosToDrive({
-                  projectId,
-                  defectId: defect.id,
-                }).catch((err) => console.warn('[drive-auto] add', err))
+                // Drive 由後端 onDefectWrittenAutoDrive 統一寫入，勿再 callable 以免競態重複檔
               })
               .catch(() => {
                 set({
@@ -728,11 +725,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               })
               afterProjectChange(get, set, { syncCloud: false })
               scheduleCloudSync(get)
-              // 備註／大項變更時，即時改名／搬移雲端硬碟資料夾
-              void autoSyncDefectPhotosToDrive({
-                projectId,
-                defectId: next.id,
-              }).catch((err) => console.warn('[drive-auto] edit reconcile', err))
+              // 備註／大項變更：Firestore 觸發器會改名／搬移；勿再額外 callable
             } catch (err) {
               console.warn('[updateDefect] sync failed', err)
               return { ok: true, error: '已本機更新，雲端同步失敗' }
@@ -1604,10 +1597,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               afterProjectChange(get, set, { syncCloud: false })
               await clearPendingDefectMedia(entry.defectId)
               uploaded += 1
-              void autoSyncDefectPhotosToDrive({
-                projectId,
-                defectId: entry.defectId,
-              }).catch((err) => console.warn('[drive-auto]', err))
+              // Drive 同步交給後端 Firestore 觸發器，避免與 mirror／reconcile 三路競態產生同名重複檔
             } catch (err) {
               console.warn('[flushPendingMediaUploads] one failed', entry.defectId, err)
               set({

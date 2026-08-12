@@ -14,6 +14,8 @@ import {
   buildDriveFileName,
   buildItemFolderName,
   buildItemFolderNameCandidates,
+  dedupeFolderFilesByLogicalName,
+  driveFileLogicalKey,
   ensureCategoryFolderPath,
   ensureDefectFolderPath,
   findAllDefectLeafFolders,
@@ -241,6 +243,19 @@ async function uploadBufferToDrive(params: {
   buffer: Buffer
   contentType: string
 }): Promise<string> {
+  // 上傳前再掃一次，縮小與其他觸發器的競態視窗
+  const existing = await listFolderFiles(params.drive, params.folderId)
+  const bySource = new Set(existing.map((f) => f.sourcePath).filter(Boolean) as string[])
+  const byName = new Set(existing.map((f) => f.name))
+  if (driveFileAlreadyPresent(bySource, byName, params.sourcePath, params.fileName)) {
+    const logical = driveFileLogicalKey(params.fileName)
+    const hit =
+      existing.find((f) => f.sourcePath === params.sourcePath) ||
+      existing.find((f) => f.name === params.fileName) ||
+      existing.find((f) => driveFileLogicalKey(f.name) === logical)
+    if (hit?.id) return hit.id
+  }
+
   const res = await params.drive.files.create({
     requestBody: {
       name: params.fileName,
@@ -257,7 +272,15 @@ async function uploadBufferToDrive(params: {
     supportsAllDrives: true,
   })
   if (!res.data.id) throw new Error('Drive 建立檔案失敗')
-  return res.data.id
+
+  // 即使競態下多建了一份，立刻把同邏輯主體的多餘檔清掉
+  const deduped = await dedupeFolderFilesByLogicalName(params.drive, params.folderId)
+  const logical = driveFileLogicalKey(params.fileName)
+  const keep =
+    deduped.files.find((f) => f.sourcePath === params.sourcePath) ||
+    deduped.files.find((f) => driveFileLogicalKey(f.name) === logical) ||
+    deduped.files.find((f) => f.id === res.data.id)
+  return keep?.id || res.data.id
 }
 
 function sleep(ms: number): Promise<void> {
@@ -359,6 +382,13 @@ export const mirrorDefectPhotoToDrive = onObjectFinalized(
       return
     }
 
+    // 已綁定擁有者時，由 Firestore onDefectWrittenAutoDrive 統一寫入，
+    // 避免 Storage mirror + Firestore reconcile + 客戶端 callable 三路競態同名檔×2～3。
+    if (projectSnap.get('driveOwnerConnected')) {
+      logger.info('skip mirror: owner auto-drive owns sync', { projectId, defectId, filePath })
+      return
+    }
+
     // 上傳常早於 Firestore 寫入：短暫重試避免整筆跳過
     let defectSnap = await getFirestore().doc(`projects/${projectId}/defects/${defectId}`).get()
     if (!defectSnap.exists) {
@@ -394,9 +424,13 @@ export const mirrorDefectPhotoToDrive = onObjectFinalized(
       throw err
     }
 
-    const existing = await listFolderFiles(drive, folderId)
+    const listed = await listFolderFiles(drive, folderId)
+    const deduped = await dedupeFolderFilesByLogicalName(drive, folderId, listed)
+    const existing = deduped.files
     const driveFileName = buildDriveFileName(Number(defect.defectNumber ?? 0), storageFileName)
-    if (existing.some((f) => f.sourcePath === filePath || f.name === driveFileName)) {
+    const bySource = new Set(existing.map((f) => f.sourcePath).filter(Boolean) as string[])
+    const byName = new Set(existing.map((f) => f.name))
+    if (driveFileAlreadyPresent(bySource, byName, filePath, driveFileName)) {
       logger.info('already on drive', filePath)
       return
     }
@@ -642,7 +676,16 @@ async function runPhotoSync(params: {
 
     let existing: Awaited<ReturnType<typeof listFolderFiles>>
     try {
-      existing = await listFolderFiles(drive, folderId)
+      const listed = await listFolderFiles(drive, folderId)
+      const deduped = await dedupeFolderFilesByLogicalName(drive, folderId, listed)
+      existing = deduped.files
+      if (deduped.removed > 0) {
+        logger.info('deduped drive files', {
+          projectId,
+          defectId: defect.id,
+          removed: deduped.removed,
+        })
+      }
     } catch (err) {
       // 葉層剛被刪／權限異常：清標記後下輪再試；本輪記錯
       errors.push(`讀取 Drive 資料夾失敗: ${String(err)}`)
@@ -1283,9 +1326,12 @@ async function reconcileOneDefectOnDrive(params: {
   const remoteMedia = collectRemoteMedia(defect)
   const remoteSourcePaths = new Set(remoteMedia.map((r) => r.sourcePath))
 
-  const existing = await listFolderFiles(drive, folderId)
+  const existingListed = await listFolderFiles(drive, folderId)
+  // 先清同名／同主體重複檔（歷史競態堆出來的 #59_photo-00.jpg × N）
+  const deduped = await dedupeFolderFilesByLogicalName(drive, folderId, existingListed)
+  const existing = deduped.files
   let uploaded = 0
-  let removed = 0
+  let removed = deduped.removed
   let lastFileId: string | null = String(defect.driveLastFileId || '').trim() || null
 
   // 只清「確定過期」的檔；無 sourcePath 的舊檔不刪，避免誤刪後又重存
@@ -1304,7 +1350,7 @@ async function reconcileOneDefectOnDrive(params: {
     }
   }
 
-  const afterTrash = removed > 0 ? await listFolderFiles(drive, folderId) : existing
+  const afterTrash = removed > deduped.removed ? await listFolderFiles(drive, folderId) : existing
   const bySource = new Set(afterTrash.map((f) => f.sourcePath).filter(Boolean) as string[])
   const byName = new Set(afterTrash.map((f) => f.name))
 

@@ -499,6 +499,69 @@ export async function listFolderFiles(
   return out
 }
 
+/** #59_plan-remote.jpg → #59_plan（忽略副檔名與 -remote） */
+export function driveFileLogicalKey(name: string): string {
+  return name
+    .replace(/\.[^.]+$/, '')
+    .replace(/-remote$/i, '')
+    .toLowerCase()
+}
+
+function scoreKeepDriveFile(f: { name: string; sourcePath?: string }): number {
+  let score = 0
+  const sp = String(f.sourcePath || '')
+  if (sp && !sp.startsWith('remote:')) score += 100
+  else if (sp.startsWith('remote:')) score += 10
+  if (!/-remote(\.|$)/i.test(f.name)) score += 20
+  if (sp) score += 5
+  return score
+}
+
+/**
+ * 同名／同邏輯主體檔只留一份（Google Drive 允許同名並存，競態上傳會堆出 2～3 份）。
+ * 優先保留 Storage 實體路徑、非 -remote 檔名。
+ */
+export async function dedupeFolderFilesByLogicalName(
+  drive: DriveClient,
+  folderId: string,
+  files?: Array<{ id: string; name: string; sourcePath?: string }>,
+): Promise<{
+  removed: number
+  files: Array<{ id: string; name: string; sourcePath?: string }>
+}> {
+  const listed = files ?? (await listFolderFiles(drive, folderId))
+  const groups = new Map<string, typeof listed>()
+  for (const f of listed) {
+    const key = driveFileLogicalKey(f.name)
+    const arr = groups.get(key) ?? []
+    arr.push(f)
+    groups.set(key, arr)
+  }
+
+  let removed = 0
+  const kept: typeof listed = []
+  for (const group of groups.values()) {
+    if (group.length <= 1) {
+      kept.push(...group)
+      continue
+    }
+    const ranked = [...group].sort(
+      (a, b) => scoreKeepDriveFile(b) - scoreKeepDriveFile(a),
+    )
+    kept.push(ranked[0]!)
+    for (const loser of ranked.slice(1)) {
+      try {
+        await trashDriveItem(drive, loser.id)
+        removed += 1
+      } catch {
+        // 刪不掉就先留著，避免誤判後又重傳
+        kept.push(loser)
+      }
+    }
+  }
+  return { removed, files: kept }
+}
+
 /**
  * 從缺失說明抽出「備註」（去掉自動帶入的大項｜區域｜細項）。
  * 與前端 resolveDefectRemark 對齊。
