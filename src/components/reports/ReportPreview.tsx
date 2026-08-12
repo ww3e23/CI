@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Download, Printer, X } from 'lucide-react'
 import {
   buildInspectionReportHtml,
   downloadInspectionReport,
 } from '../../lib/reportDocument'
+import { setReportPreviewLock } from '../../lib/reportPreviewLock'
 import type { ProjectState } from '../../types'
 
 export function ReportPreview({
@@ -30,6 +32,7 @@ export function ReportPreview({
   )
 
   useEffect(() => {
+    setReportPreviewLock(true)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const onKey = (e: KeyboardEvent) => {
@@ -37,6 +40,7 @@ export function ReportPreview({
     }
     document.addEventListener('keydown', onKey)
     return () => {
+      setReportPreviewLock(false)
       document.body.style.overflow = prev
       document.removeEventListener('keydown', onKey)
     }
@@ -53,8 +57,16 @@ export function ReportPreview({
     win.print()
   }
 
-  return (
-    <div className="report-preview" role="dialog" aria-modal="true" aria-label="查驗報告預覽">
+  return createPortal(
+    <div
+      className="report-preview"
+      role="dialog"
+      aria-modal="true"
+      aria-label="查驗報告預覽"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{ zIndex: 200 }}
+    >
       <header className="report-preview-bar">
         <div style={{ minWidth: 0 }}>
           <div className="eyebrow" style={{ color: 'rgba(255,255,255,0.7)' }}>REPORT</div>
@@ -80,6 +92,7 @@ export function ReportPreview({
         title="查驗報告"
         srcDoc={html}
       />
-    </div>
+    </div>,
+    document.body,
   )
 }

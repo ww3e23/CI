@@ -1,4 +1,9 @@
+import { useSyncExternalStore } from 'react'
 import { BarChart3, ClipboardList, Home, Plus, UserRound } from 'lucide-react'
+import {
+  isReportPreviewLocked,
+  subscribeReportPreviewLock,
+} from '../../lib/reportPreviewLock'
 
 export type TabKey = 'home' | 'defects' | 'add' | 'reports' | 'profile'
 
@@ -17,8 +22,19 @@ export function BottomNav({
   active: TabKey
   onChange: (tab: TabKey) => void
 }) {
+  const locked = useSyncExternalStore(
+    subscribeReportPreviewLock,
+    isReportPreviewLocked,
+    isReportPreviewLocked,
+  )
+
   return (
-    <nav className="bottom-nav glass" aria-label="主選單">
+    <nav
+      className="bottom-nav glass"
+      aria-label="主選單"
+      aria-hidden={locked || undefined}
+      style={locked ? { pointerEvents: 'none', opacity: 0.35 } : undefined}
+    >
       {items.map(({ key, label, icon: Icon }) => {
         if (key === 'add') {
           return (
@@ -26,7 +42,11 @@ export function BottomNav({
               key={key}
               type="button"
               className={`nav-item add-slot ${active === key ? 'active' : ''}`}
-              onClick={() => onChange(key)}
+              disabled={locked}
+              onClick={() => {
+                if (locked) return
+                onChange(key)
+              }}
               aria-label="新增缺失"
             >
               <span className="add-fab">
@@ -40,7 +60,11 @@ export function BottomNav({
             key={key}
             type="button"
             className={`nav-item ${active === key ? 'active' : ''}`}
-            onClick={() => onChange(key)}
+            disabled={locked}
+            onClick={() => {
+              if (locked) return
+              onChange(key)
+            }}
           >
             <Icon size={18} strokeWidth={2.2} />
             <span>{label}</span>

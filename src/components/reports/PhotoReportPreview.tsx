@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Download, Printer, X } from 'lucide-react'
 import {
   buildPhotoReportHtml,
   downloadPhotoReport,
 } from '../../lib/photoReportDocument'
+import { setReportPreviewLock } from '../../lib/reportPreviewLock'
 import { useProjectStore } from '../../store/useProjectStore'
 import type { ProjectState } from '../../types'
 
@@ -110,6 +112,17 @@ export function PhotoReportPreview({
   const [imgProgress, setImgProgress] = useState({ done: 0, total: 0 })
   const [imgFailed, setImgFailed] = useState(0)
   const [printBusy, setPrintBusy] = useState(false)
+  /** 剛開啟時忽略點穿，避免關掉上一層後同一手指點到關閉／底欄 */
+  const [guardPointer, setGuardPointer] = useState(true)
+
+  useEffect(() => {
+    setReportPreviewLock(true)
+    const t = window.setTimeout(() => setGuardPointer(false), 500)
+    return () => {
+      window.clearTimeout(t)
+      setReportPreviewLock(false)
+    }
+  }, [])
 
   // 開啟前把 IndexedDB 暫存圖灌回記憶體，再快照一次供報告使用
   useEffect(() => {
@@ -244,14 +257,33 @@ export function PhotoReportPreview({
           ? `可列印（${imgFailed} 張載入失敗）`
           : '圖片已就緒'
 
-  return (
+  return createPortal(
     <div
       className="report-preview"
       role="dialog"
       aria-modal="true"
       aria-label="圖片查驗報告預覽"
-      style={{ position: 'relative' }}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        /* 剛開啟時擋點穿：用透明攔截層而非 pointer-events:none，避免點到背後底欄 */
+        pointerEvents: 'auto',
+      }}
     >
+      {guardPointer && (
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 50,
+            background: 'transparent',
+          }}
+        />
+      )}
       <header className="report-preview-bar">
         <div style={{ minWidth: 0 }}>
           <div className="eyebrow" style={{ color: 'rgba(255,255,255,0.7)' }}>PHOTO REPORT</div>
@@ -371,6 +403,7 @@ export function PhotoReportPreview({
           </span>
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   )
 }

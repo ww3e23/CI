@@ -201,16 +201,14 @@ export function ReportsPage() {
   function openPhotoReportDirect() {
     try {
       const unitIds = resolveDefaultPhotoUnitIds()
-      setReportChooserOpen(false)
       if (unitIds.length === 0) {
         window.alert('尚無可列入的戶別。請先完成至少一戶查驗（或新增缺失），也可改按「先選戶別」。')
         return
       }
-      // 延遲開全螢幕預覽，避開同一手勢點穿
-      afterModalClose(() => {
-        setPhotoUnitIds(unitIds)
-        setPhotoPreviewOpen(true)
-      })
+      // 同步先開預覽再關選單，避免關閉動畫期間點穿到底部導航把報表頁卸載
+      setPhotoUnitIds(unitIds)
+      setPhotoPreviewOpen(true)
+      setReportChooserOpen(false)
     } catch (err) {
       console.error('[photo-report] open direct failed', err)
       window.alert(
@@ -321,12 +319,10 @@ export function ReportsPage() {
         window.alert('沒有可列入的戶別。請勾選戶別，或先完成至少一戶查驗。')
         return
       }
+      // 同步先開預覽再關選戶層（選戶按鈕靠近底欄，延遲開最容易點穿切頁）
+      setPhotoUnitIds(unitIds)
+      setPhotoPreviewOpen(true)
       setUnitPickOpen(false)
-      // 選戶 Sheet 關掉後延遲再開預覽，避免點穿把預覽立刻關掉
-      afterModalClose(() => {
-        setPhotoUnitIds(unitIds)
-        setPhotoPreviewOpen(true)
-      })
     } catch (err) {
       console.error('[photo-report] open failed', err)
       window.alert(
