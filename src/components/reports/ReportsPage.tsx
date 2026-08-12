@@ -889,9 +889,7 @@ export function ReportsPage() {
                 onClick={() => scrollMatrixToBuilding(b.buildingId)}
               >
                 <span>{b.name}</span>
-                <span>
-                  {b.startedUnitCount > 0 ? `${b.startedPercent}%` : `${b.percent}%`}
-                </span>
+                <span>{b.percent}%</span>
               </button>
             ))}
           </div>

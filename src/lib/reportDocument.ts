@@ -67,9 +67,11 @@ export function buildInspectionReportHtml(input: ReportInput): string {
       ? `已開工 ${matrix.startedUnitCount} 戶平均 · 全案 ${matrix.overallPercent}%`
       : '整體進度'
 
+  // 各棟進度固定用「全棟有效戶平均」（含未開始），勿用已開工戶平均，
+  // 否則只查一戶時會把該戶單戶%當成整棟進度。
   const buildingBars = matrix.buildingPercents
     .map((b) => {
-      const pct = b.startedUnitCount > 0 ? b.startedPercent : b.percent
+      const pct = b.percent
       return `
       <div class="bar-row">
         <div class="bar-label">${escapeHtml(b.name)}</div>
@@ -305,7 +307,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
 
     <section class="section">
       <h2>各棟進度</h2>
-      <p class="lead">依棟別彙整戶內查驗完成率。</p>
+      <p class="lead">依棟別彙整全棟有效戶平均完成率（含未開始戶）。</p>
       <div class="panel">${buildingBars || '<div class="no-photo">尚無棟別資料</div>'}</div>
     </section>
 
