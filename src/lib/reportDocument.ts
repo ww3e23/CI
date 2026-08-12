@@ -81,34 +81,81 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     })
     .join('')
 
-  const matrixRows = matrix.floors
-    .map((floor) => {
-      const cells = matrix.buildings
-        .flatMap((b) =>
-          b.unitCodes.map((code) => {
-            const cell = matrix.cells.find(
-              (c) => c.buildingId === b.id && c.floor === floor && c.unitCode === code,
-            )
-            const status = cell?.status ?? 'na'
-            const title = `${b.name} ${floor} ${code}`
-            return `<td title="${escapeHtml(title)}"><span class="dot" style="background:${cellColor(status)}"></span></td>`
-          }),
-        )
-        .join('')
-      return `<tr><th>${escapeHtml(floor)}</th>${cells}</tr>`
-    })
-    .join('')
+  // 進度矩陣依「戶欄數」拆成多張表，避免橫向捲動（手機／列印皆可一次看完）
+  const MAX_MATRIX_UNITS = 12
+  type BuildingSlice = (typeof matrix.buildings)[number]
+  const buildingChunks: BuildingSlice[][] = []
+  {
+    let chunk: BuildingSlice[] = []
+    let units = 0
+    for (const b of matrix.buildings) {
+      const n = Math.max(1, b.unitCodes.length)
+      if (chunk.length > 0 && units + n > MAX_MATRIX_UNITS) {
+        buildingChunks.push(chunk)
+        chunk = []
+        units = 0
+      }
+      chunk.push(b)
+      units += n
+    }
+    if (chunk.length > 0) buildingChunks.push(chunk)
+  }
 
-  const unitHeader = matrix.buildings
-    .map(
-      (b) =>
-        `<th colspan="${b.unitCodes.length}">${escapeHtml(b.name)}</th>`,
-    )
-    .join('')
-
-  const unitCodes = matrix.buildings
-    .flatMap((b) => b.unitCodes.map((c) => `<th class="unit">${escapeHtml(c)}</th>`))
-    .join('')
+  const matrixTablesHtml =
+    buildingChunks.length === 0
+      ? '<div class="panel no-photo">尚無矩陣資料</div>'
+      : buildingChunks
+          .map((buildings, chunkIdx) => {
+            const unitHeader = buildings
+              .map(
+                (b) =>
+                  `<th colspan="${b.unitCodes.length}">${escapeHtml(b.name)}</th>`,
+              )
+              .join('')
+            const unitCodes = buildings
+              .flatMap((b) =>
+                b.unitCodes.map((c) => `<th class="unit">${escapeHtml(c)}</th>`),
+              )
+              .join('')
+            const rows = matrix.floors
+              .map((floor) => {
+                const cells = buildings
+                  .flatMap((b) =>
+                    b.unitCodes.map((code) => {
+                      const cell = matrix.cells.find(
+                        (c) =>
+                          c.buildingId === b.id &&
+                          c.floor === floor &&
+                          c.unitCode === code,
+                      )
+                      const status = cell?.status ?? 'na'
+                      const title = `${b.name} ${floor} ${code}`
+                      return `<td title="${escapeHtml(title)}"><span class="dot" style="background:${cellColor(status)}"></span></td>`
+                    }),
+                  )
+                  .join('')
+                return `<tr><th>${escapeHtml(floor)}</th>${cells}</tr>`
+              })
+              .join('')
+            const rangeLabel =
+              buildingChunks.length > 1
+                ? `<div class="matrix-chunk-label">${escapeHtml(
+                    buildings[0]?.name ?? '',
+                  )}～${escapeHtml(buildings[buildings.length - 1]?.name ?? '')}（${chunkIdx + 1}/${buildingChunks.length}）</div>`
+                : ''
+            return `
+      <div class="panel matrix-panel">
+        ${rangeLabel}
+        <table class="matrix">
+          <thead>
+            <tr><th></th>${unitHeader}</tr>
+            <tr><th>樓層</th>${unitCodes}</tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`
+          })
+          .join('')
 
   const defectCards = openDefects
     .map((d) => {
@@ -223,10 +270,17 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     .bar-track { height: 10px; border-radius: 999px; background: rgba(34,41,31,0.08); overflow: hidden; }
     .bar-fill { height: 100%; background: linear-gradient(90deg, #3a6f5c, #2f5d4c); border-radius: 999px; }
     .bar-num { font-weight: 800; font-size: 13px; text-align: right; }
-    table.matrix { width: 100%; border-collapse: collapse; font-size: 11px; }
-    table.matrix th, table.matrix td { padding: 4px; text-align: center; }
+    table.matrix { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+    table.matrix th, table.matrix td { padding: 4px 2px; text-align: center; }
     table.matrix th { color: var(--soft); font-weight: 700; }
-    table.matrix th.unit { font-size: 10px; }
+    table.matrix th.unit { font-size: 10px; word-break: break-all; }
+    table.matrix th:first-child,
+    table.matrix td:first-child { width: 36px; white-space: nowrap; }
+    .matrix-panel { overflow: hidden; margin-top: 12px; }
+    .matrix-panel:first-child { margin-top: 0; }
+    .matrix-chunk-label {
+      font-size: 12px; font-weight: 700; color: var(--soft); margin: 0 0 10px;
+    }
     .dot { display: inline-block; width: 14px; height: 12px; border-radius: 4px; border: 1px solid rgba(34,41,31,0.08); }
     .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
     .legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--soft); font-weight: 700; }
@@ -343,15 +397,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
         <span><i class="dot" style="background:#f7f3ea"></i>未開始</span>
         <span><i class="dot" style="background:#d9d5cb"></i>不適用</span>
       </div>
-      <div class="panel" style="overflow:auto">
-        <table class="matrix">
-          <thead>
-            <tr><th></th>${unitHeader}</tr>
-            <tr><th>樓層</th>${unitCodes}</tr>
-          </thead>
-          <tbody>${matrixRows}</tbody>
-        </table>
-      </div>
+      ${matrixTablesHtml}
     </section>
 
     <section class="section">
