@@ -1,7 +1,7 @@
 import JSZip from 'jszip'
 import type { Defect, ProjectState, Unit } from '../types'
 import { resolveDefectItemLabel } from './defectDisplay'
-import { prepareImageDownload, revokePrepared, safeFilename, triggerAnchorDownload } from './download'
+import { fetchImageBlobForZip, safeFilename, triggerAnchorDownload } from './download'
 
 export type UnitPhotoZipProgress = {
   done: number
@@ -87,6 +87,32 @@ export function unitPhotoZipFilename(unit: Unit, projectName?: string): string {
   return `${project}_${building}_${floor}_${code}戶_照片_${stamp}.zip`
 }
 
+/** 限制並行數的簡易工作池 */
+async function mapPool<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+  onStep?: (done: number, index: number) => void,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  let finished = 0
+
+  async function runOne(): Promise<void> {
+    while (next < items.length) {
+      const index = next
+      next += 1
+      results[index] = await worker(items[index]!, index)
+      finished += 1
+      onStep?.(finished, index)
+    }
+  }
+
+  const n = Math.max(1, Math.min(concurrency, items.length || 1))
+  await Promise.all(Array.from({ length: n }, () => runOne()))
+  return results
+}
+
 /**
  * 打包該戶全部圖片成 ZIP 並觸發下載。
  * 無法取得 blob 的遠端圖會略過並計入 failed。
@@ -110,33 +136,45 @@ export async function downloadUnitPhotosZip(params: {
   )
   const folder = zip.folder(folderName) ?? zip
 
+  // 手機／現場網路：並行下載；JPEG 已壓縮，ZIP 用 STORE 避免重壓拖慢
+  const concurrency = entries.length > 80 ? 8 : 6
   let ok = 0
   let failed = 0
+  let lastLabel = '準備中…'
 
-  for (let i = 0; i < entries.length; i += 1) {
-    const entry = entries[i]
-    params.onProgress?.({
-      done: i,
-      total: entries.length,
-      current: entry.label,
-    })
-    try {
-      const prepared = await prepareImageDownload(entry.src, entry.filename, entry.label)
+  params.onProgress?.({
+    done: 0,
+    total: entries.length,
+    current: `並行讀取中（${concurrency} 路）…`,
+  })
+
+  await mapPool(
+    entries,
+    concurrency,
+    async (entry) => {
       try {
-        if (!prepared.blob || prepared.remoteOnly) {
+        const blob = await fetchImageBlobForZip(entry.src)
+        if (!blob || blob.size === 0) {
           failed += 1
-          continue
+          return
         }
-        folder.file(prepared.filename, prepared.blob)
+        // JPEG／PNG／WebP 幾乎壓不動，STORE 可大幅縮短 generate 時間
+        folder.file(entry.filename, blob, { compression: 'STORE' })
         ok += 1
-      } finally {
-        revokePrepared(prepared)
+        lastLabel = entry.label
+      } catch (err) {
+        failed += 1
+        console.warn('[unitPhotoZip] skip', entry.filename, err)
       }
-    } catch (err) {
-      failed += 1
-      console.warn('[unitPhotoZip] skip', entry.filename, err)
-    }
-  }
+    },
+    (done) => {
+      params.onProgress?.({
+        done,
+        total: entries.length,
+        current: lastLabel,
+      })
+    },
+  )
 
   if (ok === 0) {
     throw new Error(
@@ -149,13 +187,14 @@ export async function downloadUnitPhotosZip(params: {
   params.onProgress?.({
     done: entries.length,
     total: entries.length,
-    current: '壓縮中…',
+    current: '產生 ZIP…',
   })
 
+  // 全檔 STORE：圖片已壓縮，再 DEFLATE 幾乎無益且極慢（兩百多張時差很多）
   const blob = await zip.generateAsync({
     type: 'blob',
-    compression: 'DEFLATE',
-    compressionOptions: { level: 6 },
+    compression: 'STORE',
+    streamFiles: true,
   })
   const filename = unitPhotoZipFilename(unit, params.projectName)
   const url = URL.createObjectURL(blob)

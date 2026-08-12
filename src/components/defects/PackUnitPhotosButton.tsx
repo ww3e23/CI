@@ -115,7 +115,7 @@ export function PackUnitPhotosButton({
           {busy && progress && (
             <div style={{ marginTop: 14 }}>
               <div style={{ fontWeight: 800, fontSize: 14 }}>
-                處理中 {Math.min(progress.done + 1, progress.total)}／{progress.total}
+                處理中 {Math.min(progress.done, progress.total)}／{progress.total}
               </div>
               <div style={{ marginTop: 6, color: 'var(--ink-soft)', fontSize: 13, fontWeight: 600 }}>
                 {progress.current || '…'}

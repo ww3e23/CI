@@ -168,6 +168,82 @@ async function tryResolveBlob(src: string): Promise<Blob | null> {
 }
 
 /**
+ * 批次打包專用：只要 blob，不做 File／objectUrl。
+ * 優先走 fetch（多有快取），失敗再短超時試 Storage SDK。
+ */
+export async function fetchImageBlobForZip(
+  src: string,
+  timeoutMs = 10_000,
+): Promise<Blob | null> {
+  if (!src) return null
+
+  if (src.startsWith('data:')) {
+    try {
+      // fetch(data:) 比逐字 atob 快很多
+      const res = await fetch(src)
+      if (res.ok) {
+        const blob = await res.blob()
+        if (blob.size > 0) return blob
+      }
+    } catch {
+      /* fall through */
+    }
+    try {
+      const blob = dataUrlToBlob(src)
+      return blob.size > 0 ? blob : null
+    } catch {
+      return null
+    }
+  }
+
+  if (src.startsWith('blob:')) {
+    try {
+      const res = await withTimeout(fetch(src), timeoutMs, 'blob')
+      if (res.ok) {
+        const blob = await res.blob()
+        return blob.size > 0 ? blob : null
+      }
+    } catch {
+      return null
+    }
+    return null
+  }
+
+  try {
+    const res = await withTimeout(
+      fetch(src, { mode: 'cors', credentials: 'omit', cache: 'force-cache' }),
+      timeoutMs,
+      'fetch',
+    )
+    if (res.ok) {
+      const blob = await res.blob()
+      if (blob.size > 0) return blob
+    }
+  } catch (err) {
+    console.warn('[zip-blob] fetch skipped', err)
+  }
+
+  if (isFirebaseStorageUrl(src)) {
+    const storage = getFirebaseStorage()
+    const path = storagePathFromUrl(src)
+    if (storage && path) {
+      try {
+        const blob = await withTimeout(
+          getBlob(ref(storage, path)),
+          Math.min(timeoutMs, 5_000),
+          'Storage',
+        )
+        if (blob.size > 0) return blob
+      } catch (err) {
+        console.warn('[zip-blob] getBlob skipped', err)
+      }
+    }
+  }
+
+  return null
+}
+
+/**
  * 準備下載：
  * - data:/blob: → 轉成本機 blob
  * - http(s)（含 Firebase）→ 先短時間嘗試 blob；失敗也立刻回傳 remoteOnly，絕不卡死
