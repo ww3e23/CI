@@ -125,7 +125,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
         <header>
           <div class="defect-no">#${d.defectNumber}</div>
           <div>
-            <h3>${escapeHtml(d.area)}｜${escapeHtml(d.description)}</h3>
+            <h3>${escapeHtml(d.area)}${d.description ? `｜${escapeHtml(d.description)}` : ''}</h3>
             <p>${escapeHtml(d.buildingName)} · ${escapeHtml(d.floor)} · ${escapeHtml(d.unitCode)}戶 · ${escapeHtml(d.categoryName)}</p>
           </div>
           <span class="badge" style="background:${statusTone(d.status)}">${escapeHtml(statusLabel(d.status))}</span>
@@ -198,7 +198,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
       background: rgba(47,93,76,0.06); display: grid; place-items: center;
       font-size: 18px; font-weight: 800; line-height: 1.1;
     }
-    .section { margin: 18px 0; page-break-inside: avoid; }
+    .section { margin: 18px 0; }
     .section h2 {
       font-family:
         'Noto Serif TC', 'Songti TC', 'PMingLiU', 'Source Han Serif TC', serif;
@@ -231,7 +231,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
     .legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--soft); font-weight: 700; }
     .defect {
-      break-inside: avoid; margin-bottom: 14px; padding: 16px;
+      break-inside: avoid; page-break-inside: avoid; margin-bottom: 14px; padding: 16px;
       border-radius: 18px; background: var(--card); border: 1px solid var(--line);
     }
     .defect header { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; }
@@ -242,33 +242,55 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     .defect h3 { margin: 0; font-size: 16px; }
     .defect p { margin: 4px 0 0; color: var(--soft); font-size: 12px; }
     .badge { color: #fff; border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
-    .photos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+    .photos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 12px; }
     .photos figure { margin: 0; }
     .photos img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; background: #eee; }
     .photos figcaption { font-size: 11px; color: var(--soft); margin-top: 4px; font-weight: 700; }
     .no-photo { margin-top: 10px; color: var(--soft); font-size: 12px; }
     .footer { margin-top: 36px; color: var(--soft); font-size: 12px; text-align: center; }
+    @media (min-width: 900px) {
+      .photos { grid-template-columns: repeat(4, 1fr); }
+    }
     @media (max-width: 720px) {
       .stats { grid-template-columns: repeat(2, 1fr); }
-      .photos { grid-template-columns: repeat(2, 1fr); }
     }
+    /* 列印／存 PDF：維持與 App 預覽相同配色與版型，只隱藏工具列並微調分頁 */
     @media print {
       .toolbar { display: none !important; }
-      body { background: #fff !important; }
-      .page { max-width: none; padding: 12mm; }
-      .report-head, .section, .stats, .panel, .defect {
+      html, body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      body {
+        background:
+          radial-gradient(90% 50% at 10% 0%, rgba(47,93,76,0.14), transparent 55%),
+          radial-gradient(70% 40% at 100% 10%, rgba(201,123,46,0.12), transparent 50%),
+          var(--paper) !important;
+      }
+      .page { max-width: none; padding: 10mm 12mm 12mm; }
+      .report-head,
+      .stat,
+      .bar-row,
+      .defect {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .section h2,
+      .section .lead {
+        break-after: avoid;
         page-break-after: avoid;
-        break-after: avoid-page;
-        box-shadow: none !important;
       }
-      .report-head {
-        min-height: 0 !important;
-        margin-bottom: 10px;
-        padding-bottom: 8px;
+      /* 大區塊允許跨頁，避免整段被推到下一頁造成大片空白 */
+      .section,
+      .panel,
+      .stats {
+        break-inside: auto;
+        page-break-inside: auto;
+        break-after: auto;
+        page-break-after: auto;
       }
+      .photos { grid-template-columns: repeat(2, 1fr); }
       .cover, .ring { display: none !important; }
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
     }
   </style>
 </head>
@@ -334,7 +356,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
 
     <section class="section">
       <h2>缺失清冊</h2>
-      <p class="lead">含圖面位置與現況照片，可於瀏覽器列印為 PDF 歸檔。</p>
+      <p class="lead">含圖面位置與現況照片。</p>
       ${defectCards || '<div class="panel no-photo">目前沒有缺失紀錄</div>'}
     </section>
 
