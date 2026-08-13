@@ -1587,15 +1587,6 @@ function toMillis(value: unknown): number {
   return 0
 }
 
-function defectActivityMillis(data: DocumentData): number {
-  return Math.max(
-    toMillis(data.clientUpdatedAt),
-    toMillis(data.updatedAt),
-    toMillis(data.createdAt),
-    toMillis(data.driveDeletedAt),
-  )
-}
-
 /** 每日批次：清理作廢殘留，並把尚未寫入 Drive 的有效缺失補上（取代即時同步） */
 export const cleanupVoidedDefectDrives = onSchedule(
   {
