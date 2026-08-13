@@ -1,0 +1,44 @@
+name: Deploy Firebase Functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - functions/**
+      - firebase.json
+      - .firebaserc
+      - .github/workflows/deploy-firebase-functions.yml
+  workflow_dispatch:
+
+jobs:
+  deploy-functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - name: Require FIREBASE_TOKEN
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ -z "$FIREBASE_TOKEN" ]; then
+            echo "::error::缺少 repo Secret FIREBASE_TOKEN。請用 firebase login:ci 取得後加到 Settings → Secrets，再重新跑此 workflow。"
+            exit 1
+          fi
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+      - name: Install function deps
+        working-directory: functions
+        run: npm ci || npm install
+      - name: Build functions
+        working-directory: functions
+        run: npm run build
+      - name: Deploy functions
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          firebase use ci-inspection
+          firebase deploy --only functions --non-interactive

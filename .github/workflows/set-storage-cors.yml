@@ -1,0 +1,34 @@
+name: Set Storage CORS
+
+# 手動執行：需 Secrets 具備可寫入 GCS 的憑證（擇一）
+# - GCP_SA_KEY：服務帳戶 JSON
+# 或本機執行：./scripts/set-storage-cors.sh
+on:
+  workflow_dispatch:
+
+jobs:
+  cors:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Auth to Google Cloud
+        if: ${{ secrets.GCP_SA_KEY != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Set up Cloud SDK
+        if: ${{ secrets.GCP_SA_KEY != '' }}
+        uses: google-github-actions/setup-gcloud@v2
+      - name: Apply CORS
+        if: ${{ secrets.GCP_SA_KEY != '' }}
+        run: |
+          chmod +x scripts/set-storage-cors.sh
+          ./scripts/set-storage-cors.sh ci-inspection.firebasestorage.app
+      - name: Missing credentials
+        if: ${{ secrets.GCP_SA_KEY == '' }}
+        run: |
+          echo "請到 repo Secrets 新增 GCP_SA_KEY（有 Storage Admin 的服務帳戶 JSON），"
+          echo "或在本機執行：./scripts/set-storage-cors.sh"
+          exit 1
