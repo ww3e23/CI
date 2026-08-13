@@ -56,7 +56,7 @@ export function ProfilePage() {
     }
     if (driveSyncing) return
     const ok = window.confirm(
-      `將強制掃描並補齊「${project.name}」雲端硬碟照片。\n會實際檢查雲端硬碟現況（你手動刪掉的會重傳），不會只信「已同步」標記。\n\n只會補還沒有的檔案，不會刪除既有資料。`,
+      `將立刻掃描並同步「${project.name}」照片到雲端硬碟。\n平時系統改為每天批次同步以節省費用；此按鈕適合收工後一次補齊。\n\n會檢查雲端硬碟現況並補還沒有的檔案，不會刪除既有資料。`,
     )
     if (!ok) return
 
@@ -225,15 +225,15 @@ export function ProfilePage() {
               <TitleHint
                 as="div"
                 style={{ fontWeight: 800 }}
-                hint="儲存缺失後會即時寫入雲端硬碟；此按鈕會真實掃描雲端硬碟現況並補齊（含你手動刪掉的）。"
+                hint="查驗時照片先存 Firebase；系統每天批次寫入雲端硬碟。若要立刻上 Drive，再按「立即同步雲端硬碟」。"
               >
-                雲端硬碟即時存檔
+                雲端硬碟每日同步
               </TitleHint>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', marginTop: 4 }}>
                 {!project?.driveFolderId
                   ? '尚未綁定資料夾（請後台管理者先設定）'
                   : project.driveOwnerConnected
-                    ? `已綁定擁有者${project.driveOwnerEmail ? `（${project.driveOwnerEmail}）` : ''}：查驗後即時同步，5 分鐘兜底`
+                    ? `已綁定擁有者${project.driveOwnerEmail ? `（${project.driveOwnerEmail}）` : ''}：每天自動批次同步（不再即時上傳，較省費用）`
                     : '資料夾已設，但後台尚未綁定擁有者（請管理者先授權一次）'}
               </div>
             </div>
@@ -251,7 +251,7 @@ export function ProfilePage() {
             onClick={() => void runDriveSync()}
           >
             <CloudUpload size={16} />
-            {driveSyncing ? '同步中…' : '強制補齊雲端硬碟'}
+            {driveSyncing ? '同步中…' : '立即同步雲端硬碟'}
           </button>
           {project?.driveFolderUrl && (
             <a

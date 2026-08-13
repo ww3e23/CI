@@ -298,30 +298,16 @@ export async function autoSyncDefectPhotosToDrive(params: {
 const quietBackfillDone = new Set<string>()
 
 /**
- * 開啟專案後背景補齊雲端硬碟（只補漏的；已存過且葉層仍在 Drive 才略過）。
- * 每個專案每個瀏覽器工作階段只跑一次。
+ * 開啟專案後背景補齊雲端硬碟。
+ * 已停用自動觸發（改每日批次），保留函式供日後手動／除錯呼叫。
  */
 export async function quietBackfillProjectDrive(projectId: string): Promise<void> {
   if (!projectId || quietBackfillDone.has(projectId)) return
   const project = useAuthStore.getState().projects.find((p) => p.id === projectId)
   if (!project?.driveFolderId) return
+  // 費用控管：不再於開啟專案時自動全案掃描
   quietBackfillDone.add(projectId)
-  try {
-    // 非 force：後端會驗證葉層資料夾仍在；已刪的會重建重傳
-    const res = await syncProjectPhotosToDrive(projectId)
-    if (!res.ok) {
-      quietBackfillDone.delete(projectId)
-      console.warn('[drive-auto] 背景補齊失敗', res.error)
-      return
-    }
-    console.info('[drive-auto] 背景補齊完成', {
-      uploaded: res.result?.uploaded,
-      skipped: res.result?.skipped,
-    })
-  } catch (err) {
-    quietBackfillDone.delete(projectId)
-    console.warn('[drive-auto] 背景補齊例外', err)
-  }
+  console.info('[drive-auto] 開專案背景補齊已停用（改每日批次／手動同步）')
 }
 
 export type DriveDeleteResult = {

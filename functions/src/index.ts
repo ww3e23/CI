@@ -1465,15 +1465,15 @@ function onlyDriveMetaChanged(
 }
 
 /**
- * 缺失文件一有新增／修改／作廢，後端立刻對齊雲端硬碟（即時同步主路徑）。
+ * 缺失新增／修改／作廢時：只標記「待批次同步」，不再即時寫入 Drive。
+ * 即時對齊會讓 Functions 費用隨拍照量暴衝；改由每日排程／手動強制補齊處理。
  */
 export const onDefectWrittenAutoDrive = onDocumentWritten(
   {
     document: 'projects/{projectId}/defects/{defectId}',
     region: 'asia-east1',
-    memory: '512MiB',
-    timeoutSeconds: 180,
-    secrets: [googleOAuthClientSecret],
+    memory: '256MiB',
+    timeoutSeconds: 30,
   },
   async (event) => {
     const projectId = String(event.params.projectId || '')
@@ -1485,67 +1485,29 @@ export const onDefectWrittenAutoDrive = onDocumentWritten(
     if (!after && !before) return
     if (after && before && onlyDriveMetaChanged(before, after)) return
 
-    // 內容指紋未變且已同步過 → 不重存（刪除／作廢除外）
-    if (after && String(after.status ?? '') !== 'voided') {
-      const row = { id: defectId, ...(after as Omit<DefectRow, 'id'>) }
-      const key = buildDriveContentKey(row)
-      if (
-        String(after.driveContentKey || '') === key &&
-        String(after.driveSyncedAt || '') &&
-        String(after.driveLeafFolderId || '')
-      ) {
-        logger.info('auto-drive skip: content unchanged', { projectId, defectId })
-        return
-      }
-    }
-
     const projectSnap = await getFirestore().doc(`projects/${projectId}`).get()
     if (!projectSnap.exists) return
     const driveFolderId = String(projectSnap.get('driveFolderId') || '').trim()
     if (!driveFolderId) {
-      logger.info('auto-drive skip: no folder', { projectId, defectId })
+      logger.info('auto-drive mark skip: no folder', { projectId, defectId })
       return
     }
     if (!projectSnap.get('driveOwnerConnected')) {
-      logger.info('auto-drive skip: owner not connected', { projectId, defectId })
+      logger.info('auto-drive mark skip: owner not connected', { projectId, defectId })
       return
     }
 
-    // 標記專案最近有查驗動作，供 5 分鐘兜底排程判斷要不要掃
+    const nowIso = new Date().toISOString()
     await getFirestore()
       .doc(`projects/${projectId}`)
-      .set({ driveActivityAt: new Date().toISOString() }, { merge: true })
-
-    const ownerDrive = await tryGetDriveClientFromOwner({
-      projectId,
-      clientSecret: googleOAuthClientSecret.value(),
-    })
-    if (!ownerDrive) {
-      logger.warn('auto-drive skip: owner token unavailable', { projectId, defectId })
-      return
-    }
-
-    const row = after ?? before!
-    const defect: DefectRow = {
-      id: defectId,
-      ...(row as Omit<DefectRow, 'id'>),
-      // 文件被硬刪時視為作廢清 Drive
-      status: after ? String(row.status ?? '') : 'voided',
-    }
-    const items = await loadChecklistItems(projectId)
-    try {
-      const result = await reconcileOneDefectOnDrive({
-        projectId,
-        driveFolderId,
-        drive: ownerDrive.drive,
-        defect,
-        items,
-      })
-      logger.info('auto-drive reconcile', { projectId, defectId, ...result })
-    } catch (err) {
-      logger.error('auto-drive reconcile failed', { projectId, defectId, err })
-      throw err
-    }
+      .set(
+        {
+          driveActivityAt: nowIso,
+          drivePendingSyncAt: nowIso,
+        },
+        { merge: true },
+      )
+    logger.info('auto-drive marked pending (no realtime upload)', { projectId, defectId })
   },
 )
 
@@ -1634,19 +1596,22 @@ function defectActivityMillis(data: DocumentData): number {
   )
 }
 
-/** 每 5 分鐘兜底：僅在近 5 分鐘內有查驗動作的專案才掃（即時同步失敗／競態時補上） */
+/** 每日批次：清理作廢殘留，並把尚未寫入 Drive 的有效缺失補上（取代即時同步） */
 export const cleanupVoidedDefectDrives = onSchedule(
   {
     region: 'asia-east1',
-    schedule: 'every 5 minutes',
+    schedule: 'every 24 hours',
     memory: '1GiB',
     timeoutSeconds: 540,
     secrets: [googleOAuthClientSecret],
   },
   async () => {
-    const ACTIVITY_WINDOW_MS = 5 * 60 * 1000
+    // 只掃「近 36 小時有查驗／待同步標記」的專案，避免全站空轉燒錢
+    const ACTIVITY_WINDOW_MS = 36 * 60 * 60 * 1000
     const now = Date.now()
     const cutoff = now - ACTIVITY_WINDOW_MS
+    /** 單一專案每輪最多對齊筆數，避免超時；剩下明天再補或手動強制補齊 */
+    const MAX_SYNC_PER_PROJECT = 80
 
     const projectsSnap = await getFirestore()
       .collection('projects')
@@ -1663,6 +1628,7 @@ export const cleanupVoidedDefectDrives = onSchedule(
 
       const activityAt = Math.max(
         toMillis(projectDoc.get('driveActivityAt')),
+        toMillis(projectDoc.get('drivePendingSyncAt')),
         toMillis(projectDoc.get('updatedAt')),
       )
       if (!activityAt || activityAt < cutoff) {
@@ -1686,15 +1652,14 @@ export const cleanupVoidedDefectDrives = onSchedule(
 
       for (const doc of voidedSnap.docs) {
         const data = doc.data()
-        const recent = defectActivityMillis(data) >= cutoff
         const alreadyCleaned = Boolean(String(data.driveDeletedAt || '').trim())
         const hasDriveHint =
           Boolean(String(data.driveLeafFolderId || '').trim()) ||
           Boolean(String(data.driveLastFileId || '').trim())
-        // 已標記清過且無殘留 hint、又非近期動作 → 略過
-        if (alreadyCleaned && !hasDriveHint && !recent) continue
-        // 非近期且完全沒 hint、也沒編號可查 → 略過（避免全掃太重）；有編號仍嘗試清
-        if (!recent && !hasDriveHint && !Number(data.defectNumber)) continue
+        // 已標記清過且無殘留 hint → 略過
+        if (alreadyCleaned && !hasDriveHint) continue
+        // 完全沒 hint、也沒編號可查 → 略過
+        if (!hasDriveHint && !Number(data.defectNumber)) continue
 
         const defect = { id: doc.id, ...(data as Omit<DefectRow, 'id'>) }
         try {
@@ -1720,21 +1685,21 @@ export const cleanupVoidedDefectDrives = onSchedule(
         }
       }
 
-      // 近 5 分鐘有改動、或尚未寫入 Drive 的有效缺失 → 再對齊一次
+      // 批次補齊：尚未同步、或內容指紋已變的有效缺失
       const pendingSnap = await getFirestore()
         .collection(`projects/${projectId}/defects`)
-        .limit(160)
+        .limit(300)
         .get()
+      let syncedThisProject = 0
       for (const doc of pendingSnap.docs) {
+        if (syncedThisProject >= MAX_SYNC_PER_PROJECT) break
         const data = doc.data()
         const defect = { id: doc.id, ...(data as Omit<DefectRow, 'id'>) }
         if (defect.status === 'voided') continue
-        const recent = defectActivityMillis(data) >= cutoff
+        const contentKey = buildDriveContentKey(defect)
         const neverSynced = !String(defect.driveSyncedAt || '').trim()
-        if (!recent && !neverSynced) continue
-        // 無近期動作時，neverSynced 舊資料不在此排程狂掃（改由開 App 背景補／強制補齊）
-        if (!recent && neverSynced) continue
-        // 內容指紋捷徑交給 reconcile（會驗證葉層是否仍在 Drive）
+        const contentChanged = String(defect.driveContentKey || '') !== contentKey
+        if (!neverSynced && !contentChanged) continue
         try {
           const result = await reconcileOneDefectOnDrive({
             projectId,
@@ -1743,21 +1708,32 @@ export const cleanupVoidedDefectDrives = onSchedule(
             defect,
             items,
           })
+          syncedThisProject += 1
           if (result.action === 'synced') {
             backfilled += 1
           }
         } catch (err) {
+          syncedThisProject += 1
           logger.warn('scheduled drive backfill failed', { projectId, defectId: doc.id, err })
         }
       }
+
+      // 本輪有掃過就清掉 pending 標記（剩餘未同步會因 driveContentKey 在下輪再補）
+      await projectDoc.ref.set(
+        {
+          driveLastBatchSyncAt: new Date().toISOString(),
+        },
+        { merge: true },
+      )
     }
 
-    logger.info('cleanupVoidedDefectDrives done', {
+    logger.info('daily drive batch done', {
       cleaned,
       backfilled,
       skippedIdle,
       projects: projectsSnap.size,
-      windowMinutes: 5,
+      windowHours: 36,
+      maxSyncPerProject: MAX_SYNC_PER_PROJECT,
     })
   },
 )
