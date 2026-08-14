@@ -1,0 +1,1 @@
+fix: 本机储存与 Firebase 目标与查验 CI 隔离

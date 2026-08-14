@@ -11,6 +11,7 @@ import { seedMembers, seedProjects, seedUsers } from '../data/authSeed'
 import { accountDisplay, isValidAccountInput, normalizeLoginId } from '../lib/accountId'
 import { createId } from '../lib/id'
 import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase'
+import { CI_AUTH_STORAGE_KEY } from '../lib/storageKeys'
 import { APP_MIN_PASSWORD_LENGTH, isValidAppPassword, toFirebasePassword } from '../lib/password'
 import {
   deleteProjectMemberDoc,
@@ -761,7 +762,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       },
     }),
     {
-      name: 'site-auth-v2',
+      name: CI_AUTH_STORAGE_KEY,
       version: 2,
     },
   ),

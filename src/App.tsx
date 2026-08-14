@@ -14,6 +14,7 @@ import { useAuthStore } from './store/useAuthStore'
 import { TitleHint } from './components/ui/TitleHint'
 import { useProjectStore } from './store/useProjectStore'
 import { isFirebaseConfigured } from './lib/firebase'
+import { syncProjectMember, syncProjectMeta, syncUserAccount } from './services/cloudSync'
 
 function useHashRoute() {
   const [hash, setHash] = useState(() => window.location.hash || '#/')
@@ -42,6 +43,17 @@ export default function App() {
     if (!currentUserId || !currentProjectId) return
     if (isFirebaseConfigured()) {
       void useProjectStore.getState().hydrateFromCloud(currentProjectId)
+      // 把本機仍有的專案目錄推回雲端（例如他機誤刪、手機尚有 8-2 可救回）
+      const snap = useAuthStore.getState()
+      void (async () => {
+        try {
+          await Promise.all(snap.users.map((u) => syncUserAccount(u)))
+          await Promise.all(snap.members.map((m) => syncProjectMember(m)))
+          await Promise.all(snap.projects.map((p) => syncProjectMeta(p)))
+        } catch {
+          /* ignore */
+        }
+      })()
     } else {
       void useProjectStore.getState().restorePendingMediaToMemory()
     }

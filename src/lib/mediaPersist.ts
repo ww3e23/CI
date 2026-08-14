@@ -1,4 +1,8 @@
 import type { Defect, ProjectState } from '../types'
+import {
+  CI_PROJECT_STORAGE_KEY,
+  LEGACY_PROJECT_STORAGE_KEY,
+} from './storageKeys'
 
 /** 僅保留可持久化的圖檔網址（http／https），排除巨大的 data URL */
 export function persistableMediaUrl(url?: string | null): string | undefined {
@@ -24,10 +28,9 @@ export function lightenProjectState(state: ProjectState): ProjectState {
   }
 }
 
-/** 嘗試清掉已爆掉的本機快取 */
-export function purgeBloatedInspectionStorage() {
+function purgeOneKey(key: string) {
   try {
-    const raw = localStorage.getItem('site-inspection-v5')
+    const raw = localStorage.getItem(key)
     if (!raw) return
     if (raw.length < 2_500_000) return
     const parsed = JSON.parse(raw) as { state?: Record<string, unknown> }
@@ -48,12 +51,18 @@ export function purgeBloatedInspectionStorage() {
         bundles: nextBundles,
       },
     }
-    localStorage.setItem('site-inspection-v5', JSON.stringify(light))
+    localStorage.setItem(key, JSON.stringify(light))
   } catch {
     try {
-      localStorage.removeItem('site-inspection-v5')
+      localStorage.removeItem(key)
     } catch {
       /* ignore */
     }
   }
+}
+
+/** 嘗試清掉已爆掉的本機快取（查驗專用 + 舊共用 key） */
+export function purgeBloatedInspectionStorage() {
+  purgeOneKey(CI_PROJECT_STORAGE_KEY)
+  purgeOneKey(LEGACY_PROJECT_STORAGE_KEY)
 }

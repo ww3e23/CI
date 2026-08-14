@@ -1,0 +1,180 @@
+From e5730c933caf064c0935094948b98cd1a7465a90 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 14 Aug 2026 06:19:00 +0000
+Subject: [PATCH] =?UTF-8?q?fix:=20=E6=9C=AC=E6=A9=9F=E5=82=A8=E5=AD=98?=
+ =?UTF-8?q?=E4=B8=8E=20Firebase=20=E7=9B=AE=E6=A0=87=E4=B8=8E=E6=9F=A5?=
+ =?UTF-8?q?=E9=AA=8C=20CI=20=E9=9A=94=E7=A6=BB?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+改用 progress 专用 localStorage／IndexedDB key，并改 .firebaserc 默认专案，避免与 ci-inspection 互相覆盖。
+---
+ .firebaserc                           | 2 +-
+ src/components/admin/ProjectsPage.tsx | 2 +-
+ src/lib/appVersion.ts                 | 2 +-
+ src/lib/mediaPersist.ts               | 7 ++++---
+ src/lib/pendingMediaDb.ts             | 2 +-
+ src/lib/storageKeys.ts                | 7 +++++++
+ src/main.tsx                          | 1 +
+ src/store/useAuthStore.ts             | 5 +++--
+ src/store/useProjectStore.ts          | 3 ++-
+ 9 files changed, 21 insertions(+), 10 deletions(-)
+ create mode 100644 src/lib/storageKeys.ts
+
+diff --git a/.firebaserc b/.firebaserc
+index bdc5c2a..f736cfb 100644
+--- a/.firebaserc
++++ b/.firebaserc
+@@ -1,5 +1,5 @@
+ {
+   "projects": {
+-    "default": "ci-inspection"
++    "default": "site-progress-app"
+   }
+ }
+diff --git a/src/components/admin/ProjectsPage.tsx b/src/components/admin/ProjectsPage.tsx
+index c858935..64dbbac 100644
+--- a/src/components/admin/ProjectsPage.tsx
++++ b/src/components/admin/ProjectsPage.tsx
+@@ -194,7 +194,7 @@ export function ProjectsPage() {
+     if (mode === 'user' && !getGoogleOAuthClientId()) {
+       setDriveMsg(
+         '「用我的 Google 帳號同步」尚未啟用：請先在 GCP 建立 OAuth 網頁用戶端，並設定 VITE_GOOGLE_OAUTH_CLIENT_ID 後重新部署。\n' +
+-          '建立頁面：https://console.cloud.google.com/auth/clients/create?project=ci-inspection',
++          '建立頁面：https://console.cloud.google.com/auth/clients/create?project=site-progress-app',
+       )
+       return
+     }
+diff --git a/src/lib/appVersion.ts b/src/lib/appVersion.ts
+index 91cb3f0..5bbb312 100644
+--- a/src/lib/appVersion.ts
++++ b/src/lib/appVersion.ts
+@@ -1,2 +1,2 @@
+ /** 顯示在「我的」頁；變更後使用者可對照是否已載入新版 */
+-export const APP_VERSION = '2026.08.14-card-overflow'
++export const APP_VERSION = '2026.08.14-isolate-from-ci'
+diff --git a/src/lib/mediaPersist.ts b/src/lib/mediaPersist.ts
+index c4c6241..832724e 100644
+--- a/src/lib/mediaPersist.ts
++++ b/src/lib/mediaPersist.ts
+@@ -1,4 +1,5 @@
+ import type { Defect, ProjectState } from '../types'
++import { PROGRESS_PROJECT_STORAGE_KEY } from './storageKeys'
+ 
+ /** 僅保留可持久化的圖檔網址（http／https），排除巨大的 data URL */
+ export function persistableMediaUrl(url?: string | null): string | undefined {
+@@ -27,7 +28,7 @@ export function lightenProjectState(state: ProjectState): ProjectState {
+ /** 嘗試清掉已爆掉的本機快取 */
+ export function purgeBloatedInspectionStorage() {
+   try {
+-    const raw = localStorage.getItem('site-inspection-v5')
++    const raw = localStorage.getItem(PROGRESS_PROJECT_STORAGE_KEY)
+     if (!raw) return
+     if (raw.length < 2_500_000) return
+     const parsed = JSON.parse(raw) as { state?: Record<string, unknown> }
+@@ -48,10 +49,10 @@ export function purgeBloatedInspectionStorage() {
+         bundles: nextBundles,
+       },
+     }
+-    localStorage.setItem('site-inspection-v5', JSON.stringify(light))
++    localStorage.setItem(PROGRESS_PROJECT_STORAGE_KEY, JSON.stringify(light))
+   } catch {
+     try {
+-      localStorage.removeItem('site-inspection-v5')
++      localStorage.removeItem(PROGRESS_PROJECT_STORAGE_KEY)
+     } catch {
+       /* ignore */
+     }
+diff --git a/src/lib/pendingMediaDb.ts b/src/lib/pendingMediaDb.ts
+index d2ecdc6..8843113 100644
+--- a/src/lib/pendingMediaDb.ts
++++ b/src/lib/pendingMediaDb.ts
+@@ -8,7 +8,7 @@ export type PendingDefectMedia = {
+   updatedAt: string
+ }
+ 
+-const DB_NAME = 'ci-pending-media'
++const DB_NAME = 'progress-pending-media'
+ const STORE = 'defects'
+ 
+ async function db() {
+diff --git a/src/lib/storageKeys.ts b/src/lib/storageKeys.ts
+new file mode 100644
+index 0000000..bc5334c
+--- /dev/null
++++ b/src/lib/storageKeys.ts
+@@ -0,0 +1,7 @@
++/** 現場進度 App 專用本機 key（與查驗 CI App 隔離） */
++export const PROGRESS_AUTH_STORAGE_KEY = 'site-progress-auth-v1'
++export const PROGRESS_PROJECT_STORAGE_KEY = 'site-progress-data-v1'
++
++/** 舊版與查驗共用的 key；進度 App 不再讀寫，避免互相覆蓋 */
++export const LEGACY_AUTH_STORAGE_KEY = 'site-auth-v2'
++export const LEGACY_PROJECT_STORAGE_KEY = 'site-inspection-v5'
+diff --git a/src/main.tsx b/src/main.tsx
+index 38055e7..3b734fc 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -1,6 +1,7 @@
+ import { StrictMode } from 'react'
+ import { createRoot } from 'react-dom/client'
+ import { registerSW } from 'virtual:pwa-register'
++import './lib/storageKeys'
+ import './index.css'
+ import App from './App.tsx'
+ import { notifyAppUpdateReady } from './components/pwa/UpdateAppBanner'
+diff --git a/src/store/useAuthStore.ts b/src/store/useAuthStore.ts
+index aea6b96..5b1fd91 100644
+--- a/src/store/useAuthStore.ts
++++ b/src/store/useAuthStore.ts
+@@ -11,6 +11,7 @@ import { seedMembers, seedProjects, seedUsers } from '../data/authSeed'
+ import { accountDisplay, isValidAccountInput, normalizeLoginId } from '../lib/accountId'
+ import { createId } from '../lib/id'
+ import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase'
++import { PROGRESS_AUTH_STORAGE_KEY } from '../lib/storageKeys'
+ import { APP_MIN_PASSWORD_LENGTH, isValidAppPassword, toFirebasePassword } from '../lib/password'
+ import {
+   deleteProjectMemberDoc,
+@@ -647,7 +648,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
+           return { ok: false, error: '請先登入後再同步' }
+         }
+         const permissionHint =
+-          'Firestore 規則未允許讀寫。請到 Firebase Console → 專案 ci-inspection → Firestore → 規則，貼上本專案 firestore.rules 後按「發布」，再重新登入並同步。'
++          'Firestore 規則未允許讀寫。請到 Firebase Console → 您的 Firebase 專案 → Firestore → 規則，貼上本專案 firestore.rules 後按「發布」，再重新登入並同步。'
+ 
+         // 先把本機目錄推上雲端，再拉回來（電腦建的資料可到手機）
+         try {
+@@ -761,7 +762,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
+       },
+     }),
+     {
+-      name: 'site-auth-v2',
++      name: PROGRESS_AUTH_STORAGE_KEY,
+       version: 2,
+     },
+   ),
+diff --git a/src/store/useProjectStore.ts b/src/store/useProjectStore.ts
+index aa4af51..34e11c0 100644
+--- a/src/store/useProjectStore.ts
++++ b/src/store/useProjectStore.ts
+@@ -28,6 +28,7 @@ import {
+ } from '../lib/stageProgress'
+ import { expandUnitsFromBuildings } from '../lib/units'
+ import { createId } from '../lib/id'
++import { PROGRESS_PROJECT_STORAGE_KEY } from '../lib/storageKeys'
+ import { cloudReady, syncDefect, syncProjectStructure } from '../services/cloudSync'
+ import { recomputeUnitNextDefectNumber, isDefectNumberTaken } from '../services/projectSync'
+ import {
+@@ -2153,7 +2154,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
+       },
+     }),
+     {
+-      name: 'site-inspection-v5',
++      name: PROGRESS_PROJECT_STORAGE_KEY,
+       version: 9,
+       // 大圖 base64 不寫入 localStorage，避免配額爆掉（QuotaExceededError）
+       partialize: (state) => ({
+-- 
+2.43.0
+

@@ -14,6 +14,7 @@ import { buildDefaultChecklist } from '../data/defaultChecklist'
 import { createEmptyProjectState, createProjectBundles } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
+import { CI_PROJECT_STORAGE_KEY } from '../lib/storageKeys'
 import { cloudReady, syncDefect, syncProjectStructure } from '../services/cloudSync'
 import { recomputeUnitNextDefectNumber, isDefectNumberTaken } from '../services/projectSync'
 import {
@@ -1724,7 +1725,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
       },
     }),
     {
-      name: 'site-inspection-v5',
+      name: CI_PROJECT_STORAGE_KEY,
       version: 8,
       // 大圖 base64 不寫入 localStorage，避免配額爆掉（QuotaExceededError）
       partialize: (state) => ({
