@@ -43,12 +43,12 @@ export function currentActorName(): string {
   return currentActorInfo().name
 }
 
-/** 列表顯示：優先帳號，必要時附顯示名 */
+/** 畫面顯示查驗人：只顯示姓名，不附帳號 */
 export function formatActorLabel(name?: string, account?: string): string {
   const n = String(name || '').trim()
   const a = String(account || '').trim()
-  if (a && n && n !== a) return `${n}（${a}）`
-  return a || n || '—'
+  // 帳號僅在完全沒有姓名時作為後備，避免列表空白
+  return n || a || '—'
 }
 
 /** 寫入活動／缺失用的標籤：現場帳號以帳號為準，避免顯示名被設成「系統管理者」 */

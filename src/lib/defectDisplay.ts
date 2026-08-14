@@ -54,19 +54,13 @@ export function defectListTitle(defect: Defect, items: ChecklistItem[]): string 
   return `#${defect.defectNumber}`
 }
 
-/** 列表／詳情顯示的查驗人員（優先新增者，其次最近修改者） */
+/** 列表／詳情顯示的查驗人員（只顯示姓名，不附帳號） */
 export function defectInspectorLabel(defect: Defect): string {
   const created = (defect.createdByName || '').trim()
+  if (created) return created
   const createdAcct = (defect.createdByAccount || '').trim()
-  if (created || createdAcct) {
-    if (createdAcct && created && created !== createdAcct) return `${created}（${createdAcct}）`
-    return createdAcct || created
-  }
+  if (createdAcct) return createdAcct
   const updated = (defect.updatedByName || '').trim()
-  const updatedAcct = (defect.updatedByAccount || '').trim()
-  if (updated || updatedAcct) {
-    if (updatedAcct && updated && updated !== updatedAcct) return `${updated}（${updatedAcct}）`
-    return updatedAcct || updated
-  }
-  return ''
+  if (updated) return updated
+  return (defect.updatedByAccount || '').trim()
 }
