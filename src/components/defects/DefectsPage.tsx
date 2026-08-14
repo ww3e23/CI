@@ -91,7 +91,16 @@ export function DefectsPage() {
 
       {unit && (
         <div style={{ marginBottom: 12 }}>
-          <PackUnitPhotosButton unitId={unit.id} style={{ width: '100%' }} />
+          <PackUnitPhotosButton
+            unitId={unit.id}
+            filteredDefectIds={filtered.map((d) => d.id)}
+            filterLabel={
+              quickStatus === 'all'
+                ? undefined
+                : tabs.find((t) => t.key === quickStatus)?.label
+            }
+            style={{ width: '100%' }}
+          />
         </div>
       )}
 

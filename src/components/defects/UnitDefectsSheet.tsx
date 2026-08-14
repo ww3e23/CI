@@ -123,7 +123,16 @@ export function UnitDefectsSheet({
 
         {!categoryId && (
           <div style={{ marginBottom: 12 }}>
-            <PackUnitPhotosButton unitId={unitId} style={{ width: '100%' }} />
+            <PackUnitPhotosButton
+              unitId={unitId}
+              filteredDefectIds={filtered.map((d) => d.id)}
+              filterLabel={
+                quickStatus === 'all'
+                  ? undefined
+                  : tabs.find((t) => t.key === quickStatus)?.label
+              }
+              style={{ width: '100%' }}
+            />
           </div>
         )}
 

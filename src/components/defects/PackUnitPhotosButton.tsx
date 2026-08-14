@@ -9,42 +9,78 @@ import {
 import { Modal } from '../ui/Modal'
 import { TitleHint } from '../ui/TitleHint'
 
-/** 打包並下載該戶所有缺失圖片（ZIP） */
+type PackScope = 'all' | 'filtered'
+
+/** 打包並下載本戶圖片（全部或目前篩選）成 ZIP */
 export function PackUnitPhotosButton({
   unitId,
+  filteredDefectIds,
+  filterLabel,
   variant = 'ghost',
   style,
 }: {
   unitId: string
+  /** 目前列表／篩選後的缺失 id；用於「打包已篩選」 */
+  filteredDefectIds?: string[]
+  /** 目前篩選名稱，例如「待改善」；未傳或「全部」時不顯示篩選選項 */
+  filterLabel?: string
   variant?: 'primary' | 'ghost'
   style?: CSSProperties
 }) {
   const project = useCurrentProject()
-  const [open, setOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number; current?: string } | null>(
     null,
   )
   const [resultMsg, setResultMsg] = useState<string | null>(null)
+  const [packingTitle, setPackingTitle] = useState('打包本戶圖片')
 
-  const photoCount = useProjectStore((s) => countUnitPhotos(s, unitId))
+  const allCount = useProjectStore((s) => countUnitPhotos(s, unitId))
+  const filteredCount = useProjectStore((s) =>
+    filteredDefectIds?.length
+      ? countUnitPhotos(s, unitId, filteredDefectIds)
+      : 0,
+  )
 
-  async function runPack() {
+  const filterActive = Boolean(filterLabel && filteredDefectIds)
+  const canPackAnything = allCount > 0
+
+  async function runPack(scope: PackScope) {
     if (busy) return
-    if (photoCount <= 0) {
-      window.alert('此戶目前沒有可打包的圖片')
+    const defectIds = scope === 'filtered' ? filteredDefectIds : undefined
+    const scopeLabel = scope === 'filtered' ? filterLabel : undefined
+    const expected =
+      scope === 'filtered'
+        ? countUnitPhotos(useProjectStore.getState(), unitId, defectIds)
+        : allCount
+
+    if (expected <= 0) {
+      window.alert(
+        scope === 'filtered'
+          ? '目前篩選結果沒有可打包的圖片'
+          : '此戶目前沒有可打包的圖片',
+      )
       return
     }
-    setOpen(true)
+
+    setPickerOpen(false)
+    setPackingTitle(
+      scope === 'filtered' && filterLabel
+        ? `打包已篩選（${filterLabel}）`
+        : '打包本戶圖片',
+    )
     setBusy(true)
     setResultMsg(null)
-    setProgress({ done: 0, total: photoCount, current: '準備中…' })
+    setProgress({ done: 0, total: expected, current: '準備中…' })
     try {
       const state = useProjectStore.getState()
       const res = await downloadUnitPhotosZip({
         state,
         unitId,
         projectName: project?.name ?? state.projectName,
+        defectIds,
+        scopeLabel,
         onProgress: setProgress,
       })
       setResultMsg(
@@ -60,32 +96,48 @@ export function PackUnitPhotosButton({
     }
   }
 
+  function openPickerOrPack() {
+    if (busy || !canPackAnything) {
+      if (!canPackAnything) window.alert('此戶目前沒有可打包的圖片')
+      return
+    }
+    if (filterActive) {
+      setPickerOpen(true)
+      return
+    }
+    void runPack('all')
+  }
+
+  const showProgressModal = busy || Boolean(resultMsg)
+
   return (
     <>
       <button
         type="button"
         className={`btn btn-${variant}`}
         style={style}
-        disabled={busy || photoCount <= 0}
+        disabled={busy || !canPackAnything}
         title={
-          photoCount > 0
-            ? `打包本戶全部圖片（${photoCount} 張）成 ZIP 下載`
+          canPackAnything
+            ? filterActive
+              ? `可選擇打包本戶全部或目前篩選「${filterLabel}」`
+              : `打包本戶全部圖片（${allCount} 張）成 ZIP 下載`
             : '此戶尚無可打包圖片'
         }
-        onClick={() => void runPack()}
+        onClick={openPickerOrPack}
       >
         <Archive size={16} />
-        {busy ? '打包中…' : `打包本戶圖片${photoCount > 0 ? `（${photoCount}）` : ''}`}
+        {busy
+          ? '打包中…'
+          : filterActive
+            ? `打包照片（全部 ${allCount}／篩選 ${filteredCount}）`
+            : `打包本戶圖片${allCount > 0 ? `（${allCount}）` : ''}`}
       </button>
 
-      {open && (
+      {pickerOpen && !busy && !resultMsg && (
         <Modal
-          onClose={() => {
-            if (busy) return
-            setOpen(false)
-            setResultMsg(null)
-          }}
-          aria-label="打包本戶圖片"
+          onClose={() => setPickerOpen(false)}
+          aria-label="選擇打包範圍"
           variant="center"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
@@ -93,19 +145,70 @@ export function PackUnitPhotosButton({
               as="h3"
               className="serif"
               style={{ margin: 0, fontSize: 20 }}
-              hint="會把此戶所有缺失的圖面位置與現況照片打包成一個 ZIP 檔下載。"
+              hint="可打包本戶全部缺失的照片，或只打包目前狀態篩選後的項目。"
             >
-              打包本戶圖片
+              選擇打包範圍
+            </TitleHint>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="關閉"
+              onClick={() => setPickerOpen(false)}
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ width: '100%' }}
+              disabled={allCount <= 0}
+              onClick={() => void runPack('all')}
+            >
+              <Archive size={16} />
+              打包本戶全部{allCount > 0 ? `（${allCount} 張）` : ''}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ width: '100%' }}
+              disabled={filteredCount <= 0}
+              onClick={() => void runPack('filtered')}
+            >
+              <Archive size={16} />
+              打包已篩選「{filterLabel}」
+              {filteredCount > 0 ? `（${filteredCount} 張）` : '（無圖）'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {showProgressModal && (
+        <Modal
+          onClose={() => {
+            if (busy) return
+            setResultMsg(null)
+          }}
+          aria-label={packingTitle}
+          variant="center"
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
+            <TitleHint
+              as="h3"
+              className="serif"
+              style={{ margin: 0, fontSize: 20 }}
+              hint="會把選定範圍內缺失的圖面位置與現況照片打包成一個 ZIP 檔下載。"
+            >
+              {packingTitle}
             </TitleHint>
             {!busy && (
               <button
                 type="button"
                 className="icon-btn"
                 aria-label="關閉"
-                onClick={() => {
-                  setOpen(false)
-                  setResultMsg(null)
-                }}
+                onClick={() => setResultMsg(null)}
               >
                 <X size={18} />
               </button>
@@ -152,10 +255,7 @@ export function PackUnitPhotosButton({
               type="button"
               className="btn btn-ghost"
               style={{ width: '100%', marginTop: 14 }}
-              onClick={() => {
-                setOpen(false)
-                setResultMsg(null)
-              }}
+              onClick={() => setResultMsg(null)}
             >
               關閉
             </button>
