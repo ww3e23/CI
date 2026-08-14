@@ -126,8 +126,24 @@ function mergeDirectory(
   return canonicalizeDirectory({
     users: [...local.users, ...remote.users],
     members: [...local.members, ...remote.members],
-    projects: [...local.projects, ...remote.projects],
+    // 雲端若已有專案清單，以雲端為準，避免 Progress 殘留本機專案蓋掉查驗
+    projects: remote.projects.length > 0 ? remote.projects : [...local.projects, ...remote.projects],
   })
+}
+
+/** 若目前專案不在可用清單，切到第一個可存取的雲端專案 */
+function ensureCurrentProjectAccessible(get: () => AuthState & AuthActions) {
+  const { currentUserId, currentProjectId, projects, members, users } = get()
+  const me = users.find((u) => u.id === currentUserId)
+  if (!me) return
+  const accessible = projects.filter(
+    (p) =>
+      (p.status === 'active' || me.systemAdmin) &&
+      userCanAccessProject(me, p.id, members, users),
+  )
+  if (accessible.length === 0) return
+  if (currentProjectId && accessible.some((p) => p.id === currentProjectId)) return
+  get().switchProject(accessible[0]!.id)
 }
 
 function membershipsForUser(
@@ -362,14 +378,25 @@ export const useAuthStore = create<AuthState & AuthActions>()(
           useProjectStore.getState().resetDemoData()
         }
 
-        // 登入後把本機帳號目錄推上雲端（讓後台剛建的帳號其他裝置也能用）
+        // 登入後以雲端專案為準，並把帳號目錄回寫（不推本機幽靈專案）
         if (isFirebaseConfigured()) {
+          ensureCurrentProjectAccessible(get)
           const snapshot = get()
           void (async () => {
             try {
+              const remote = await pullAuthDirectoryWithRetry(2)
+              const remoteIds = new Set((remote?.projects ?? []).map((p) => p.id))
               await Promise.all(snapshot.users.map((u) => syncUserAccount(u)))
-              await Promise.all(snapshot.members.map((m) => syncProjectMember(m)))
-              await Promise.all(snapshot.projects.map((p) => syncProjectMeta(p)))
+              await Promise.all(
+                snapshot.members
+                  .filter((m) => remoteIds.size === 0 || remoteIds.has(m.projectId))
+                  .map((m) => syncProjectMember(m)),
+              )
+              await Promise.all(
+                snapshot.projects
+                  .filter((p) => remoteIds.has(p.id))
+                  .map((p) => syncProjectMeta(p)),
+              )
             } catch {
               /* ignore */
             }
@@ -650,28 +677,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         const permissionHint =
           'Firestore 規則未允許讀寫。請到 Firebase Console → 專案 ci-inspection → Firestore → 規則，貼上本專案 firestore.rules 後按「發布」，再重新登入並同步。'
 
-        // 先把本機目錄推上雲端，再拉回來（電腦建的資料可到手機）
-        try {
-          const snap = get()
-          await Promise.all(snap.users.map((u) => syncUserAccount(u)))
-          await Promise.all(
-            snap.members.map((m) => {
-              const u = snap.users.find((x) => x.id === m.userId)
-              return syncProjectMember({
-                ...m,
-                userEmail: m.userEmail || (u ? normalizeLoginId(u.email) : undefined),
-              })
-            }),
-          )
-          await Promise.all(snap.projects.map((p) => syncProjectMeta(p)))
-        } catch (err) {
-          console.warn('[refreshDirectory] push failed', err)
-          const msg = err instanceof Error ? err.message : String(err)
-          if (/permission|insufficient/i.test(msg)) {
-            return { ok: false, error: permissionHint }
-          }
-        }
-
+        // 先拉雲端專案清單（避免把 Progress 殘留本機專案推上去污染查驗）
         const remote = await pullAuthDirectoryWithRetry(4)
         if (!remote) {
           return {
@@ -679,6 +685,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             error: `${permissionHint}（若已發布仍失敗，請確認網路與已用 Email 登入 Firebase）`,
           }
         }
+
         const merged = mergeDirectory(
           {
             users: get().users,
@@ -704,6 +711,36 @@ export const useAuthStore = create<AuthState & AuthActions>()(
           members: nextMembers,
           projects: merged.projects,
         })
+        ensureCurrentProjectAccessible(get)
+
+        // 只回寫「雲端已有」的帳號／成員／專案，不把本機幽靈專案推上去
+        try {
+          const snap = get()
+          const remoteProjectIds = new Set(remote.projects.map((p) => p.id))
+          await Promise.all(snap.users.map((u) => syncUserAccount(u)))
+          await Promise.all(
+            snap.members
+              .filter((m) => remoteProjectIds.has(m.projectId))
+              .map((m) => {
+                const u = snap.users.find((x) => x.id === m.userId)
+                return syncProjectMember({
+                  ...m,
+                  userEmail: m.userEmail || (u ? normalizeLoginId(u.email) : undefined),
+                })
+              }),
+          )
+          await Promise.all(
+            snap.projects
+              .filter((p) => remoteProjectIds.has(p.id))
+              .map((p) => syncProjectMeta(p)),
+          )
+        } catch (err) {
+          console.warn('[refreshDirectory] push failed', err)
+          const msg = err instanceof Error ? err.message : String(err)
+          if (/permission|insufficient/i.test(msg)) {
+            return { ok: false, error: permissionHint }
+          }
+        }
 
         const currentId = get().currentUserId
         const currentUser = get().users.find((u) => u.id === currentId)

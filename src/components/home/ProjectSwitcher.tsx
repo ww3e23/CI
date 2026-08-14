@@ -47,23 +47,31 @@ export function ProjectSwitcher({ onClose }: { onClose: () => void }) {
         切換專案
       </TitleHint>
 
-      {accessible.length === 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{ width: '100%' }}
-            onClick={() => {
-              void (async () => {
-                const r = await refreshDirectory()
-                if (!r.ok) alert(r.error || '同步失敗')
-              })()
-            }}
-          >
-            重新同步專案
-          </button>
-        </div>
-      )}
+      <div style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          style={{ width: '100%' }}
+          onClick={() => {
+            void (async () => {
+              const r = await refreshDirectory()
+              if (!r.ok) alert(r.error || '同步失敗')
+              else {
+                const p = useAuthStore.getState().projects.find(
+                  (x) => x.id === useAuthStore.getState().currentProjectId,
+                )
+                alert(
+                  p
+                    ? `已同步雲端專案，目前：${p.name}`
+                    : '已同步雲端專案目錄',
+                )
+              }
+            })()
+          }}
+        >
+          重新同步雲端專案
+        </button>
+      </div>
 
       <div style={{ display: 'grid', gap: 10 }}>
         {accessible.map((p) => {

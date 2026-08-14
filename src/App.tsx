@@ -14,7 +14,6 @@ import { useAuthStore } from './store/useAuthStore'
 import { TitleHint } from './components/ui/TitleHint'
 import { useProjectStore } from './store/useProjectStore'
 import { isFirebaseConfigured } from './lib/firebase'
-import { syncProjectMember, syncProjectMeta, syncUserAccount } from './services/cloudSync'
 
 function useHashRoute() {
   const [hash, setHash] = useState(() => window.location.hash || '#/')
@@ -38,25 +37,26 @@ export default function App() {
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
 
-  // 開 App／還原工作階段時，從雲端把棟別／缺失拉回來；並補傳尚未上雲的照片
+  // 開 App／還原工作階段時：先以雲端專案目錄為準，再拉棟別／缺失；並補傳尚未上雲的照片
   useEffect(() => {
-    if (!currentUserId || !currentProjectId) return
-    if (isFirebaseConfigured()) {
-      void useProjectStore.getState().hydrateFromCloud(currentProjectId)
-      // 把本機仍有的專案目錄推回雲端（例如他機誤刪、手機尚有 8-2 可救回）
-      const snap = useAuthStore.getState()
-      void (async () => {
-        try {
-          await Promise.all(snap.users.map((u) => syncUserAccount(u)))
-          await Promise.all(snap.members.map((m) => syncProjectMember(m)))
-          await Promise.all(snap.projects.map((p) => syncProjectMeta(p)))
-        } catch {
-          /* ignore */
+    if (!currentUserId) return
+
+    let cancelled = false
+    void (async () => {
+      if (isFirebaseConfigured()) {
+        const r = await useAuthStore.getState().refreshDirectory()
+        if (cancelled) return
+        if (!r.ok) {
+          console.warn('[App] refreshDirectory', r.error)
         }
-      })()
-    } else {
-      void useProjectStore.getState().restorePendingMediaToMemory()
-    }
+        const projectId = useAuthStore.getState().currentProjectId
+        if (projectId) {
+          await useProjectStore.getState().hydrateFromCloud(projectId)
+        }
+      } else {
+        void useProjectStore.getState().restorePendingMediaToMemory()
+      }
+    })()
 
     const flush = () => {
       void useProjectStore.getState().flushPendingMediaUploads()
@@ -67,6 +67,7 @@ export default function App() {
     window.addEventListener('online', flush)
     document.addEventListener('visibilitychange', onVis)
     return () => {
+      cancelled = true
       window.removeEventListener('online', flush)
       document.removeEventListener('visibilitychange', onVis)
     }
