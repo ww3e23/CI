@@ -9,6 +9,7 @@ import type {
 } from '../types'
 import { sortFloorsDesc } from './floors'
 import { naKey } from './floors'
+import { codesForFloor, columnCodesForBuilding } from './units'
 
 export function totalChecklistItems(state: ProjectState): number {
   return state.categories
@@ -182,9 +183,10 @@ export function buildMatrix(state: ProjectState): {
 
   for (const b of buildings) {
     buildingStats.set(b.id, { done: 0, total: 0, startedDone: 0, startedTotal: 0 })
+    const columnCodes = columnCodesForBuilding(b)
     for (const floor of floors) {
       if (!b.floors.includes(floor)) {
-        for (const code of b.unitCodes) {
+        for (const code of columnCodes) {
           cells.push({
             unitId: null,
             buildingId: b.id,
@@ -201,7 +203,25 @@ export function buildMatrix(state: ProjectState): {
         }
         continue
       }
-      for (const code of b.unitCodes) {
+      const floorCodeSet = new Set(codesForFloor(b, floor))
+      for (const code of columnCodes) {
+        // 此層未設定該戶別 → 不適用（各層戶別不同時常見）
+        if (!floorCodeSet.has(code)) {
+          cells.push({
+            unitId: null,
+            buildingId: b.id,
+            buildingName: b.name,
+            floor,
+            unitCode: code,
+            status: 'na',
+            checkedItems: 0,
+            totalItems: 0,
+            defectCount: 0,
+            percent: 0,
+          })
+          naCount += 1
+          continue
+        }
         const syntheticId = `${b.id}_${floor}_${code}`
         const unit =
           unitByKey.get(unitLookupKey(b.id, floor, code)) ??

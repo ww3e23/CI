@@ -1,6 +1,7 @@
 import type { Defect, ProjectState } from '../types'
 import { buildMatrix, defectsByStatus, statusLabel } from './progress'
 import { escapeHtml } from './escapeHtml'
+import { columnCodesForBuilding } from './units'
 
 type ReportInput = {
   projectName: string
@@ -89,7 +90,7 @@ export function buildInspectionReportHtml(input: ReportInput): string {
     let chunk: BuildingSlice[] = []
     let units = 0
     for (const b of matrix.buildings) {
-      const n = Math.max(1, b.unitCodes.length)
+      const n = Math.max(1, columnCodesForBuilding(b).length)
       if (chunk.length > 0 && units + n > MAX_MATRIX_UNITS) {
         buildingChunks.push(chunk)
         chunk = []
@@ -107,21 +108,23 @@ export function buildInspectionReportHtml(input: ReportInput): string {
       : buildingChunks
           .map((buildings, chunkIdx) => {
             const unitHeader = buildings
-              .map(
-                (b) =>
-                  `<th colspan="${b.unitCodes.length}">${escapeHtml(b.name)}</th>`,
-              )
+              .map((b) => {
+                const codes = columnCodesForBuilding(b)
+                return `<th colspan="${Math.max(1, codes.length)}">${escapeHtml(b.name)}</th>`
+              })
               .join('')
             const unitCodes = buildings
               .flatMap((b) =>
-                b.unitCodes.map((c) => `<th class="unit">${escapeHtml(c)}</th>`),
+                columnCodesForBuilding(b).map(
+                  (c) => `<th class="unit">${escapeHtml(c)}</th>`,
+                ),
               )
               .join('')
             const rows = matrix.floors
               .map((floor) => {
                 const cells = buildings
                   .flatMap((b) =>
-                    b.unitCodes.map((code) => {
+                    columnCodesForBuilding(b).map((code) => {
                       const cell = matrix.cells.find(
                         (c) =>
                           c.buildingId === b.id &&

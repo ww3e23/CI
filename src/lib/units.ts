@@ -15,6 +15,33 @@ export function hasPerFloorUnitCodes(b: BuildingRule): boolean {
   return Object.values(b.floorUnitCodes).some((codes) => Array.isArray(codes) && codes.length > 0)
 }
 
+/**
+ * 矩陣欄位用的戶別清單：合併預設與各層覆寫（去重，保留出現順序）。
+ * 某層沒有的戶別在矩陣中顯示為「不適用」。
+ */
+export function columnCodesForBuilding(b: BuildingRule): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  const push = (codes: string[] | undefined) => {
+    if (!codes) return
+    for (const raw of codes) {
+      const c = String(raw || '').trim()
+      if (!c || seen.has(c)) continue
+      seen.add(c)
+      out.push(c)
+    }
+  }
+  push(b.unitCodes)
+  if (b.floorUnitCodes) {
+    for (const floor of b.floors) push(b.floorUnitCodes[floor])
+    for (const [floor, codes] of Object.entries(b.floorUnitCodes)) {
+      if (b.floors.includes(floor)) continue
+      push(codes)
+    }
+  }
+  return out
+}
+
 /** 依棟別規則展開全部戶別（不需一戶一戶手動新增） */
 export function expandUnitsFromBuildings(buildings: BuildingRule[]): Unit[] {
   const units: Unit[] = []

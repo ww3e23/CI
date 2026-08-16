@@ -10,6 +10,7 @@ import {
   sanitizeAreaList,
 } from '../../lib/areas'
 import { sortFloorsDesc } from '../../lib/floors'
+import { codesForFloor, columnCodesForBuilding } from '../../lib/units'
 import { createId } from '../../lib/id'
 import { Modal } from '../ui/Modal'
 import { TitleHint } from '../ui/TitleHint'
@@ -75,7 +76,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
     () => (building ? sortFloorsDesc(building.floors) : []),
     [building],
   )
-  const unitCodes = building?.unitCodes ?? []
+  const unitCodes = building ? columnCodesForBuilding(building) : []
 
   const selectedTemplate =
     areaTemplates.find((t) => t.id === selectedTemplateId) ?? null
@@ -173,7 +174,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
   }
 
   function toggleFloor(b: BuildingRule, floor: string) {
-    const keys = b.unitCodes
+    const keys = codesForFloor(b, floor)
       .map((code) => unitKey(b.id, floor, code))
       .filter((k) => unitByKey.has(k))
     if (keys.length === 0) return
@@ -201,7 +202,7 @@ export function BatchAreasApplySheet({ onClose }: { onClose: () => void }) {
   function selectWholeBuilding(b: BuildingRule) {
     const keys: string[] = []
     for (const floor of b.floors) {
-      for (const code of b.unitCodes) {
+      for (const code of codesForFloor(b, floor)) {
         const k = unitKey(b.id, floor, code)
         if (unitByKey.has(k)) keys.push(k)
       }

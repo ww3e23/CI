@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
-import { countActiveUnits, newBuildingDraft, summarizeBuilding } from '../../lib/units'
+import { countActiveUnits, hasPerFloorUnitCodes, newBuildingDraft, summarizeBuilding } from '../../lib/units'
 import { getUnitAreas } from '../../lib/areas'
 import { BuildingEditor } from './BuildingEditor'
 import { TemplateEditor } from './TemplateEditor'
@@ -154,7 +154,9 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {b.unitCodes.join('、')} · {countActiveUnits(b)} 戶
+                    {hasPerFloorUnitCodes(b)
+                      ? `各層戶別不同 · ${countActiveUnits(b)} 戶`
+                      : `${b.unitCodes.join('、')} · ${countActiveUnits(b)} 戶`}
                   </div>
                 </div>
                 <button

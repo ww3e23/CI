@@ -10,6 +10,7 @@ import {
   unitHasBeenInspected,
 } from '../../lib/excelReportJiaShanLin'
 import { sortFloorsDesc } from '../../lib/floors'
+import { codesForFloor, columnCodesForBuilding } from '../../lib/units'
 import type { BuildingRule, ProgressCell, Unit } from '../../types'
 import { ReportPreview } from './ReportPreview'
 import { PhotoReportPreview } from './PhotoReportPreview'
@@ -131,6 +132,15 @@ export function ReportsPage() {
     () => (pickBuilding ? sortFloorsDesc(pickBuilding.floors) : []),
     [pickBuilding],
   )
+  const pickColumnCodes = useMemo(
+    () => (pickBuilding ? columnCodesForBuilding(pickBuilding) : []),
+    [pickBuilding],
+  )
+  const buildingColumnCodes = useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const b of matrix.buildings) m.set(b.id, columnCodesForBuilding(b))
+    return m
+  }, [matrix.buildings])
 
   const pickedIds = useMemo(() => {
     const ids: string[] = []
@@ -242,7 +252,7 @@ export function ReportsPage() {
   }
 
   function togglePickFloor(b: BuildingRule, floor: string) {
-    const keys = b.unitCodes
+    const keys = codesForFloor(b, floor)
       .map((code) => unitKey(b.id, floor, code))
       .filter((k) => unitByKey.has(k))
     if (keys.length === 0) return
@@ -580,7 +590,7 @@ export function ReportsPage() {
                 <thead>
                   <tr>
                     <th className="floor-cell">樓層</th>
-                    {pickBuilding.unitCodes.map((code) => (
+                    {pickColumnCodes.map((code) => (
                       <th key={code}>
                         <button
                           type="button"
@@ -607,7 +617,7 @@ export function ReportsPage() {
                           {floor}
                         </button>
                       </td>
-                      {pickBuilding.unitCodes.map((code) => {
+                      {pickColumnCodes.map((code) => {
                         const key = unitKey(pickBuilding.id, floor, code)
                         const unit = unitByKey.get(key)
                         const on = Boolean(picked[key])
@@ -738,31 +748,36 @@ export function ReportsPage() {
           <thead>
             <tr>
               <th className="floor-cell" rowSpan={2}>樓層</th>
-              {matrix.buildings.map((b) => (
-                <th
-                  key={b.id}
-                  data-matrix-building={b.id}
-                  colSpan={b.unitCodes.length}
-                  style={{ color: 'var(--ink)', paddingBottom: 2 }}
-                >
-                  {b.name}
-                </th>
-              ))}
+              {matrix.buildings.map((b) => {
+                const codes = buildingColumnCodes.get(b.id) ?? columnCodesForBuilding(b)
+                return (
+                  <th
+                    key={b.id}
+                    data-matrix-building={b.id}
+                    colSpan={Math.max(1, codes.length)}
+                    style={{ color: 'var(--ink)', paddingBottom: 2 }}
+                  >
+                    {b.name}
+                  </th>
+                )
+              })}
             </tr>
             <tr>
-              {matrix.buildings.map((b) =>
-                b.unitCodes.map((code) => (
+              {matrix.buildings.map((b) => {
+                const codes = buildingColumnCodes.get(b.id) ?? columnCodesForBuilding(b)
+                return codes.map((code) => (
                   <th key={`${b.id}-${code}`} style={{ color: 'var(--ink-soft)' }}>{code}</th>
-                )),
-              )}
+                ))
+              })}
             </tr>
           </thead>
           <tbody>
             {matrix.floors.map((floor) => (
               <tr key={floor}>
                 <td className="floor-cell">{floor}</td>
-                {matrix.buildings.map((b) =>
-                  b.unitCodes.map((code) => {
+                {matrix.buildings.map((b) => {
+                  const codes = buildingColumnCodes.get(b.id) ?? columnCodesForBuilding(b)
+                  return codes.map((code) => {
                     const cell = cellMap.get(`${b.id}|${floor}|${code}`)
                     const status = cell?.status ?? 'na'
                     const cls =
@@ -804,8 +819,8 @@ export function ReportsPage() {
                         </button>
                       </td>
                     )
-                  }),
-                )}
+                  })
+                })}
               </tr>
             ))}
           </tbody>
