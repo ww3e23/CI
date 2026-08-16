@@ -11,7 +11,7 @@ import type {
   SyncState,
 } from '../types'
 import { buildDefaultChecklist } from '../data/defaultChecklist'
-import { cloneActiveChecklist } from '../lib/cloneChecklist'
+import { cloneActiveChecklist, dedupeActiveCategoriesByName, retireActiveChecklist } from '../lib/cloneChecklist'
 import { createEmptyProjectState, createProjectBundles } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
@@ -1295,12 +1295,14 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         }
         const { categories, checklistItems } = buildDefaultChecklist()
         if (mode === 'replace') {
-          // 保留已停用舊項（若有缺失關聯），再疊上預設
-          const keptCats = state.categories.filter((c) => !c.active)
-          const keptItems = state.checklistItems.filter((i) => !i.active)
+          const retired = retireActiveChecklist(state.categories, state.checklistItems)
+          const next = dedupeActiveCategoriesByName(
+            [...categories, ...retired.categories],
+            [...checklistItems, ...retired.checklistItems],
+          )
           set({
-            categories: [...categories, ...keptCats],
-            checklistItems: [...checklistItems, ...keptItems],
+            categories: next.categories,
+            checklistItems: next.checklistItems,
           })
         } else {
           set({ categories, checklistItems })
@@ -1342,12 +1344,15 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           return { ok: false, reason: '來源專案沒有可用的查驗大項／細項' }
         }
 
-        if (mode === 'replace') {
-          const keptCats = state.categories.filter((c) => !c.active)
-          const keptItems = state.checklistItems.filter((i) => !i.active)
+        if (mode === 'replace' || hasActive) {
+          const retired = retireActiveChecklist(state.categories, state.checklistItems)
+          const next = dedupeActiveCategoriesByName(
+            [...cloned.categories, ...retired.categories],
+            [...cloned.checklistItems, ...retired.checklistItems],
+          )
           set({
-            categories: [...cloned.categories, ...keptCats],
-            checklistItems: [...cloned.checklistItems, ...keptItems],
+            categories: next.categories,
+            checklistItems: next.checklistItems,
           })
         } else {
           set({
@@ -1356,6 +1361,8 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           })
         }
         afterProjectChange(get, set)
+        // 立刻推結構，避免雲端舊大項又合併回本機造成重複
+        void get().pushStructureToCloud()
         return {
           ok: true,
           importedCategories: cloned.categories.length,
@@ -1435,13 +1442,22 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               : (get().bundles[projectId] ?? createEmptyProjectState(projectId))
 
           const merged = mergeProjectStates(local, remote)
+          const healed = dedupeActiveCategoriesByName(
+            merged.categories,
+            merged.checklistItems,
+          )
+          const nextState = {
+            ...merged,
+            categories: healed.categories,
+            checklistItems: healed.checklistItems,
+          }
 
           set({
-            bundles: { ...get().bundles, [projectId]: structuredClone(merged) },
+            bundles: { ...get().bundles, [projectId]: structuredClone(nextState) },
           })
 
           if (get().activeProjectId === projectId) {
-            set({ ...structuredClone(merged), activeProjectId: projectId })
+            set({ ...structuredClone(nextState), activeProjectId: projectId })
           }
 
           // 合併後再掛一次佇列，確保 data URL 不被雲端空欄位蓋掉
@@ -1450,7 +1466,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
 
           // 舊「現場查驗」佔位名 → 真實查驗人，並推回雲端
           const filled = get().backfillActorNames()
-          if (filled > 0) {
+          if (filled > 0 || healed.deactivated > 0) {
             scheduleCloudSync(get)
           }
 

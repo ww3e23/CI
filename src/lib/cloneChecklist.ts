@@ -44,3 +44,67 @@ export function cloneActiveChecklist(source: {
 
   return { categories, checklistItems }
 }
+
+/**
+ * 覆蓋套用時：舊的作用中大項／細項改為停用（保留 id，避免缺失關聯斷掉、也避免雲端合併又把舊項加回成重複）。
+ */
+export function retireActiveChecklist(
+  categories: ChecklistCategory[],
+  checklistItems: ChecklistItem[],
+): { categories: ChecklistCategory[]; checklistItems: ChecklistItem[] } {
+  return {
+    categories: categories.map((c) => (c.active ? { ...c, active: false } : c)),
+    checklistItems: checklistItems.map((i) => (i.active ? { ...i, active: false } : i)),
+  }
+}
+
+/**
+ * 同名且皆為作用中的大項只留一組（細項較多者優先），其餘停用。
+ * 用來清掉「匯入後又與雲端舊範本合併」造成的重複門／窗。
+ */
+export function dedupeActiveCategoriesByName(
+  categories: ChecklistCategory[],
+  checklistItems: ChecklistItem[],
+): { categories: ChecklistCategory[]; checklistItems: ChecklistItem[]; deactivated: number } {
+  const activeCats = categories.filter((c) => c.active)
+  const groups = new Map<string, ChecklistCategory[]>()
+  for (const c of activeCats) {
+    const key = c.name.trim().toLocaleLowerCase('zh-Hant')
+    const list = groups.get(key) ?? []
+    list.push(c)
+    groups.set(key, list)
+  }
+
+  const deactivateCatIds = new Set<string>()
+  for (const list of groups.values()) {
+    if (list.length <= 1) continue
+    const ranked = [...list].sort((a, b) => {
+      const aCount = checklistItems.filter((i) => i.categoryId === a.id && i.active).length
+      const bCount = checklistItems.filter((i) => i.categoryId === b.id && i.active).length
+      if (bCount !== aCount) return bCount - aCount
+      return a.sortOrder - b.sortOrder
+    })
+    for (const c of ranked.slice(1)) deactivateCatIds.add(c.id)
+  }
+
+  if (deactivateCatIds.size === 0) {
+    return { categories, checklistItems, deactivated: 0 }
+  }
+
+  const nextCats = categories.map((c) =>
+    deactivateCatIds.has(c.id) ? { ...c, active: false } : c,
+  )
+  const nextItems = checklistItems.map((i) =>
+    deactivateCatIds.has(i.categoryId) && i.active ? { ...i, active: false } : i,
+  )
+  for (const c of nextCats) {
+    if (!c.active) continue
+    c.itemCount = nextItems.filter((i) => i.categoryId === c.id && i.active).length
+  }
+
+  return {
+    categories: nextCats,
+    checklistItems: nextItems,
+    deactivated: deactivateCatIds.size,
+  }
+}

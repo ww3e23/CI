@@ -27,6 +27,7 @@ import {
   mergeActivityLists,
   mergeDefectActorFields,
 } from '../lib/backfillActors'
+import { dedupeActiveCategoriesByName } from '../lib/cloneChecklist'
 
 const SITE_META_PATH = ['meta', 'site'] as const
 
@@ -583,12 +584,13 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
   for (const b of secondBuildings) if (!buildingMap.has(b.id)) buildingMap.set(b.id, b)
 
   const catMap = new Map<string, ChecklistCategory>()
-  for (const c of local.categories) catMap.set(c.id, c)
+  // 本機優先：匯入後停用的舊大項不要被雲端舊「作用中」狀態蓋回
   for (const c of remote.categories) catMap.set(c.id, c)
+  for (const c of local.categories) catMap.set(c.id, c)
 
   const itemMap = new Map<string, ChecklistItem>()
-  for (const i of local.checklistItems) itemMap.set(i.id, i)
   for (const i of remote.checklistItems) itemMap.set(i.id, i)
+  for (const i of local.checklistItems) itemMap.set(i.id, i)
 
   const defectMap = new Map<string, Defect>()
   for (const d of local.defects) defectMap.set(d.id, d)
@@ -627,12 +629,17 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
     defaultPlanPhotoUrl: unitPlans[u.id] || undefined,
   }))
 
+  const checklist = dedupeActiveCategoriesByName(
+    [...catMap.values()].sort((a, b) => a.sortOrder - b.sortOrder),
+    [...itemMap.values()].sort((a, b) => a.sortOrder - b.sortOrder),
+  )
+
   return {
     projectName: remote.projectName || local.projectName,
     buildings,
     units,
-    categories: [...catMap.values()].sort((a, b) => a.sortOrder - b.sortOrder),
-    checklistItems: [...itemMap.values()].sort((a, b) => a.sortOrder - b.sortOrder),
+    categories: checklist.categories,
+    checklistItems: checklist.checklistItems,
     defects: mergedDefects.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
     unitCheckedCount: { ...local.unitCheckedCount, ...remote.unitCheckedCount },
     unitCategoryDone: mergeUnitCategoryDone(
