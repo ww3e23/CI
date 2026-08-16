@@ -166,24 +166,26 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
               </div>
             ))}
 
-            <button
-              type="button"
-              className="btn-dashed"
-              style={{ margin: 12, marginTop: 8 }}
-              onClick={() => {
-                const nextIndex = activeBuildings.length
-                const letter = String.fromCharCode(65 + (nextIndex % 26))
-                setEditing(
-                  newBuildingDraft({
-                    name: `${letter}棟`,
-                    unitCodes: [`${letter}1`, `${letter}2`, `${letter}3`],
-                    sortOrder: nextIndex,
-                  }),
-                )
-              }}
-            >
-              + 新增棟別
-            </button>
+            <div style={{ padding: '8px 12px 12px' }}>
+              <button
+                type="button"
+                className="btn-dashed"
+                style={{ width: '100%' }}
+                onClick={() => {
+                  const nextIndex = activeBuildings.length
+                  const letter = String.fromCharCode(65 + (nextIndex % 26))
+                  setEditing(
+                    newBuildingDraft({
+                      name: `${letter}棟`,
+                      unitCodes: [`${letter}1`, `${letter}2`, `${letter}3`],
+                      sortOrder: nextIndex,
+                    }),
+                  )
+                }}
+              >
+                + 新增棟別
+              </button>
+            </div>
           </div>
         )}
 
