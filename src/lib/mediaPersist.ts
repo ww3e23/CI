@@ -25,6 +25,8 @@ export function lightenProjectState(state: ProjectState): ProjectState {
   return {
     ...state,
     defects: state.defects.map(lightenDefect),
+    sitePlanSourceUrl: persistableMediaUrl(state.sitePlanSourceUrl),
+    sitePlanMapUrl: persistableMediaUrl(state.sitePlanMapUrl),
   }
 }
 

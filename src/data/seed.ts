@@ -19,6 +19,8 @@ export function createEmptyProjectState(name = '未命名專案'): ProjectState 
     recentUnitIds: [],
     areas: [...DEFAULT_AREAS],
     areaTemplates: [],
+    sitePlanSourceUrl: undefined,
+    sitePlanMapUrl: undefined,
   }
 }
 

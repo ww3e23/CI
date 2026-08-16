@@ -398,6 +398,8 @@ export async function pushProjectState(
       unitAreas: unitAreasMap(state.units),
       unitAreaTemplates: unitAreaTemplateMap(state.units),
       unitPlanPhotos: unitPlanPhotosMap(state.units),
+      sitePlanSourceUrl: state.sitePlanSourceUrl ?? null,
+      sitePlanMapUrl: state.sitePlanMapUrl ?? null,
       currentUnitId: state.currentUnitId,
       recentUnitIds: state.recentUnitIds,
       updatedAt: serverTimestamp(),
@@ -499,6 +501,8 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
         : [],
       areas: Array.isArray(meta.areas) ? meta.areas.map(String) : [...DEFAULT_AREAS],
       areaTemplates: parseAreaTemplates(meta.areaTemplates),
+      sitePlanSourceUrl: meta.sitePlanSourceUrl ? String(meta.sitePlanSourceUrl) : undefined,
+      sitePlanMapUrl: meta.sitePlanMapUrl ? String(meta.sitePlanMapUrl) : undefined,
       cloudUpdatedAt: meta.clientUpdatedAt ? String(meta.clientUpdatedAt) : undefined,
     }
   } catch (err) {
@@ -671,6 +675,8 @@ export function mergeProjectStates(local: ProjectState, remote: PulledProject): 
       : remote.recentUnitIds,
     areas: local.areas.length ? local.areas : remote.areas,
     areaTemplates: mergeAreaTemplates(local.areaTemplates, remote.areaTemplates),
+    sitePlanSourceUrl: preferMediaUrl(local.sitePlanSourceUrl, remote.sitePlanSourceUrl),
+    sitePlanMapUrl: preferMediaUrl(local.sitePlanMapUrl, remote.sitePlanMapUrl),
   }
 }
 

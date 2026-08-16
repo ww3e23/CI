@@ -13,6 +13,7 @@ import { sortFloorsDesc } from '../../lib/floors'
 import type { BuildingRule, ProgressCell, Unit } from '../../types'
 import { ReportPreview } from './ReportPreview'
 import { PhotoReportPreview } from './PhotoReportPreview'
+import { SitePlanSection } from './SitePlanSection'
 import { TitleHint } from '../ui/TitleHint'
 import { Modal } from '../ui/Modal'
 
@@ -378,6 +379,8 @@ export function ReportsPage() {
           </button>
         </div>
       </header>
+
+      <SitePlanSection />
 
       {reportChooserOpen && (
         <Modal

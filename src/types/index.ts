@@ -149,4 +149,8 @@ export interface ProjectState {
   areas: string[]
   /** 格局區域範本清單 */
   areaTemplates: AreaTemplate[]
+  /** 全區棟別配置圖（原始上傳） */
+  sitePlanSourceUrl?: string
+  /** 全區棟別配置圖（標註後，供報表預覽） */
+  sitePlanMapUrl?: string
 }

@@ -23,7 +23,7 @@ import {
   pullProjectState,
   pushProjectState,
 } from '../services/projectSync'
-import { uploadDefectImages, uploadUnitPlanImage } from '../services/storageUpload'
+import { uploadDefectImages, uploadSitePlanImage, uploadUnitPlanImage } from '../services/storageUpload'
 import {
   autoSyncDefectPhotosToDrive,
   deleteDefectPhotosFromDrive,
@@ -128,6 +128,11 @@ interface ProjectActions {
   }) => { ok: boolean; error?: string; template?: AreaTemplate }
   /** 刪除格局區域範本 */
   deleteAreaTemplate: (templateId: string) => { ok: boolean; error?: string }
+  /** 設定全區棟別配置圖（原始／標註後） */
+  setSitePlanMap: (params: {
+    sourceUrl?: string | null
+    mapUrl?: string | null
+  }) => Promise<{ ok: boolean; error?: string }>
   markUnitChecked: (unitId: string, checked: number) => void
   /** 標記／取消此戶某大項已查畢 */
   setUnitCategoryDone: (unitId: string, categoryId: string, done: boolean) => void
@@ -313,6 +318,8 @@ function snapshotProject(state: ProjectState): ProjectState {
     recentUnitIds: state.recentUnitIds,
     areas: state.areas,
     areaTemplates: state.areaTemplates ?? [],
+    sitePlanSourceUrl: state.sitePlanSourceUrl,
+    sitePlanMapUrl: state.sitePlanMapUrl,
   }
 }
 
@@ -1087,6 +1094,53 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               ? { ...u, areaTemplateId: undefined }
               : u,
           ),
+        })
+        afterProjectChange(get, set)
+        return { ok: true }
+      },
+
+      setSitePlanMap: async ({ sourceUrl, mapUrl }) => {
+        const projectId = get().activeProjectId
+        if (!projectId) return { ok: false, error: '尚未選擇專案' }
+
+        let nextSource =
+          sourceUrl === null
+            ? undefined
+            : sourceUrl !== undefined
+              ? sourceUrl
+              : get().sitePlanSourceUrl
+        let nextMap =
+          mapUrl === null
+            ? undefined
+            : mapUrl !== undefined
+              ? mapUrl
+              : get().sitePlanMapUrl
+
+        try {
+          if (nextSource?.startsWith('data:') && cloudReady()) {
+            const up = await uploadSitePlanImage({
+              projectId,
+              kind: 'source',
+              dataUrl: nextSource,
+            })
+            if (up?.url) nextSource = up.url
+          }
+          if (nextMap?.startsWith('data:') && cloudReady()) {
+            const up = await uploadSitePlanImage({
+              projectId,
+              kind: 'map',
+              dataUrl: nextMap,
+            })
+            if (up?.url) nextMap = up.url
+          }
+        } catch (err) {
+          console.warn('[setSitePlanMap] upload failed', err)
+          return { ok: false, error: '上傳配置圖失敗，請稍後再試' }
+        }
+
+        set({
+          sitePlanSourceUrl: nextSource,
+          sitePlanMapUrl: nextMap,
         })
         afterProjectChange(get, set)
         return { ok: true }

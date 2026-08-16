@@ -116,6 +116,35 @@ export async function uploadUnitPlanImage(params: {
   return { url, path }
 }
 
+/** 上傳全區棟別配置圖（原始／標註後） */
+export async function uploadSitePlanImage(params: {
+  projectId: string
+  kind: 'source' | 'map'
+  dataUrl: string
+}): Promise<{ url: string; path: string } | null> {
+  if (!isFirebaseConfigured()) return null
+  const storage = getFirebaseStorage()
+  if (!storage) return null
+  if (!params.dataUrl.startsWith('data:')) {
+    return { url: params.dataUrl, path: '' }
+  }
+
+  const ext = guessExt(params.dataUrl)
+  const stamp = Date.now()
+  const path = `projects/${params.projectId}/sitePlan/${params.kind}-${stamp}.${ext}`
+  const storageRef = ref(storage, path)
+  const blob = dataUrlToBlob(params.dataUrl)
+  await uploadBytes(storageRef, blob, {
+    contentType: blob.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+    customMetadata: {
+      projectId: params.projectId,
+      kind: `site-plan-${params.kind}`,
+    },
+  })
+  const url = await getDownloadURL(storageRef)
+  return { url, path }
+}
+
 /** 平行上傳多張圖 */
 export async function uploadDefectImages(params: {
   projectId: string
