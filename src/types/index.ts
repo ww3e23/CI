@@ -13,7 +13,13 @@ export interface BuildingRule {
   id: string
   name: string
   floors: string[]
+  /** 預設各層戶別編號（未另設的樓層沿用此清單） */
   unitCodes: string[]
+  /**
+   * 特定樓層的戶別編號覆寫。
+   * 例如 1F 為 A1,A2；2F 為 B1,B2。未列出的樓層仍用 unitCodes。
+   */
+  floorUnitCodes?: Record<string, string[]>
   naKeys: string[]
   sortOrder: number
   active: boolean

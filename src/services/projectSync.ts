@@ -50,11 +50,25 @@ function serializeBuilding(b: BuildingRule) {
     name: b.name,
     floors: b.floors,
     unitCodes: b.unitCodes,
+    floorUnitCodes: b.floorUnitCodes && Object.keys(b.floorUnitCodes).length > 0
+      ? b.floorUnitCodes
+      : null,
     naKeys: b.naKeys,
     sortOrder: b.sortOrder,
     active: b.active,
     updatedAt: serverTimestamp(),
   }
+}
+
+function parseFloorUnitCodes(raw: unknown): Record<string, string[]> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Record<string, string[]> = {}
+  for (const [floor, codes] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(codes)) continue
+    const list = codes.map(String).map((s) => s.trim()).filter(Boolean)
+    if (list.length) out[floor] = list
+  }
+  return Object.keys(out).length ? out : undefined
 }
 
 function parseBuilding(id: string, data: Record<string, unknown>): BuildingRule {
@@ -63,6 +77,7 @@ function parseBuilding(id: string, data: Record<string, unknown>): BuildingRule 
     name: String(data.name ?? id),
     floors: Array.isArray(data.floors) ? data.floors.map(String) : [],
     unitCodes: Array.isArray(data.unitCodes) ? data.unitCodes.map(String) : [],
+    floorUnitCodes: parseFloorUnitCodes(data.floorUnitCodes),
     naKeys: Array.isArray(data.naKeys) ? data.naKeys.map(String) : [],
     sortOrder: Number(data.sortOrder ?? 0),
     active: data.active !== false,
