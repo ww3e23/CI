@@ -9,6 +9,7 @@ import { UnitAreasEditor } from './UnitAreasEditor'
 import { ProjectAreasEditor } from './ProjectAreasEditor'
 import { BatchAreasApplySheet } from './BatchAreasApplySheet'
 import { UnitPlanGallerySheet } from './UnitPlanGallerySheet'
+import { ImportChecklistSheet } from './ImportChecklistSheet'
 import { createId } from '../../lib/id'
 import type { BuildingRule, ChecklistCategory } from '../../types'
 import { TitleHint } from '../ui/TitleHint'
@@ -35,6 +36,7 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const [projectAreasOpen, setProjectAreasOpen] = useState(false)
   const [batchAreasOpen, setBatchAreasOpen] = useState(false)
   const [planGalleryOpen, setPlanGalleryOpen] = useState(false)
+  const [importChecklistOpen, setImportChecklistOpen] = useState(false)
   /** 棟很多時預設收合，避免整頁被棟別卡片占滿 */
   const [buildingsOpen, setBuildingsOpen] = useState(
     () => buildings.filter((b) => b.active).length <= 2,
@@ -281,11 +283,18 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
       <div className="section-row">
         <TitleHint
           as="h2"
-          hint="新專案已預載標準查驗範本。編輯細項後會套用到所有戶別；已有缺失的項目刪除時會改為停用並保留紀錄。"
+          hint="可套用系統預設，或從其他專案複製已寫好的大項／細項；之後可再自行修改。"
         >
           查驗範本
         </TitleHint>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="link"
+            onClick={() => setImportChecklistOpen(true)}
+          >
+            從其他專案載入
+          </button>
           <button
             type="button"
             className="link"
@@ -327,14 +336,24 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
       </div>
 
       {activeCats.length === 0 && (
-        <button
-          type="button"
-          className="btn btn-primary"
-          style={{ width: '100%', marginBottom: 12 }}
-          onClick={() => applyDefaultChecklist('fill-if-empty')}
-        >
-          載入預設查驗範本
-        </button>
+        <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%' }}
+            onClick={() => setImportChecklistOpen(true)}
+          >
+            從其他專案載入查驗範本
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ width: '100%' }}
+            onClick={() => applyDefaultChecklist('fill-if-empty')}
+          >
+            載入預設查驗範本
+          </button>
+        </div>
       )}
 
       <div style={{ display: 'grid', gap: 8 }}>
@@ -452,6 +471,9 @@ export function SettingsPage({ embedded = false }: { embedded?: boolean }) {
       {projectAreasOpen && <ProjectAreasEditor onClose={() => setProjectAreasOpen(false)} />}
       {batchAreasOpen && <BatchAreasApplySheet onClose={() => setBatchAreasOpen(false)} />}
       {planGalleryOpen && <UnitPlanGallerySheet onClose={() => setPlanGalleryOpen(false)} />}
+      {importChecklistOpen && (
+        <ImportChecklistSheet onClose={() => setImportChecklistOpen(false)} />
+      )}
     </div>
   )
 }

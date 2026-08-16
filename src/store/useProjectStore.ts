@@ -11,6 +11,7 @@ import type {
   SyncState,
 } from '../types'
 import { buildDefaultChecklist } from '../data/defaultChecklist'
+import { cloneActiveChecklist } from '../lib/cloneChecklist'
 import { createEmptyProjectState, createProjectBundles } from '../data/seed'
 import { expandUnitsFromBuildings } from '../lib/units'
 import { createId } from '../lib/id'
@@ -156,6 +157,14 @@ interface ProjectActions {
   /** 讀取指定專案歷程（作用中專案用即時資料，其餘讀 bundle） */
   getProjectActivities: (projectId: string) => ProjectState['activities']
   applyDefaultChecklist: (mode?: 'fill-if-empty' | 'replace') => { ok: boolean; reason?: string }
+  /**
+   * 從其他專案複製查驗大項／細項到目前專案。
+   * 會重新產生 id；既有缺失不會自動改掛新細項。
+   */
+  importChecklistFromProject: (
+    sourceProjectId: string,
+    mode?: 'fill-if-empty' | 'replace',
+  ) => Promise<{ ok: boolean; reason?: string; importedCategories?: number; importedItems?: number }>
   upsertCategory: (category: ChecklistCategory, items: ChecklistItem[]) => void
   removeCategory: (categoryId: string) => { ok: boolean; reason?: string }
   upsertChecklistItem: (item: ChecklistItem) => void
@@ -1298,6 +1307,60 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         }
         afterProjectChange(get, set)
         return { ok: true }
+      },
+
+      importChecklistFromProject: async (sourceProjectId, mode = 'replace') => {
+        const state = get()
+        if (!sourceProjectId) return { ok: false, reason: '未選擇來源專案' }
+        if (sourceProjectId === state.activeProjectId) {
+          return { ok: false, reason: '請選擇其他專案，不能從目前專案載入' }
+        }
+
+        const hasActive = state.categories.some((c) => c.active)
+        if (mode === 'fill-if-empty' && hasActive) {
+          return { ok: false, reason: '已有查驗範本，未覆蓋' }
+        }
+
+        let source = state.bundles[sourceProjectId]
+        if (!source && cloudReady()) {
+          try {
+            const remote = await pullProjectState(sourceProjectId)
+            if (remote) source = remote
+          } catch (err) {
+            console.warn('[importChecklistFromProject] pull failed', err)
+          }
+        }
+        if (!source) {
+          return {
+            ok: false,
+            reason: '找不到來源專案資料（請確認已同步雲端，或先切換開啟過該專案）',
+          }
+        }
+
+        const cloned = cloneActiveChecklist(source)
+        if (cloned.categories.length === 0) {
+          return { ok: false, reason: '來源專案沒有可用的查驗大項／細項' }
+        }
+
+        if (mode === 'replace') {
+          const keptCats = state.categories.filter((c) => !c.active)
+          const keptItems = state.checklistItems.filter((i) => !i.active)
+          set({
+            categories: [...cloned.categories, ...keptCats],
+            checklistItems: [...cloned.checklistItems, ...keptItems],
+          })
+        } else {
+          set({
+            categories: cloned.categories,
+            checklistItems: cloned.checklistItems,
+          })
+        }
+        afterProjectChange(get, set)
+        return {
+          ok: true,
+          importedCategories: cloned.categories.length,
+          importedItems: cloned.checklistItems.length,
+        }
       },
 
       pushStructureToCloud: async () => {
