@@ -645,12 +645,16 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         const projects = [...get().projects]
         const idx = projects.findIndex((p) => p.id === project.id)
         const isNew = idx < 0
+        const prevName = idx >= 0 ? projects[idx]?.name : undefined
         if (idx >= 0) projects[idx] = project
         else {
           projects.push(project)
           useProjectStore.getState().ensureProjectBundle(project.id, project.name)
         }
         set({ projects })
+        if (!isNew && project.name && project.name !== prevName) {
+          useProjectStore.getState().renameProjectBundle(project.id, project.name)
+        }
         if (isFirebaseConfigured()) {
           void syncProjectMeta(project).catch((err) => {
             console.warn('[syncProjectMeta] failed', err)

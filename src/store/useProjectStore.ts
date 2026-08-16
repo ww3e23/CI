@@ -153,6 +153,8 @@ interface ProjectActions {
   loadProjectBundle: (projectId: string) => void
   saveProjectBundle: (projectId: string) => void
   ensureProjectBundle: (projectId: string, name: string) => void
+  /** 更新專案顯示名稱（後台改名時同步到現場 bundle／報表用名稱） */
+  renameProjectBundle: (projectId: string, name: string) => void
   removeProjectBundle: (projectId: string) => void
   /** 讀取指定專案歷程（作用中專案用即時資料，其餘讀 bundle） */
   getProjectActivities: (projectId: string) => ProjectState['activities']
@@ -1254,6 +1256,24 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             [projectId]: createEmptyProjectState(name),
           },
         })
+      },
+
+      renameProjectBundle: (projectId, name) => {
+        const trimmed = name.trim()
+        if (!projectId || !trimmed) return
+        const existing = get().bundles[projectId]
+        if (existing) {
+          set({
+            bundles: {
+              ...get().bundles,
+              [projectId]: { ...existing, projectName: trimmed },
+            },
+          })
+        }
+        if (get().activeProjectId === projectId) {
+          set({ projectName: trimmed })
+          afterProjectChange(get, set)
+        }
       },
 
       removeProjectBundle: (projectId) => {

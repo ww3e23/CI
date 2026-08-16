@@ -40,6 +40,8 @@ export function ProjectsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState({ name: '', location: '', driveInput: '' })
+  const [metaDraft, setMetaDraft] = useState({ name: '', location: '' })
+  const [metaMsg, setMetaMsg] = useState('')
   const [driveInput, setDriveInput] = useState('')
   const [driveMsg, setDriveMsg] = useState('')
   const [driveSyncing, setDriveSyncing] = useState(false)
@@ -88,7 +90,24 @@ export function ProjectsPage() {
     const p = projects.find((x) => x.id === id)
     setDriveInput(p?.driveFolderUrl || p?.driveFolderId || '')
     setDriveMsg('')
+    setMetaDraft({ name: p?.name ?? '', location: p?.location ?? '' })
+    setMetaMsg('')
     setMemberQuery('')
+  }
+
+  function saveProjectMeta() {
+    if (!selected) return
+    const name = metaDraft.name.trim()
+    if (!name) {
+      setMetaMsg('請填寫專案名稱')
+      return
+    }
+    upsertProject({
+      ...selected,
+      name,
+      location: metaDraft.location.trim() || selected.location || '未填寫',
+    })
+    setMetaMsg('已更新專案名稱／地點')
   }
 
   function saveDriveFolder() {
@@ -323,6 +342,50 @@ export function ProjectsPage() {
             >
               進入現場查看
             </button>
+          </div>
+
+          <div className="field" style={{ marginBottom: 16 }}>
+            <TitleHint
+              as="h3"
+              className="serif"
+              style={{ margin: '0 0 10px', fontSize: 18 }}
+              hint="可改專案顯示名稱與地點，例如拆成「大樓區」「別墅區」方便辨識。"
+            >
+              基本資料
+            </TitleHint>
+            <label>專案名稱</label>
+            <input
+              value={metaDraft.name}
+              onChange={(e) => {
+                setMetaDraft((d) => ({ ...d, name: e.target.value }))
+                setMetaMsg('')
+              }}
+              placeholder="例如：新竹帝寶 8-2 大樓區"
+            />
+            <label style={{ marginTop: 10 }}>地點</label>
+            <input
+              value={metaDraft.location}
+              onChange={(e) => {
+                setMetaDraft((d) => ({ ...d, location: e.target.value }))
+                setMetaMsg('')
+              }}
+              placeholder="例如：新竹縣寶山鄉"
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button type="button" className="btn btn-primary" onClick={saveProjectMeta}>
+                儲存名稱
+              </button>
+              {selected.code ? (
+                <span style={{ color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
+                  編碼 {selected.code}（不可改）
+                </span>
+              ) : null}
+            </div>
+            {metaMsg && (
+              <div style={{ marginTop: 8, color: 'var(--green-deep)', fontWeight: 700, fontSize: 13 }}>
+                {metaMsg}
+              </div>
+            )}
           </div>
 
           <details style={{ marginBottom: 16, marginTop: 14 }}>
