@@ -74,7 +74,7 @@ interface ProjectActions {
     defectNumber?: number
   }) => Promise<Defect | null>
   updateDefectStatus: (defectId: string, status: DefectStatus) => void
-  /** 修改缺失內容（區域／說明／大項／照片） */
+  /** 修改缺失內容（區域／說明／大項／照片／編號） */
   updateDefect: (
     defectId: string,
     patch: {
@@ -85,6 +85,8 @@ interface ProjectActions {
       description?: string
       planPhotoDataUrl?: string | null
       photoDataUrls?: string[]
+      /** 修改缺失編號（同戶未作廢不可重複） */
+      defectNumber?: number
     },
   ) => Promise<{ ok: boolean; error?: string }>
   /** 刪除缺失（軟刪：改為作廢，並同步雲端） */
@@ -652,6 +654,18 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         if (!defect) return { ok: false, error: '找不到此缺失' }
         if (defect.status === 'voided') return { ok: false, error: '已刪除的缺失無法修改' }
 
+        let nextNumber = defect.defectNumber
+        if (patch.defectNumber !== undefined) {
+          const n = Math.floor(Number(patch.defectNumber))
+          if (!Number.isFinite(n) || n < 1) {
+            return { ok: false, error: '請輸入有效的缺失編號（正整數）' }
+          }
+          if (isDefectNumberTaken(defect.unitId, n, state.defects, defectId)) {
+            return { ok: false, error: `編號 #${n} 已被此戶其他缺失使用` }
+          }
+          nextNumber = n
+        }
+
         const nextPlan =
           patch.planPhotoDataUrl === null
             ? undefined
@@ -663,6 +677,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
 
         const next: Defect = {
           ...defect,
+          defectNumber: nextNumber,
           categoryId: patch.categoryId ?? defect.categoryId,
           categoryName: patch.categoryName ?? defect.categoryName,
           checklistItemId:
@@ -680,8 +695,17 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           syncState: cloudReady() ? 'pending' : defect.syncState,
         }
 
+        const numberChanged = nextNumber !== defect.defectNumber
+        const nextCounter = recomputeUnitNextDefectNumber(defect.unitId, [
+          ...state.defects.filter((d) => d.id !== defectId),
+          next,
+        ])
+
         set({
           defects: state.defects.map((d) => (d.id === defectId ? next : d)),
+          units: state.units.map((u) =>
+            u.id === defect.unitId ? { ...u, nextDefectNumber: nextCounter } : u,
+          ),
           activities: [
             {
               id: createId('act'),
@@ -694,7 +718,9 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               buildingName: defect.buildingName,
               floor: defect.floor,
               unitCode: defect.unitCode,
-              summary: `修改缺失 #${defect.defectNumber}`,
+              summary: numberChanged
+                ? `修改缺失 #${defect.defectNumber}→#${nextNumber}`
+                : `修改缺失 #${nextNumber}`,
               ...activityActorFields(),
             },
             ...state.activities,
@@ -743,7 +769,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               })
               afterProjectChange(get, set, { syncCloud: false })
               scheduleCloudSync(get)
-              // 備註／大項變更：Firestore 觸發器會改名／搬移；勿再額外 callable
+              // 備註／大項／編號變更：Drive 觸發器會改名／搬移；勿再額外 callable
             } catch (err) {
               console.warn('[updateDefect] sync failed', err)
               return { ok: true, error: '已本機更新，雲端同步失敗' }

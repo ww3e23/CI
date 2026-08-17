@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react'
 import { Settings2 } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
+import { isDefectNumberTaken } from '../../services/projectSync'
 import { fileToCompressedDataUrl } from '../../lib/imageCompress'
 import { getUnitAreas } from '../../lib/areas'
 import type { Defect } from '../../types'
 import { resolveDefectRemark } from '../../lib/defectDisplay'
 import { Modal } from '../ui/Modal'
+import { TitleHint } from '../ui/TitleHint'
 import { AnnotatePlanModal } from './AnnotatePlanModal'
 import { UnitAreasEditor } from '../settings/UnitAreasEditor'
 
@@ -22,6 +24,7 @@ export function EditDefectSheet({
   const projectAreas = useProjectStore((s) => s.areas)
   const areaTemplates = useProjectStore((s) => s.areaTemplates) ?? []
   const checklistItems = useProjectStore((s) => s.checklistItems)
+  const defects = useProjectStore((s) => s.defects)
   const updateDefect = useProjectStore((s) => s.updateDefect)
   const role = useCurrentRole()
   const user = useCurrentUser()
@@ -45,6 +48,7 @@ export function EditDefectSheet({
   )
   const [itemId, setItemId] = useState<string | null>(defect.checklistItemId ?? null)
   const [area, setArea] = useState(defect.area)
+  const [numberText, setNumberText] = useState(String(defect.defectNumber))
   const [description, setDescription] = useState(() =>
     resolveDefectRemark(defect, useProjectStore.getState().checklistItems),
   )
@@ -61,6 +65,16 @@ export function EditDefectSheet({
     if (itemId && catItems.some((i) => i.id === itemId)) return itemId
     return catItems[0]?.id ?? null
   }, [itemId, catItems])
+
+  const editedNumber = useMemo(() => {
+    const n = Math.floor(Number(numberText))
+    return Number.isFinite(n) ? n : NaN
+  }, [numberText])
+
+  const numberConflict =
+    Number.isFinite(editedNumber) &&
+    editedNumber >= 1 &&
+    isDefectNumberTaken(defect.unitId, editedNumber, defects, defect.id)
 
   async function onPick(file: File | undefined, kind: 'plan' | 'photo') {
     if (!file) return
@@ -89,11 +103,21 @@ export function EditDefectSheet({
       setError('請選擇查驗大項')
       return
     }
+    const n = Math.floor(Number(numberText))
+    if (!Number.isFinite(n) || n < 1) {
+      setError('請輸入有效的缺失編號（正整數）')
+      return
+    }
+    if (isDefectNumberTaken(defect.unitId, n, useProjectStore.getState().defects, defect.id)) {
+      setError(`編號 #${n} 已被此戶其他缺失使用`)
+      return
+    }
     const text = description.trim()
 
     setSaving(true)
     setError('')
     const result = await updateDefect(defect.id, {
+      defectNumber: n,
       categoryId: cat.id,
       categoryName: cat.name,
       checklistItemId: effectiveItemId,
@@ -114,7 +138,7 @@ export function EditDefectSheet({
     <>
       <Modal onClose={onClose} aria-label="修改缺失">
         <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>
-          修改缺失 #{defect.defectNumber}
+          修改缺失
         </h3>
         <p style={{ margin: '8px 0 12px', color: 'var(--ink-soft)', fontSize: 13, lineHeight: 1.45 }}>
           {defect.buildingName}・{defect.floor}・{defect.unitCode}戶
@@ -125,6 +149,47 @@ export function EditDefectSheet({
             目前為僅查看權限，無法修改。
           </div>
         )}
+
+        <div className="field" style={{ marginBottom: 12 }}>
+          <TitleHint
+            as="div"
+            style={{ margin: 0, fontWeight: 700, fontSize: 13 }}
+            hint="可直接改編號。同戶其他未作廢缺失不可重複；改號後雲端硬碟資料夾會跟著改名。"
+          >
+            缺失編號
+          </TitleHint>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+            <span style={{ fontWeight: 800 }}>#</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              step={1}
+              value={numberText}
+              disabled={!canEdit}
+              onChange={(e) => setNumberText(e.target.value)}
+              style={{
+                width: 120,
+                border: '1px solid rgba(34,41,31,0.12)',
+                borderRadius: 12,
+                padding: '10px 12px',
+                fontWeight: 800,
+                fontSize: 16,
+              }}
+              aria-label="修改缺失編號"
+            />
+            {Number(numberText) !== defect.defectNumber && (
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>
+                原 #{defect.defectNumber}
+              </span>
+            )}
+          </div>
+          {numberConflict && (
+            <div style={{ marginTop: 6, color: 'var(--terracotta)', fontWeight: 700, fontSize: 13 }}>
+              此編號已被使用，請換一個
+            </div>
+          )}
+        </div>
 
         <div className="field">
           <label>查驗大項</label>
@@ -319,7 +384,7 @@ export function EditDefectSheet({
             type="button"
             className="btn btn-primary"
             style={{ flex: 1 }}
-            disabled={saving || !canEdit}
+            disabled={saving || !canEdit || Boolean(numberConflict)}
             onClick={() => void handleSave()}
           >
             {saving ? '儲存中…' : '儲存修改'}
