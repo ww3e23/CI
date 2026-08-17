@@ -6,6 +6,10 @@ import { cloudReady } from '../../services/cloudSync'
 import { computeNextDefectNumber, isDefectNumberTaken } from '../../services/projectSync'
 import { fileToCompressedDataUrl } from '../../lib/imageCompress'
 import { getUnitAreas } from '../../lib/areas'
+import {
+  pickDefaultDefectArea,
+  rememberLastDefectArea,
+} from '../../lib/defectFormPrefs'
 import { Modal } from '../ui/Modal'
 import { TitleHint } from '../ui/TitleHint'
 import { AnnotatePlanModal } from './AnnotatePlanModal'
@@ -38,11 +42,13 @@ export function AddDefectSheet({
   const activeCats = categories.filter((c) => c.active)
   const [catId, setCatId] = useState(categoryId ?? activeCats[0]?.id ?? '')
   const cat = activeCats.find((c) => c.id === catId) ?? activeCats[0]
-  const [area, setArea] = useState(() => areas[1] ?? areas[0] ?? '客廳')
+  const [area, setArea] = useState('')
   const [description, setDescription] = useState('')
+  /** 需手動勾選才顯示／儲存位置圖標註 */
+  const [includePlan, setIncludePlan] = useState(false)
   const defaultPlan = unit?.defaultPlanPhotoUrl
-  const [planPhoto, setPlanPhoto] = useState<string | undefined>(() => defaultPlan)
-  const [planOriginal, setPlanOriginal] = useState<string | undefined>(() => defaultPlan)
+  const [planPhoto, setPlanPhoto] = useState<string | undefined>(undefined)
+  const [planOriginal, setPlanOriginal] = useState<string | undefined>(undefined)
   const [planTouched, setPlanTouched] = useState(false)
   const [photos, setPhotos] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
@@ -55,22 +61,35 @@ export function AddDefectSheet({
 
   const unitId = unit?.id
 
-  // 換戶時重新帶入該戶預設位置圖
+  // 區域清單就緒／變更：保留手動選擇；否則帶入上次記憶區域
   useEffect(() => {
-    if (!unitId) return
+    if (!areas.length) return
+    setArea((prev) => (prev && areas.includes(prev) ? prev : pickDefaultDefectArea(areas)))
+  }, [areas])
+
+  // 勾選「位置圖標註」時才帶入此戶預設圖；取消勾選則清空本筆圖面
+  useEffect(() => {
+    if (!includePlan) {
+      setPlanPhoto(undefined)
+      setPlanOriginal(undefined)
+      setPlanTouched(false)
+      setAnnotateOpen(false)
+      return
+    }
+    if (planTouched) return
+    setPlanOriginal(defaultPlan)
+    setPlanPhoto(defaultPlan)
+  }, [includePlan, defaultPlan, planTouched])
+
+  // 換戶且已勾選位置圖：重新帶入該戶預設
+  useEffect(() => {
+    if (!unitId || !includePlan) return
     const live = useProjectStore.getState().units.find((u) => u.id === unitId)
     const plan = live?.defaultPlanPhotoUrl
     setPlanTouched(false)
     setPlanOriginal(plan)
     setPlanPhoto(plan)
-  }, [unitId])
-
-  // 預設位置圖更新：僅在尚未手動更換／標註時同步帶入（手動圖優先）
-  useEffect(() => {
-    if (planTouched) return
-    setPlanOriginal(defaultPlan)
-    setPlanPhoto(defaultPlan)
-  }, [defaultPlan, planTouched])
+  }, [unitId, includePlan])
 
   // 即時下一號：自動編號永遠用未作廢最大號 + 1
   const autoNumber = useMemo(() => {
@@ -122,7 +141,6 @@ export function AddDefectSheet({
   async function onPick(file: File | undefined, kind: 'plan' | 'photo') {
     if (!file) return
     try {
-      // 先壓縮再進表單／本機，避免 localStorage 配額爆掉與標註過糊
       const url = await fileToCompressedDataUrl(file, {
         maxEdge: kind === 'plan' ? 2048 : 1600,
         quality: kind === 'plan' ? 0.9 : 0.84,
@@ -161,7 +179,6 @@ export function AddDefectSheet({
       }
     }
 
-    // 說明欄只存使用者備註；細項另以 checklistItemId 顯示，避免和細項混在一起
     const text = description.trim()
 
     setSaving(true)
@@ -170,6 +187,7 @@ export function AddDefectSheet({
 
     try {
       const n = manualNumberOn ? Math.floor(Number(manualNumberText)) : undefined
+      rememberLastDefectArea(area)
       const d = await addDefect({
         unitId: unit.id,
         categoryId: cat.id,
@@ -177,7 +195,8 @@ export function AddDefectSheet({
         checklistItemId,
         area,
         description: text,
-        planPhotoDataUrl: planPhoto,
+        // 未勾選位置圖標註：不帶圖面、不佔空間、不上傳
+        planPhotoDataUrl: includePlan ? planPhoto : undefined,
         photoDataUrls: photos,
         defectNumber: n,
       })
@@ -191,7 +210,6 @@ export function AddDefectSheet({
         setSyncMsg('儲存失敗')
         return
       }
-      // 本機已存完就關閉；照片上傳在背景進行
       if (d.syncState === 'syncing' || d.syncState === 'pending') {
         setSyncMsg('已儲存，雲端同步中…')
       } else if (d.syncState === 'synced') {
@@ -309,7 +327,13 @@ export function AddDefectSheet({
 
         <div className="field">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-            <label style={{ margin: 0 }}>缺失區域（此戶）</label>
+            <TitleHint
+              as="span"
+              style={{ margin: 0, fontWeight: 700, fontSize: 13 }}
+              hint="會記住你上次選的區域，下次新增時自動帶入；仍可手動改選。"
+            >
+              缺失區域（此戶）
+            </TitleHint>
             {unit && (
               <button
                 type="button"
@@ -343,73 +367,6 @@ export function AddDefectSheet({
         </div>
 
         <div className="field">
-          <label>圖面位置照片（與現況照片分開）</label>
-          {planTouched && planPhoto ? (
-            <div
-              style={{
-                marginBottom: 8,
-                fontSize: 12,
-                fontWeight: 700,
-                color: 'var(--green-deep)',
-              }}
-            >
-              已使用本筆手動圖面／標註（優先於戶別預設，儲存後獨立留存）
-            </div>
-          ) : defaultPlan && planPhoto === defaultPlan ? (
-            <div
-              style={{
-                marginBottom: 8,
-                fontSize: 12,
-                fontWeight: 700,
-                color: 'var(--green-deep)',
-              }}
-            >
-              已帶入此戶預設位置圖，可直接標註；手動更換後不會被預設蓋掉
-            </div>
-          ) : null}
-          <div className="upload-actions">
-            <label className="upload-box" style={{ cursor: 'pointer' }}>
-              {planPhoto
-                ? planTouched
-                  ? '已選取圖面，點擊可更換'
-                  : '已帶入預設圖，點擊可更換'
-                : '上傳／拍攝圖面位置'}
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                hidden
-                onChange={(e) => onPick(e.target.files?.[0], 'plan')}
-              />
-            </label>
-            <button
-              type="button"
-              className="upload-box-btn"
-              disabled={!planOriginal && !planPhoto}
-              onClick={() => {
-                if (!planOriginal && !planPhoto) {
-                  setError('請先上傳圖面，再進行標註')
-                  return
-                }
-                setAnnotateOpen(true)
-              }}
-            >
-              {planPhoto && planOriginal && planPhoto !== planOriginal
-                ? '重新標註位置'
-                : '標註位置（全螢幕）'}
-            </button>
-          </div>
-          {planPhoto && (
-            <img className="photo-thumb" src={planPhoto} alt="圖面位置" style={{ marginTop: 8 }} />
-          )}
-          {!planPhoto && (
-            <p style={{ margin: '8px 0 0', color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
-              可先在首頁「區域／位置圖」為此戶上傳預設圖，之後就不用每次重選。
-            </p>
-          )}
-        </div>
-
-        <div className="field">
           <label>缺失現況照片</label>
           <div className="photo-row">
             {photos.map((p, i) => (
@@ -426,6 +383,102 @@ export function AddDefectSheet({
               />
             </label>
           </div>
+        </div>
+
+        <div className="field">
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={includePlan}
+              onChange={(e) => {
+                setIncludePlan(e.target.checked)
+                setPlanTouched(false)
+              }}
+              style={{ width: 18, height: 18, accentColor: 'var(--green-deep)' }}
+            />
+            <TitleHint
+              as="span"
+              hint="預設不勾選：不顯示、不儲存位置圖。需要標註時再勾選，才會帶入戶別預設圖或自行拍攝。"
+            >
+              需要位置圖標註
+            </TitleHint>
+          </label>
+
+          {includePlan && (
+            <div style={{ marginTop: 10 }}>
+              {planTouched && planPhoto ? (
+                <div
+                  style={{
+                    marginBottom: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: 'var(--green-deep)',
+                  }}
+                >
+                  已使用本筆手動圖面／標註（優先於戶別預設，儲存後獨立留存）
+                </div>
+              ) : defaultPlan && planPhoto === defaultPlan ? (
+                <div
+                  style={{
+                    marginBottom: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: 'var(--green-deep)',
+                  }}
+                >
+                  已帶入此戶預設位置圖，可直接標註；手動更換後不會被預設蓋掉
+                </div>
+              ) : null}
+              <div className="upload-actions">
+                <label className="upload-box" style={{ cursor: 'pointer' }}>
+                  {planPhoto
+                    ? planTouched
+                      ? '已選取圖面，點擊可更換'
+                      : '已帶入預設圖，點擊可更換'
+                    : '上傳／拍攝圖面位置'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    hidden
+                    onChange={(e) => onPick(e.target.files?.[0], 'plan')}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="upload-box-btn"
+                  disabled={!planOriginal && !planPhoto}
+                  onClick={() => {
+                    if (!planOriginal && !planPhoto) {
+                      setError('請先上傳圖面，再進行標註')
+                      return
+                    }
+                    setAnnotateOpen(true)
+                  }}
+                >
+                  {planPhoto && planOriginal && planPhoto !== planOriginal
+                    ? '重新標註位置'
+                    : '標註位置（全螢幕）'}
+                </button>
+              </div>
+              {planPhoto && (
+                <img className="photo-thumb" src={planPhoto} alt="圖面位置" style={{ marginTop: 8 }} />
+              )}
+              {!planPhoto && (
+                <p style={{ margin: '8px 0 0', color: 'var(--ink-soft)', fontSize: 12, fontWeight: 600 }}>
+                  可先在首頁「區域／位置圖」為此戶上傳預設圖，之後勾選此項即可帶入。
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="field">
@@ -459,7 +512,7 @@ export function AddDefectSheet({
         <div className="sync-hint">{syncMsg}</div>
       </Modal>
 
-      {annotateOpen && (planOriginal || planPhoto) && (
+      {annotateOpen && includePlan && (planOriginal || planPhoto) && (
         <AnnotatePlanModal
           imageUrl={planOriginal || planPhoto!}
           onCancel={() => setAnnotateOpen(false)}
@@ -483,7 +536,7 @@ export function AddDefectSheet({
               st.areas,
               st.areaTemplates ?? [],
             )
-            if (next.length && !next.includes(area)) setArea(next[0])
+            if (next.length && !next.includes(area)) setArea(pickDefaultDefectArea(next))
           }}
         />
       )}
