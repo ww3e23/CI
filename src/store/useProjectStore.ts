@@ -72,6 +72,12 @@ interface ProjectActions {
     photoDataUrls?: string[]
     /** 自行指定編號（補缺號）；未傳則自動取最大號+1。不改既有缺失編號。 */
     defectNumber?: number
+    /**
+     * 大圖寫入 IndexedDB：
+     * - await（預設）：存完再回傳，關表單較安全
+     * - background：先回傳，背景再穩存（連拍用不卡住下一張）
+     */
+    persistMedia?: 'await' | 'background'
   }) => Promise<Defect | null>
   updateDefectStatus: (defectId: string, status: DefectStatus) => void
   /** 修改缺失內容（區域／說明／大項／照片／編號） */
@@ -371,6 +377,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         planPhotoDataUrl,
         photoDataUrls = [],
         defectNumber: requestedNumber,
+        persistMedia = 'await',
       }) => {
         const state = get()
         const unit = state.units.find((u) => u.id === unitId)
@@ -445,21 +452,25 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           Boolean(planPhotoDataUrl && /^https?:\/\//i.test(planPhotoDataUrl)) ||
           photoDataUrls.some((p) => /^https?:\/\//i.test(p))
 
-        // 大圖必須先穩存 IndexedDB，再關表單；否則重開 App 會因 localStorage 剝掉 data URL 而丟圖
+        // 大圖穩存 IndexedDB：詳細表單預設 await；連拍用 background 避免卡住下一張
         if (projectId && hasLocalMedia) {
-          try {
-            await savePendingDefectMedia({
-              defectId: defect.id,
-              projectId,
-              planPhotoDataUrl: planPhotoDataUrl?.startsWith('data:')
-                ? planPhotoDataUrl
-                : undefined,
-              photoDataUrls: photoDataUrls.filter((p) => p.startsWith('data:')),
-              updatedAt: new Date().toISOString(),
-            })
-          } catch (err) {
-            console.warn('[pendingMedia] save failed', err)
+          const persist = async () => {
+            try {
+              await savePendingDefectMedia({
+                defectId: defect.id,
+                projectId,
+                planPhotoDataUrl: planPhotoDataUrl?.startsWith('data:')
+                  ? planPhotoDataUrl
+                  : undefined,
+                photoDataUrls: photoDataUrls.filter((p) => p.startsWith('data:')),
+                updatedAt: new Date().toISOString(),
+              })
+            } catch (err) {
+              console.warn('[pendingMedia] save failed', err)
+            }
           }
+          if (persistMedia === 'background') void persist()
+          else await persist()
         }
 
         if (cloudReady() && projectId) {

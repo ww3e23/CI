@@ -56,7 +56,7 @@ export function BurstCaptureSheet({
 
   const [area, setArea] = useState('')
   const [areaLocked, setAreaLocked] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [queueLen, setQueueLen] = useState(0)
   const [error, setError] = useState('')
   const [shots, setShots] = useState<ShotLog[]>([])
   const [lastSaved, setLastSaved] = useState<number | null>(null)
@@ -64,10 +64,19 @@ export function BurstCaptureSheet({
   const [autoAgain, setAutoAgain] = useState(true)
   const fileRef = useRef<HTMLInputElement>(null)
   const autoAgainRef = useRef(true)
+  const areaRef = useRef(area)
+  const queueRef = useRef<File[]>([])
+  const drainingRef = useRef(false)
+
+  const busy = queueLen > 0 || pendingNumber != null
 
   useEffect(() => {
     autoAgainRef.current = autoAgain
   }, [autoAgain])
+
+  useEffect(() => {
+    areaRef.current = area
+  }, [area])
 
   useEffect(() => {
     if (!areas.length) return
@@ -88,6 +97,10 @@ export function BurstCaptureSheet({
   const liveUnit = unit
   const liveCat = cat
 
+  function openCameraSoon(delayMs = 60) {
+    window.setTimeout(() => fileRef.current?.click(), delayMs)
+  }
+
   function startCapture() {
     if (!canEdit) {
       setError('目前角色為僅查看，無法新增缺失')
@@ -100,58 +113,82 @@ export function BurstCaptureSheet({
     rememberLastDefectArea(area)
     setAreaLocked(true)
     setError('')
-    window.setTimeout(() => fileRef.current?.click(), 80)
+    openCameraSoon(80)
   }
 
-  async function onPick(file: File | undefined) {
-    if (!file || busy) return
+  async function drainQueue() {
+    if (drainingRef.current) return
+    drainingRef.current = true
+    try {
+      while (queueRef.current.length > 0) {
+        const file = queueRef.current.shift()!
+        setQueueLen(queueRef.current.length)
+        const st = useProjectStore.getState()
+        const willBe = computeNextDefectNumber(
+          liveUnit.id,
+          liveUnit.nextDefectNumber,
+          st.defects,
+        )
+        setPendingNumber(willBe)
+        const shotArea = areaRef.current
+        try {
+          // 連拍用較小邊長／品質：體感快很多，現場記錄夠用
+          const url = await fileToCompressedDataUrl(file, {
+            maxEdge: 1280,
+            quality: 0.72,
+          })
+          rememberLastDefectArea(shotArea)
+          const d = await addDefect({
+            unitId: liveUnit.id,
+            categoryId: liveCat.id,
+            categoryName: liveCat.name,
+            checklistItemId,
+            area: shotArea,
+            description: '',
+            photoDataUrls: [url],
+            persistMedia: 'background',
+          })
+          if (!d) {
+            setError('儲存失敗，請再試一次')
+            continue
+          }
+          setLastSaved(d.defectNumber)
+          setShots((prev) =>
+            [{ defectNumber: d.defectNumber, preview: url }, ...prev].slice(0, 24),
+          )
+          setAreaLocked(true)
+        } catch (err) {
+          console.warn('[burst] capture failed', err)
+          setError(err instanceof Error ? err.message : '拍照或儲存失敗')
+        } finally {
+          setPendingNumber(null)
+        }
+      }
+    } finally {
+      drainingRef.current = false
+      setQueueLen(queueRef.current.length)
+    }
+  }
+
+  function onPick(file: File | undefined) {
+    if (!file) return
     if (!canEdit) {
       setError('目前角色為僅查看，無法新增缺失')
       return
     }
-    if (!area.trim()) {
+    if (!areaRef.current.trim()) {
       setError('請先選擇區域')
       return
     }
 
-    setBusy(true)
     setError('')
-    const willBe = computeNextDefectNumber(
-      liveUnit.id,
-      liveUnit.nextDefectNumber,
-      useProjectStore.getState().defects,
-    )
-    setPendingNumber(willBe)
-    try {
-      const url = await fileToCompressedDataUrl(file, { maxEdge: 1600, quality: 0.84 })
-      rememberLastDefectArea(area)
-      const d = await addDefect({
-        unitId: liveUnit.id,
-        categoryId: liveCat.id,
-        categoryName: liveCat.name,
-        checklistItemId,
-        area,
-        description: '',
-        photoDataUrls: [url],
-      })
-      if (!d) {
-        setError('儲存失敗，請再試一次')
-        return
-      }
-      setLastSaved(d.defectNumber)
-      setShots((prev) => [{ defectNumber: d.defectNumber, preview: url }, ...prev].slice(0, 24))
-      setAreaLocked(true)
-      if (autoAgainRef.current) {
-        window.setTimeout(() => fileRef.current?.click(), 180)
-      }
-    } catch (err) {
-      console.warn('[burst] capture failed', err)
-      setError(err instanceof Error ? err.message : '拍照或儲存失敗')
-    } finally {
-      setBusy(false)
-      setPendingNumber(null)
-      if (fileRef.current) fileRef.current.value = ''
-    }
+    // 立刻清掉 input，並視需要馬上再開鏡頭（不等壓縮／存檔）
+    if (fileRef.current) fileRef.current.value = ''
+    if (autoAgainRef.current) openCameraSoon(40)
+
+    queueRef.current.push(file)
+    setQueueLen(queueRef.current.length)
+    void drainQueue()
   }
 
   return (
@@ -162,7 +199,7 @@ export function BurstCaptureSheet({
             as="h3"
             className="serif"
             style={{ margin: 0, fontSize: 20 }}
-            hint="選好區域後連續拍照；每張現況照會自動存成一筆缺失。畫面會顯示下一號，避免拍亂。"
+            hint="確認照片後會立刻再開鏡頭；壓縮與存檔在背景做，避免連拍卡住。畫面會顯示下一號。"
           >
             連拍記錄
           </TitleHint>
@@ -173,6 +210,7 @@ export function BurstCaptureSheet({
         </div>
         <span className="chip on" style={{ minHeight: 32, flexShrink: 0 }}>
           已拍 {shots.length}
+          {queueLen > 0 ? `｜佇列 ${queueLen}` : ''}
         </span>
       </div>
 
@@ -250,7 +288,7 @@ export function BurstCaptureSheet({
               key={a}
               type="button"
               className={`chip ${area === a ? 'on' : ''}`}
-              disabled={!canEdit || (areaLocked && a !== area) || busy}
+              disabled={!canEdit || (areaLocked && a !== area)}
               onClick={() => {
                 setArea(a)
                 setAreaLocked(false)
@@ -285,7 +323,7 @@ export function BurstCaptureSheet({
           onChange={(e) => setAutoAgain(e.target.checked)}
           style={{ width: 18, height: 18, accentColor: 'var(--green-deep)' }}
         />
-        拍完自動再開鏡頭（連拍）
+        確認後立刻再開鏡頭（背景存檔）
       </label>
 
       <input
@@ -294,8 +332,8 @@ export function BurstCaptureSheet({
         accept="image/*"
         capture="environment"
         hidden
-        disabled={!canEdit || busy}
-        onChange={(e) => void onPick(e.target.files?.[0])}
+        disabled={!canEdit}
+        onChange={(e) => onPick(e.target.files?.[0])}
       />
 
       {!areaLocked ? (
@@ -303,7 +341,7 @@ export function BurstCaptureSheet({
           type="button"
           className="btn btn-primary"
           style={{ width: '100%', minHeight: 48 }}
-          disabled={!canEdit || busy || !area || areas.length === 0}
+          disabled={!canEdit || !area || areas.length === 0}
           onClick={startCapture}
         >
           <Camera size={18} />
@@ -315,18 +353,24 @@ export function BurstCaptureSheet({
             type="button"
             className="btn btn-primary"
             style={{ flex: 1, minHeight: 48 }}
-            disabled={!canEdit || busy}
+            disabled={!canEdit}
             onClick={() => fileRef.current?.click()}
           >
             <Camera size={18} />
-            {busy ? `儲存 #${pendingNumber ?? nextNumber}…` : `再拍一張 → #${nextNumber}`}
+            {busy ? `背景存檔中… → #${nextNumber}` : `再拍一張 → #${nextNumber}`}
           </button>
           <button
             type="button"
             className="btn btn-ghost"
             style={{ minHeight: 48, minWidth: 96 }}
             disabled={busy}
-            onClick={onClose}
+            onClick={() => {
+              if (busy) {
+                setError('還有照片在背景存檔，請稍候再按完成')
+                return
+              }
+              onClose()
+            }}
           >
             <Check size={16} />
             完成
@@ -336,9 +380,9 @@ export function BurstCaptureSheet({
 
       <div className="sync-hint" style={{ marginTop: 8 }}>
         {busy
-          ? `正在儲存 #${pendingNumber ?? nextNumber}…`
+          ? `背景處理中（佇列 ${queueLen}）${pendingNumber != null ? `｜正在存 #${pendingNumber}` : ''}`
           : cloudReady()
-            ? `下一張會存成 #${nextNumber}，雲端背景同步`
+            ? `下一張會存成 #${nextNumber}；確認照片後立刻可再拍`
             : `下一張會存成 #${nextNumber}（本機）`}
       </div>
 
