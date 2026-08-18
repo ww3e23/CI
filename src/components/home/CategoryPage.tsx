@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, CheckCircle2, ChevronDown } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronDown, Plus } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { resolveDefectRemark } from '../../lib/defectDisplay'
 import { statusLabel } from '../../lib/progress'
+import { AddDefectModeSheet } from '../defects/AddDefectModeSheet'
 import { AddDefectSheet } from '../defects/AddDefectSheet'
+import { BurstCaptureSheet } from '../defects/BurstCaptureSheet'
 import { DefectDetailModal } from '../defects/DefectDetailModal'
 import type { Defect, DefectStatus } from '../../types'
 
@@ -15,6 +17,8 @@ const statusClass: Record<DefectStatus, string> = {
   completed: 'muted',
   voided: '',
 }
+
+type AddMode = 'choose' | 'burst' | 'detail'
 
 export function CategoryPage({
   categoryId,
@@ -33,7 +37,8 @@ export function CategoryPage({
   const unit = units.find((u) => u.id === currentUnitId)
 
   const cat = categories.find((c) => c.id === categoryId)
-  const [addFor, setAddFor] = useState<string | null>(null)
+  const [addItemId, setAddItemId] = useState<string | null>(null)
+  const [addMode, setAddMode] = useState<AddMode | null>(null)
   const [selectedDefect, setSelectedDefect] = useState<Defect | null>(null)
   /** 細項展開狀態：預設收合，避免編號小卡堆滿畫面 */
   const [openItemIds, setOpenItemIds] = useState<Record<string, boolean>>({})
@@ -58,12 +63,28 @@ export function CategoryPage({
     [defects, unit?.id, categoryId],
   )
 
+  const addItemLabel = useMemo(() => {
+    if (!addItemId) return undefined
+    return items.find((i) => i.id === addItemId)?.description
+  }, [addItemId, items])
+
   function toggleItem(itemId: string) {
     setOpenItemIds((prev) => ({ ...prev, [itemId]: !prev[itemId] }))
   }
 
   function openItem(itemId: string) {
     setOpenItemIds((prev) => ({ ...prev, [itemId]: true }))
+  }
+
+  function openAddChooser(itemId: string) {
+    setAddItemId(itemId)
+    setAddMode('choose')
+  }
+
+  function closeAddFlow() {
+    if (addItemId) openItem(addItemId)
+    setAddMode(null)
+    setAddItemId(null)
   }
 
   if (!cat || !unit) {
@@ -135,7 +156,7 @@ export function CategoryPage({
                   width: '100%',
                   alignItems: 'flex-start',
                   gap: 10,
-                  padding: '12px 14px',
+                  padding: '12px 14px 8px',
                   border: 'none',
                   background: 'transparent',
                   cursor: 'pointer',
@@ -155,7 +176,7 @@ export function CategoryPage({
                       color: related.length > 0 ? 'var(--terracotta)' : 'var(--ink-soft)',
                     }}
                   >
-                    {open ? '點此收合' : countLabel}
+                    {open ? '點此收合編號小卡' : countLabel}
                   </div>
                 </div>
                 <ChevronDown
@@ -171,7 +192,7 @@ export function CategoryPage({
               </button>
 
               {open && (
-                <div style={{ padding: '0 14px 14px' }}>
+                <div style={{ padding: '0 14px 8px' }}>
                   <div className="chip-row">
                     {related.length === 0 && (
                       <span className="chip" style={{ minHeight: 32, color: 'var(--stone)' }}>
@@ -195,29 +216,47 @@ export function CategoryPage({
                       )
                     })}
                   </div>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={{ marginTop: 10, minHeight: 40, width: '100%' }}
-                    onClick={() => setAddFor(item.id)}
-                  >
-                    ＋ 新增此細項缺失
-                  </button>
                 </div>
               )}
+
+              <div style={{ padding: '0 14px 12px' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ minHeight: 40, width: '100%' }}
+                  onClick={() => openAddChooser(item.id)}
+                >
+                  <Plus size={16} />
+                  新增缺失
+                </button>
+              </div>
             </article>
           )
         })}
       </div>
 
-      {addFor !== null && (
+      {addMode === 'choose' && addItemId && (
+        <AddDefectModeSheet
+          itemLabel={addItemLabel}
+          onBurst={() => setAddMode('burst')}
+          onDetail={() => setAddMode('detail')}
+          onClose={closeAddFlow}
+        />
+      )}
+
+      {addMode === 'burst' && addItemId && (
+        <BurstCaptureSheet
+          categoryId={cat.id}
+          checklistItemId={addItemId}
+          onClose={closeAddFlow}
+        />
+      )}
+
+      {addMode === 'detail' && (
         <AddDefectSheet
           categoryId={cat.id}
-          checklistItemId={addFor || undefined}
-          onClose={() => {
-            if (addFor) openItem(addFor)
-            setAddFor(null)
-          }}
+          checklistItemId={addItemId || undefined}
+          onClose={closeAddFlow}
         />
       )}
 
@@ -229,7 +268,15 @@ export function CategoryPage({
       )}
 
       {createPortal(
-        <button type="button" className="fab-defect" onClick={() => setAddFor('')}>
+        <button
+          type="button"
+          className="fab-defect"
+          onClick={() => {
+            // FAB：無指定細項 → 走詳細表單（可選大項）
+            setAddItemId(null)
+            setAddMode('detail')
+          }}
+        >
           ＋ 新增缺失
         </button>,
         document.body,
