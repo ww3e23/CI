@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronDown } from 'lucide-react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { resolveDefectRemark } from '../../lib/defectDisplay'
 import { statusLabel } from '../../lib/progress'
@@ -35,6 +35,8 @@ export function CategoryPage({
   const cat = categories.find((c) => c.id === categoryId)
   const [addFor, setAddFor] = useState<string | null>(null)
   const [selectedDefect, setSelectedDefect] = useState<Defect | null>(null)
+  /** 細項展開狀態：預設收合，避免編號小卡堆滿畫面 */
+  const [openItemIds, setOpenItemIds] = useState<Record<string, boolean>>({})
   const categoryDone = Boolean(
     unit && cat && (unitCategoryDone[unit.id] ?? []).includes(cat.id),
   )
@@ -55,6 +57,14 @@ export function CategoryPage({
       ),
     [defects, unit?.id, categoryId],
   )
+
+  function toggleItem(itemId: string) {
+    setOpenItemIds((prev) => ({ ...prev, [itemId]: !prev[itemId] }))
+  }
+
+  function openItem(itemId: string) {
+    setOpenItemIds((prev) => ({ ...prev, [itemId]: true }))
+  }
 
   if (!cat || !unit) {
     return (
@@ -105,47 +115,96 @@ export function CategoryPage({
         {categoryDone ? '此大項已查畢（點此取消）' : '標記此大項已查畢'}
       </button>
 
-      <div style={{ display: 'grid', gap: 10 }}>
+      <div style={{ display: 'grid', gap: 8 }}>
         {catItems.map((item) => {
           const related = unitDefects
             .filter((d) => d.checklistItemId === item.id)
             .sort((a, b) => a.defectNumber - b.defectNumber)
+          const open = Boolean(openItemIds[item.id])
+          const countLabel =
+            related.length === 0 ? '尚無缺失' : `${related.length} 筆缺失`
+
           return (
-            <article key={item.id} className="glass" style={{ padding: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.45 }}>
-                {item.description}
-              </div>
-              <div className="chip-row" style={{ marginTop: 10 }}>
-                {related.length === 0 && (
-                  <span className="chip" style={{ minHeight: 32, color: 'var(--stone)' }}>
-                    尚無缺失
-                  </span>
-                )}
-                {related.map((d) => {
-                  const remark = resolveDefectRemark(d, items)
-                  return (
-                    <button
-                      key={d.id}
-                      type="button"
-                      className={`chip on ${statusClass[d.status]}`}
-                      style={{ minHeight: 32, maxWidth: '100%' }}
-                      onClick={() => setSelectedDefect(d)}
-                      title={remark || statusLabel(d.status)}
-                    >
-                      #{d.defectNumber} {statusLabel(d.status)}
-                      {remark ? ` · ${remark}` : ''}
-                    </button>
-                  )
-                })}
-              </div>
+            <article key={item.id} className="glass" style={{ padding: 0, overflow: 'hidden' }}>
               <button
                 type="button"
-                className="btn btn-ghost"
-                style={{ marginTop: 10, minHeight: 40, width: '100%' }}
-                onClick={() => setAddFor(item.id)}
+                onClick={() => toggleItem(item.id)}
+                aria-expanded={open}
+                style={{
+                  display: 'flex',
+                  width: '100%',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  padding: '12px 14px',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  color: 'inherit',
+                }}
               >
-                ＋ 新增此細項缺失
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.45 }}>
+                    {item.description}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: related.length > 0 ? 'var(--terracotta)' : 'var(--ink-soft)',
+                    }}
+                  >
+                    {open ? '點此收合' : countLabel}
+                  </div>
+                </div>
+                <ChevronDown
+                  size={18}
+                  style={{
+                    flexShrink: 0,
+                    marginTop: 2,
+                    opacity: 0.7,
+                    transform: open ? 'rotate(180deg)' : 'none',
+                    transition: 'transform 0.2s ease',
+                  }}
+                />
               </button>
+
+              {open && (
+                <div style={{ padding: '0 14px 14px' }}>
+                  <div className="chip-row">
+                    {related.length === 0 && (
+                      <span className="chip" style={{ minHeight: 32, color: 'var(--stone)' }}>
+                        尚無缺失
+                      </span>
+                    )}
+                    {related.map((d) => {
+                      const remark = resolveDefectRemark(d, items)
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          className={`chip on ${statusClass[d.status]}`}
+                          style={{ minHeight: 32, maxWidth: '100%' }}
+                          onClick={() => setSelectedDefect(d)}
+                          title={remark || statusLabel(d.status)}
+                        >
+                          #{d.defectNumber} {statusLabel(d.status)}
+                          {remark ? ` · ${remark}` : ''}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ marginTop: 10, minHeight: 40, width: '100%' }}
+                    onClick={() => setAddFor(item.id)}
+                  >
+                    ＋ 新增此細項缺失
+                  </button>
+                </div>
+              )}
             </article>
           )
         })}
@@ -155,7 +214,10 @@ export function CategoryPage({
         <AddDefectSheet
           categoryId={cat.id}
           checklistItemId={addFor || undefined}
-          onClose={() => setAddFor(null)}
+          onClose={() => {
+            if (addFor) openItem(addFor)
+            setAddFor(null)
+          }}
         />
       )}
 
