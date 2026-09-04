@@ -34,6 +34,7 @@ export function DefectDetailModal({
   const updateDefectStatus = useProjectStore((s) => s.updateDefectStatus)
   const checklistItems = useProjectStore((s) => s.checklistItems)
   const live = useProjectStore((s) => s.defects.find((d) => d.id === defect.id) ?? defect)
+  const unit = useProjectStore((s) => s.units.find((u) => u.id === live.unitId))
   const itemLabel = resolveDefectItemLabel(live, checklistItems)
   const remark = resolveDefectRemark(live, checklistItems)
   const inspector = defectInspectorLabel(live)
@@ -53,10 +54,16 @@ export function DefectDetailModal({
     void useProjectStore.getState().healStuckMediaSyncStates()
   }, [defect.id])
 
+  const planSrc = isUsableMediaUrl(live.planPhotoDataUrl)
+    ? live.planPhotoDataUrl
+    : isUsableMediaUrl(unit?.defaultPlanPhotoUrl)
+      ? unit!.defaultPlanPhotoUrl
+      : undefined
+
   const photos = [
-    isUsableMediaUrl(live.planPhotoDataUrl)
+    planSrc
       ? {
-          src: live.planPhotoDataUrl,
+          src: planSrc,
           kind: '圖面位置',
           filename: `${live.buildingName}-${live.floor}-${live.unitCode}-D${live.defectNumber}-plan`,
         }

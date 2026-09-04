@@ -186,7 +186,14 @@ export function UnitDefectsSheet({
                 onClick={() => setSelectedDefect(d)}
               >
                 <div style={{ display: 'grid', gap: 4 }}>
-                  <Thumb label="位置" src={d.planPhotoDataUrl} />
+                  <Thumb
+                    label="位置"
+                    src={
+                      isUsableMediaUrl(d.planPhotoDataUrl)
+                        ? d.planPhotoDataUrl
+                        : unit?.defaultPlanPhotoUrl
+                    }
+                  />
                   <Thumb label="現況" src={d.photoDataUrls[0]} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>

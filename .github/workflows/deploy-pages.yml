@@ -24,7 +24,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install
-        run: npm ci
+        run: npm ci --no-audit --no-fund
       - name: Build
         env:
           VITE_BASE_PATH: /CI/

@@ -82,9 +82,12 @@ export function DefectsPage() {
           message = '本戶照片連結看起來正常；若縮圖仍空白，請下拉重整或重新登入後再試'
         }
         setRecoverHint(message)
-        hideTimer = window.setTimeout(() => {
-          if (!cancelled) setRecoverHint(null)
-        }, result.recovered > 0 ? 10_000 : 12_000)
+        // 結果提示先留著，方便現場確認；切換戶別時會重跑覆蓋
+        if (result.recovered > 0) {
+          hideTimer = window.setTimeout(() => {
+            if (!cancelled) setRecoverHint(null)
+          }, 15_000)
+        }
       } catch (err) {
         console.warn('[DefectsPage] restore/recover media failed', err)
         if (!cancelled) {
@@ -229,7 +232,14 @@ export function DefectsPage() {
               onClick={() => setSelectedDefect(d)}
             >
               <div style={{ display: 'grid', gap: 4 }}>
-                <Thumb label="位置" src={d.planPhotoDataUrl} />
+                <Thumb
+                  label="位置"
+                  src={
+                    isUsableMediaUrl(d.planPhotoDataUrl)
+                      ? d.planPhotoDataUrl
+                      : unit?.defaultPlanPhotoUrl
+                  }
+                />
                 <Thumb label="現況" src={d.photoDataUrls[0]} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -294,6 +304,9 @@ export function DefectsPage() {
 
 function Thumb({ label, src }: { label: string; src?: string }) {
   const [broken, setBroken] = useState(false)
+  useEffect(() => {
+    setBroken(false)
+  }, [src])
   const usable = isUsableMediaUrl(src) && !broken
 
   if (usable) {
