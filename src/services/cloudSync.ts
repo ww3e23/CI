@@ -13,19 +13,47 @@ import { pushProjectState } from './projectSync'
 
 export { pullProjectState, pushProjectState, mergeProjectStates } from './projectSync'
 
-function stripHeavyPhotos(defect: Defect): Record<string, unknown> {
+export type SyncDefectOptions = {
+  /** 允許把照片欄位寫成空／null（使用者明確清空時才開） */
+  allowClearMedia?: boolean
+}
+
+/**
+ * 準備寫入 Firestore 的缺失資料。
+ * 重要：merge:true 時若寫入 photoDataUrls:[] 或 [local-pending-upload]，
+ * 會把雲端既有的 https 連結整個蓋掉。因此沒有可用 http 圖時省略這些欄位。
+ */
+function stripHeavyPhotos(
+  defect: Defect,
+  options?: SyncDefectOptions,
+): Record<string, unknown> {
   const plan = defect.planPhotoDataUrl
   const photos = defect.photoDataUrls ?? []
-  return {
+  const httpPhotos = photos.filter((p) => /^https?:\/\//i.test(String(p || '')))
+
+  const out: Record<string, unknown> = {
     ...defect,
-    // Firestore 不適合放大 base64；已上 Storage 的才保留 URL
-    planPhotoDataUrl: plan?.startsWith('http') ? plan : plan ? '[local-pending-upload]' : null,
-    photoDataUrls: photos.map((p) => (p.startsWith('http') ? p : '[local-pending-upload]')),
-    // 保留客戶端 ISO，供合併時可靠比較（serverTimestamp 拉回後曾被 String() 破壞）
     clientUpdatedAt: defect.updatedAt,
     updatedAt: serverTimestamp(),
     createdAt: defect.createdAt,
   }
+
+  delete out.planPhotoDataUrl
+  delete out.photoDataUrls
+
+  if (plan && /^https?:\/\//i.test(plan)) {
+    out.planPhotoDataUrl = plan
+  } else if (options?.allowClearMedia && !plan) {
+    out.planPhotoDataUrl = null
+  }
+
+  if (httpPhotos.length > 0) {
+    out.photoDataUrls = httpPhotos
+  } else if (options?.allowClearMedia && photos.length === 0) {
+    out.photoDataUrls = []
+  }
+
+  return out
 }
 
 export async function syncProjectMeta(project: ProjectMeta): Promise<boolean> {
@@ -66,12 +94,16 @@ export async function syncProjectStructure(
   return pushProjectState(projectId, state, meta)
 }
 
-export async function syncDefect(projectId: string, defect: Defect): Promise<boolean> {
+export async function syncDefect(
+  projectId: string,
+  defect: Defect,
+  options?: SyncDefectOptions,
+): Promise<boolean> {
   const db = getDb()
   if (!db) return false
   await setDoc(
     doc(collection(db, 'projects', projectId, 'defects'), defect.id),
-    stripHeavyPhotos(defect),
+    stripHeavyPhotos(defect, options),
     { merge: true },
   )
   return true

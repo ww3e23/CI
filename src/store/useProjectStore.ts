@@ -806,7 +806,11 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
                 ...(get().defects.find((d) => d.id === next.id) ?? next),
                 syncState: 'synced' as const,
               }
-              await syncDefect(projectId, synced)
+              const allowClearMedia =
+                patch.planPhotoDataUrl === null ||
+                (patch.photoDataUrls !== undefined &&
+                  (patch.photoDataUrls?.length ?? 0) === 0)
+              await syncDefect(projectId, synced, { allowClearMedia })
               set({
                 defects: get().defects.map((d) => (d.id === synced.id ? synced : d)),
               })

@@ -385,8 +385,29 @@ export async function pushProjectState(
   // 缺失改由新增／更新時單獨同步，這裡不再整包重傳（大幅加速）
 
   // 其餘狀態集中放 meta/site
+  const siteRef = doc(db, 'projects', projectId, ...SITE_META_PATH)
+  const siteSnap = await getDoc(siteRef)
+  const prevSite = siteSnap.exists() ? (siteSnap.data() as Record<string, unknown>) : {}
+  const prevUnitPlans = parseUnitPlanPhotosMap(prevSite.unitPlanPhotos)
+  const localUnitPlans = unitPlanPhotosMap(state.units)
+  // merge:true 不會深合併 map；必須手動合併，避免本機缺圖把雲端戶別位置圖整包蓋空
+  const mergedUnitPlans = { ...prevUnitPlans, ...localUnitPlans }
+
+  const prevSitePlanSource =
+    typeof prevSite.sitePlanSourceUrl === 'string' ? prevSite.sitePlanSourceUrl : null
+  const prevSitePlanMap =
+    typeof prevSite.sitePlanMapUrl === 'string' ? prevSite.sitePlanMapUrl : null
+  const nextSitePlanSource =
+    state.sitePlanSourceUrl && /^https?:\/\//i.test(state.sitePlanSourceUrl)
+      ? state.sitePlanSourceUrl
+      : prevSitePlanSource
+  const nextSitePlanMap =
+    state.sitePlanMapUrl && /^https?:\/\//i.test(state.sitePlanMapUrl)
+      ? state.sitePlanMapUrl
+      : prevSitePlanMap
+
   await setDoc(
-    doc(db, 'projects', projectId, ...SITE_META_PATH),
+    siteRef,
     {
       projectName: state.projectName,
       areas: state.areas,
@@ -397,9 +418,9 @@ export async function pushProjectState(
       unitNextDefect: unitNextMap(state.units),
       unitAreas: unitAreasMap(state.units),
       unitAreaTemplates: unitAreaTemplateMap(state.units),
-      unitPlanPhotos: unitPlanPhotosMap(state.units),
-      sitePlanSourceUrl: state.sitePlanSourceUrl ?? null,
-      sitePlanMapUrl: state.sitePlanMapUrl ?? null,
+      unitPlanPhotos: mergedUnitPlans,
+      sitePlanSourceUrl: nextSitePlanSource,
+      sitePlanMapUrl: nextSitePlanMap,
       currentUnitId: state.currentUnitId,
       recentUnitIds: state.recentUnitIds,
       updatedAt: serverTimestamp(),

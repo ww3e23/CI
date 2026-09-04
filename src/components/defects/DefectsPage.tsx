@@ -57,6 +57,13 @@ export function DefectsPage() {
         }
         if (unitDefectCount === 0) return
 
+        // 先強制從雲端重拉，避免本機空照片狀態繼續蓋住雲端殘留連結
+        const projectId = useProjectStore.getState().activeProjectId
+        if (projectId) {
+          await useProjectStore.getState().hydrateFromCloud(projectId)
+          if (cancelled) return
+        }
+
         await useProjectStore.getState().restorePendingMediaToMemory()
         if (cancelled) return
         await useProjectStore.getState().healStuckMediaSyncStates()
@@ -77,7 +84,7 @@ export function DefectsPage() {
           message = `已從雲端找回／更新 ${result.recovered} 筆照片`
         } else if (result.scanned > 0) {
           message =
-            '雲端 Storage 沒有找到本戶照片檔（可能當時尚未上傳成功）。若有開 Google 雲端硬碟，請到專案資料夾確認。'
+            '雲端 Storage 沒有找到本戶照片檔。已停止用空資料覆蓋雲端；請再重整一次，或到 Google 雲端硬碟專案資料夾確認。'
         } else {
           message = '本戶照片連結看起來正常；若縮圖仍空白，請下拉重整或重新登入後再試'
         }
