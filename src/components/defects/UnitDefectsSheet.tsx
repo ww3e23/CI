@@ -6,6 +6,7 @@ import {
   defectListTitle,
   resolveDefectRemark,
 } from '../../lib/defectDisplay'
+import { isUsableMediaUrl } from '../../lib/defectMedia'
 import { statusLabel } from '../../lib/progress'
 import { useProjectStore } from '../../store/useProjectStore'
 import { Modal } from '../ui/Modal'
@@ -257,11 +258,16 @@ export function UnitDefectsSheet({
 }
 
 function Thumb({ label, src }: { label: string; src?: string }) {
-  if (src) {
+  const [broken, setBroken] = useState(false)
+  const usable = isUsableMediaUrl(src) && !broken
+
+  if (usable) {
     return (
       <img
         src={src}
         alt={label}
+        referrerPolicy="no-referrer"
+        onError={() => setBroken(true)}
         style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover' }}
       />
     )

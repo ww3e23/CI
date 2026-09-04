@@ -6,7 +6,7 @@ import {
   resolveDefectItemLabel,
   resolveDefectRemark,
 } from '../../lib/defectDisplay'
-import { hasUploadableLocalMedia } from '../../lib/defectMedia'
+import { hasUploadableLocalMedia, isUsableMediaUrl } from '../../lib/defectMedia'
 import { statusLabel } from '../../lib/progress'
 import { Modal } from '../ui/Modal'
 import { useCurrentRole, useCurrentUser } from '../../store/useAuthStore'
@@ -54,18 +54,20 @@ export function DefectDetailModal({
   }, [defect.id])
 
   const photos = [
-    live.planPhotoDataUrl
+    isUsableMediaUrl(live.planPhotoDataUrl)
       ? {
           src: live.planPhotoDataUrl,
           kind: '圖面位置',
           filename: `${live.buildingName}-${live.floor}-${live.unitCode}-D${live.defectNumber}-plan`,
         }
       : null,
-    ...(live.photoDataUrls ?? []).map((src, i) => ({
-      src,
-      kind: `現況 ${i + 1}`,
-      filename: `${live.buildingName}-${live.floor}-${live.unitCode}-D${live.defectNumber}-photo-${i + 1}`,
-    })),
+    ...(live.photoDataUrls ?? [])
+      .filter((src) => isUsableMediaUrl(src))
+      .map((src, i) => ({
+        src,
+        kind: `現況 ${i + 1}`,
+        filename: `${live.buildingName}-${live.floor}-${live.unitCode}-D${live.defectNumber}-photo-${i + 1}`,
+      })),
   ].filter(Boolean) as { src: string; kind: string; filename: string }[]
 
   const hasLocalPending = hasUploadableLocalMedia(live)

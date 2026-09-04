@@ -512,11 +512,13 @@ export async function pullProjectState(projectId: string): Promise<PulledProject
 }
 
 function preferMediaUrl(a?: string, b?: string): string | undefined {
-  if (a?.startsWith('http')) return a
-  if (b?.startsWith('http')) return b
-  if (a?.startsWith('data:')) return a
-  if (b?.startsWith('data:')) return b
-  return a || b
+  const pick = (v?: string) => {
+    const s = String(v || '').trim()
+    if (!s || s === '[local-pending-upload]') return undefined
+    if (s.startsWith('http') || s.startsWith('data:') || s.startsWith('blob:')) return s
+    return undefined
+  }
+  return pick(a) || pick(b)
 }
 
 function defectTimeMs(iso: string): number {
@@ -534,9 +536,12 @@ export function mergeDefectPhotos(local: Defect, remote: Defect): Defect {
     const picked = preferMediaUrl(remotePhotos[i], localPhotos[i])
     if (picked) photoDataUrls.push(picked)
   }
-  // 若一邊完全沒圖、另一邊有，直接用有圖的那份
+  // 若一邊完全沒圖、另一邊有，直接用有圖的那份（排除上傳占位）
   if (photoDataUrls.length === 0) {
-    photoDataUrls.push(...(localPhotos.length ? localPhotos : remotePhotos))
+    const fallback = (localPhotos.length ? localPhotos : remotePhotos).filter(
+      (p) => preferMediaUrl(p) !== undefined,
+    )
+    photoDataUrls.push(...fallback)
   }
 
   const localMs = defectTimeMs(local.updatedAt)

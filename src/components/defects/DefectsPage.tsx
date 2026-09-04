@@ -6,6 +6,7 @@ import {
   defectListTitle,
   resolveDefectRemark,
 } from '../../lib/defectDisplay'
+import { isUsableMediaUrl } from '../../lib/defectMedia'
 import { defectsByStatus, statusLabel } from '../../lib/progress'
 import type { Defect, DefectStatus } from '../../types'
 import { UnitSwitcher } from '../UnitSwitcher'
@@ -28,6 +29,25 @@ export function DefectsPage() {
   useEffect(() => {
     backfillActorNames()
   }, [backfillActorNames])
+
+  // 進入缺失頁：強制把 IndexedDB 佇列圖掛回畫面並補上傳
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        await useProjectStore.getState().restorePendingMediaToMemory()
+        if (cancelled) return
+        await useProjectStore.getState().healStuckMediaSyncStates()
+        if (cancelled) return
+        void useProjectStore.getState().flushPendingMediaUploads()
+      } catch (err) {
+        console.warn('[DefectsPage] restore/flush media failed', err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const unit =
     units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active) ?? null
@@ -206,11 +226,16 @@ export function DefectsPage() {
 }
 
 function Thumb({ label, src }: { label: string; src?: string }) {
-  if (src) {
+  const [broken, setBroken] = useState(false)
+  const usable = isUsableMediaUrl(src) && !broken
+
+  if (usable) {
     return (
       <img
         src={src}
         alt={label}
+        referrerPolicy="no-referrer"
+        onError={() => setBroken(true)}
         style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover' }}
       />
     )

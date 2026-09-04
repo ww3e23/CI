@@ -1,5 +1,6 @@
 import JSZip from 'jszip'
 import type { Defect, ProjectState, Unit } from '../types'
+import { isUsableMediaUrl } from './defectMedia'
 import { resolveDefectItemLabel } from './defectDisplay'
 import { fetchImageBlobForZip, safeFilename, triggerAnchorDownload } from './download'
 
@@ -71,7 +72,7 @@ export function collectUnitPhotoEntries(
     const cat = sanitizePart(d.categoryName || '未指定大項')
     const prefix = `#${d.defectNumber}_${cat}_${area}_${itemLabel}`
 
-    if (d.planPhotoDataUrl) {
+    if (isUsableMediaUrl(d.planPhotoDataUrl)) {
       out.push({
         src: d.planPhotoDataUrl,
         filename: uniqueName(`${prefix}_plan`, d.planPhotoDataUrl),
@@ -80,7 +81,7 @@ export function collectUnitPhotoEntries(
       })
     }
     ;(d.photoDataUrls ?? []).forEach((src, i) => {
-      if (!src) return
+      if (!isUsableMediaUrl(src)) return
       out.push({
         src,
         filename: uniqueName(`${prefix}_photo-${String(i + 1).padStart(2, '0')}`, src),
@@ -211,7 +212,7 @@ export async function downloadUnitPhotosZip(params: {
   if (ok === 0) {
     throw new Error(
       failed > 0
-        ? '無法讀取圖片（可能是網路或雲端權限問題），請稍後再試'
+        ? '無法讀取圖片（可能是網路不穩或尚未登入雲端），請確認已登入後再試'
         : '沒有可打包的圖片',
     )
   }
@@ -251,7 +252,7 @@ export function countUnitPhotos(
 export function unitHasPhotos(defects: Defect[], unitId: string): boolean {
   return defects.some((d) => {
     if (d.unitId !== unitId || d.status === 'voided') return false
-    if (d.planPhotoDataUrl) return true
-    return (d.photoDataUrls ?? []).some(Boolean)
+    if (isUsableMediaUrl(d.planPhotoDataUrl)) return true
+    return (d.photoDataUrls ?? []).some((src) => isUsableMediaUrl(src))
   })
 }

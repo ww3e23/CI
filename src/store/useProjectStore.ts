@@ -293,11 +293,13 @@ function rebuildUnits(buildings: BuildingRule[], prevUnits: ProjectState['units'
 }
 
 function preferMediaUrl(a?: string, b?: string): string | undefined {
-  if (a?.startsWith('http')) return a
-  if (b?.startsWith('http')) return b
-  if (a?.startsWith('data:')) return a
-  if (b?.startsWith('data:')) return b
-  return a || b
+  const pick = (v?: string) => {
+    const s = String(v || '').trim()
+    if (!s || s === '[local-pending-upload]') return undefined
+    if (s.startsWith('http') || s.startsWith('data:') || s.startsWith('blob:')) return s
+    return undefined
+  }
+  return pick(a) || pick(b)
 }
 
 function mergePhotoLists(a: string[] = [], b: string[] = []): string[] {
@@ -307,7 +309,12 @@ function mergePhotoLists(a: string[] = [], b: string[] = []): string[] {
     const picked = preferMediaUrl(a[i], b[i])
     if (picked) out.push(picked)
   }
-  if (out.length === 0) return a.length ? a : b
+  if (out.length === 0) {
+    const fallback = (a.length ? a : b).filter(
+      (p) => preferMediaUrl(p) !== undefined,
+    )
+    return fallback
+  }
   return out
 }
 
@@ -452,7 +459,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           Boolean(planPhotoDataUrl && /^https?:\/\//i.test(planPhotoDataUrl)) ||
           photoDataUrls.some((p) => /^https?:\/\//i.test(p))
 
-        // 大圖穩存 IndexedDB：詳細表單預設 await；連拍用 background 避免卡住下一張
+        // 大圖穩存 IndexedDB：詳細表單預設 await；連拍可 background，但必須寫完再 flush
         if (projectId && hasLocalMedia) {
           const persist = async () => {
             try {
@@ -469,18 +476,8 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               console.warn('[pendingMedia] save failed', err)
             }
           }
-          if (persistMedia === 'background') void persist()
-          else await persist()
-        }
-
-        if (cloudReady() && projectId) {
-          set({
-            defects: get().defects.map((d) =>
-              d.id === defect.id ? { ...d, syncState: 'syncing' } : d,
-            ),
-          })
-          if (hasLocalMedia) {
-            void get()
+          const startFlush = () =>
+            get()
               .flushPendingMediaUploads()
               .catch(() => {
                 set({
@@ -489,53 +486,74 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
                   ),
                 })
               })
-          } else {
-            // 無本機 data URL 也要立刻寫入雲端；若只有 http 預設圖，物化進 Storage 再同步 Drive
-            void syncDefect(projectId, { ...defect, syncState: 'synced' })
-              .then(async () => {
-                const latest = get().defects.find((d) => d.id === defect.id)
-                if (!latest || latest.status === 'voided') return
-                let synced = { ...latest, syncState: 'synced' as const }
-                if (hasRemoteMedia) {
-                  try {
-                    const { planUrl, photoUrls } = await uploadDefectImages({
-                      projectId,
-                      defectId: defect.id,
-                      planPhotoDataUrl: latest.planPhotoDataUrl,
-                      photoDataUrls: latest.photoDataUrls,
-                    })
-                    const afterUpload = get().defects.find((d) => d.id === defect.id)
-                    if (!afterUpload || afterUpload.status === 'voided') return
-                    synced = {
-                      ...afterUpload,
-                      planPhotoDataUrl: planUrl ?? afterUpload.planPhotoDataUrl,
-                      photoDataUrls: photoUrls.length
-                        ? photoUrls
-                        : afterUpload.photoDataUrls,
-                      syncState: 'synced',
-                      updatedAt: new Date().toISOString(),
-                    }
-                    await syncDefect(projectId, synced)
-                  } catch (err) {
-                    console.warn('[addDefect] materialize remote media failed', err)
-                  }
-                }
-                set({
-                  defects: get().defects.map((d) =>
-                    d.id === defect.id ? synced : d,
-                  ),
-                })
-                scheduleCloudSync(get)
-                // Drive 由後端 onDefectWrittenAutoDrive 統一寫入，勿再 callable 以免競態重複檔
-              })
-              .catch(() => {
-                set({
-                  defects: get().defects.map((d) =>
-                    d.id === defect.id ? { ...d, syncState: 'failed' } : d,
-                  ),
-                })
-              })
+
+          if (cloudReady()) {
+            set({
+              defects: get().defects.map((d) =>
+                d.id === defect.id ? { ...d, syncState: 'syncing' } : d,
+              ),
+            })
           }
+
+          if (persistMedia === 'background') {
+            void persist().then(() => {
+              if (cloudReady()) startFlush()
+            })
+          } else {
+            await persist()
+            if (cloudReady()) void startFlush()
+          }
+        } else if (cloudReady() && projectId) {
+          set({
+            defects: get().defects.map((d) =>
+              d.id === defect.id ? { ...d, syncState: 'syncing' } : d,
+            ),
+          })
+          // 無本機 data URL 也要立刻寫入雲端；若只有 http 預設圖，物化進 Storage 再同步 Drive
+          void syncDefect(projectId, { ...defect, syncState: 'synced' })
+            .then(async () => {
+              const latest = get().defects.find((d) => d.id === defect.id)
+              if (!latest || latest.status === 'voided') return
+              let synced = { ...latest, syncState: 'synced' as const }
+              if (hasRemoteMedia) {
+                try {
+                  const { planUrl, photoUrls } = await uploadDefectImages({
+                    projectId,
+                    defectId: defect.id,
+                    planPhotoDataUrl: latest.planPhotoDataUrl,
+                    photoDataUrls: latest.photoDataUrls,
+                  })
+                  const afterUpload = get().defects.find((d) => d.id === defect.id)
+                  if (!afterUpload || afterUpload.status === 'voided') return
+                  synced = {
+                    ...afterUpload,
+                    planPhotoDataUrl: planUrl ?? afterUpload.planPhotoDataUrl,
+                    photoDataUrls: photoUrls.length
+                      ? photoUrls
+                      : afterUpload.photoDataUrls,
+                    syncState: 'synced',
+                    updatedAt: new Date().toISOString(),
+                  }
+                  await syncDefect(projectId, synced)
+                } catch (err) {
+                  console.warn('[addDefect] materialize remote media failed', err)
+                }
+              }
+              set({
+                defects: get().defects.map((d) =>
+                  d.id === defect.id ? synced : d,
+                ),
+              })
+              scheduleCloudSync(get)
+              // Drive 由後端 onDefectWrittenAutoDrive 統一寫入，勿再 callable 以免競態重複檔
+            })
+            .catch(() => {
+              set({
+                defects: get().defects.map((d) =>
+                  d.id === defect.id ? { ...d, syncState: 'failed' } : d,
+                ),
+              })
+            })
         }
 
         return get().defects.find((d) => d.id === defect.id) ?? defect

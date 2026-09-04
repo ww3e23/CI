@@ -1,4 +1,5 @@
 import type { Defect, ProjectState, Unit } from '../types'
+import { isUsableMediaUrl } from './defectMedia'
 import { resolveDefectItemLabel, resolveDefectRemark, defectInspectorLabel } from './defectDisplay'
 import { escapeHtml } from './escapeHtml'
 import { floorRank } from './floors'
@@ -38,14 +39,6 @@ function floorLabel(floor: string): string {
   if (!floor) return '—'
   if (floor.includes('樓') || /F$/i.test(floor)) return floor
   return `${floor}樓`
-}
-
-/** 可嵌入報告的圖片網址（排除上傳中占位字串） */
-function isUsableMediaUrl(url?: string | null): url is string {
-  const v = String(url || '').trim()
-  if (!v) return false
-  if (v === '[local-pending-upload]') return false
-  return v.startsWith('http://') || v.startsWith('https://') || v.startsWith('data:')
 }
 
 /**

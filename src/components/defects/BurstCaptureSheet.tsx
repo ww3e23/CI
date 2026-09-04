@@ -196,7 +196,8 @@ export function BurstCaptureSheet({
             area: shotArea,
             description: '',
             photoDataUrls: [url],
-            persistMedia: 'background',
+            // 先穩存 IndexedDB 再回傳，避免背景寫入競態導致重整後無圖
+            persistMedia: 'await',
           })
           if (!d) {
             setError('儲存失敗，請再試一次')

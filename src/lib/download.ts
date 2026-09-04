@@ -169,18 +169,21 @@ async function tryResolveBlob(src: string): Promise<Blob | null> {
 
 /**
  * 批次打包專用：只要 blob，不做 File／objectUrl。
- * 優先走 fetch（多有快取），失敗再短超時試 Storage SDK。
+ * Firebase URL 優先 Storage SDK getBlob（走登入態，不受 bucket CORS 限制）；
+ * 其餘再試 fetch。
  */
 export async function fetchImageBlobForZip(
   src: string,
-  timeoutMs = 10_000,
+  timeoutMs = 12_000,
 ): Promise<Blob | null> {
-  if (!src) return null
+  const trimmed = String(src || '').trim()
+  if (!trimmed) return null
+  if (trimmed === '[local-pending-upload]') return null
 
-  if (src.startsWith('data:')) {
+  if (trimmed.startsWith('data:')) {
     try {
       // fetch(data:) 比逐字 atob 快很多
-      const res = await fetch(src)
+      const res = await fetch(trimmed)
       if (res.ok) {
         const blob = await res.blob()
         if (blob.size > 0) return blob
@@ -189,16 +192,16 @@ export async function fetchImageBlobForZip(
       /* fall through */
     }
     try {
-      const blob = dataUrlToBlob(src)
+      const blob = dataUrlToBlob(trimmed)
       return blob.size > 0 ? blob : null
     } catch {
       return null
     }
   }
 
-  if (src.startsWith('blob:')) {
+  if (trimmed.startsWith('blob:')) {
     try {
-      const res = await withTimeout(fetch(src), timeoutMs, 'blob')
+      const res = await withTimeout(fetch(trimmed), timeoutMs, 'blob')
       if (res.ok) {
         const blob = await res.blob()
         return blob.size > 0 ? blob : null
@@ -209,9 +212,23 @@ export async function fetchImageBlobForZip(
     return null
   }
 
+  // Firebase：先 SDK（需登入；不受 CORS），再 fetch token URL
+  if (isFirebaseStorageUrl(trimmed)) {
+    const storage = getFirebaseStorage()
+    const path = storagePathFromUrl(trimmed)
+    if (storage && path) {
+      try {
+        const blob = await withTimeout(getBlob(ref(storage, path)), timeoutMs, 'Storage')
+        if (blob.size > 0) return blob
+      } catch (err) {
+        console.warn('[zip-blob] getBlob skipped', err)
+      }
+    }
+  }
+
   try {
     const res = await withTimeout(
-      fetch(src, { mode: 'cors', credentials: 'omit', cache: 'force-cache' }),
+      fetch(trimmed, { mode: 'cors', credentials: 'omit', cache: 'force-cache' }),
       timeoutMs,
       'fetch',
     )
@@ -221,23 +238,6 @@ export async function fetchImageBlobForZip(
     }
   } catch (err) {
     console.warn('[zip-blob] fetch skipped', err)
-  }
-
-  if (isFirebaseStorageUrl(src)) {
-    const storage = getFirebaseStorage()
-    const path = storagePathFromUrl(src)
-    if (storage && path) {
-      try {
-        const blob = await withTimeout(
-          getBlob(ref(storage, path)),
-          Math.min(timeoutMs, 5_000),
-          'Storage',
-        )
-        if (blob.size > 0) return blob
-      } catch (err) {
-        console.warn('[zip-blob] getBlob skipped', err)
-      }
-    }
   }
 
   return null
