@@ -159,8 +159,12 @@ interface ProjectActions {
   /**
    * 本機／Firestore 沒有可用圖時，掃描 Firebase Storage 同路徑檔案並寫回。
    * @param unitId 若提供則只掃該戶（缺失頁用，較快）
+   * @param options.refreshAll 為 true 時掃該戶全部缺失（含已有 http 連結），以 Storage 為準覆寫
    */
-  recoverMissingPhotosFromStorage: (unitId?: string) => Promise<{
+  recoverMissingPhotosFromStorage: (
+    unitId?: string,
+    options?: { refreshAll?: boolean },
+  ) => Promise<{
     ok: boolean
     scanned: number
     recovered: number
@@ -1831,19 +1835,21 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         }
       },
 
-      recoverMissingPhotosFromStorage: async (unitId) => {
+      recoverMissingPhotosFromStorage: async (unitId, options) => {
         const projectId = get().activeProjectId
         if (!projectId) return { ok: false, scanned: 0, recovered: 0, error: '尚未選擇專案' }
         if (!cloudReady()) {
           return { ok: false, scanned: 0, recovered: 0, error: '尚未連上雲端' }
         }
 
+        const refreshAll = Boolean(options?.refreshAll && unitId)
         const candidates = get().defects.filter((d) => {
           if (d.status === 'voided') return false
           if (unitId && d.unitId !== unitId) return false
+          if (refreshAll) return true
           const hasPlan = isUsableMediaUrl(d.planPhotoDataUrl)
           const hasPhotos = (d.photoDataUrls ?? []).some((p) => isUsableMediaUrl(p))
-          // 完全沒有可顯示圖才掃 Storage（避免對已有圖的缺失狂打 listAll）
+          // 完全沒有可顯示圖才掃 Storage（全專案掃描時避免狂打 listAll）
           return !hasPlan && !hasPhotos
         })
 
@@ -1862,22 +1868,29 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           }
 
           let recovered = 0
+          const touchedIds: string[] = []
           const nextDefects = get().defects.map((defect) => {
             const media = found.get(defect.id)
             if (!media) return defect
 
-            const planPhotoDataUrl =
-              preferMediaUrl(defect.planPhotoDataUrl, media.planUrl) ?? defect.planPhotoDataUrl
-            const photoDataUrls = mergePhotoLists(defect.photoDataUrls, media.photoUrls)
-            const planChanged =
-              isUsableMediaUrl(planPhotoDataUrl) &&
-              planPhotoDataUrl !== defect.planPhotoDataUrl
+            // Storage 有檔就以雲端為準（可覆寫失效／占位 http 連結）
+            const planPhotoDataUrl = media.planUrl
+              ? media.planUrl
+              : isUsableMediaUrl(defect.planPhotoDataUrl)
+                ? defect.planPhotoDataUrl
+                : undefined
+            const photoDataUrls =
+              media.photoUrls.length > 0
+                ? media.photoUrls
+                : (defect.photoDataUrls ?? []).filter((p) => isUsableMediaUrl(p))
+
+            const planChanged = planPhotoDataUrl !== defect.planPhotoDataUrl
             const photosChanged =
-              photoDataUrls.join('|') !== (defect.photoDataUrls ?? []).join('|') &&
-              photoDataUrls.some((p) => isUsableMediaUrl(p))
+              photoDataUrls.join('|') !== (defect.photoDataUrls ?? []).join('|')
             if (!planChanged && !photosChanged) return defect
 
             recovered += 1
+            touchedIds.push(defect.id)
             return {
               ...defect,
               planPhotoDataUrl,
@@ -1890,11 +1903,9 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           if (recovered > 0) {
             set({ defects: nextDefects })
             afterProjectChange(get, set, { syncCloud: false })
+            const touched = new Set(touchedIds)
             for (const d of get().defects) {
-              if (!found.has(d.id)) continue
-              if (!isUsableMediaUrl(d.planPhotoDataUrl) && !(d.photoDataUrls ?? []).some(isUsableMediaUrl)) {
-                continue
-              }
+              if (!touched.has(d.id)) continue
               void syncDefect(projectId, d).catch((err) => {
                 console.warn('[recoverMissingPhotosFromStorage] sync failed', d.id, err)
               })

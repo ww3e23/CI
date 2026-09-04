@@ -31,58 +31,70 @@ export function DefectsPage() {
     backfillActorNames()
   }, [backfillActorNames])
 
-  // 進入缺失頁／切換戶別：還原本機佇列，並掃描雲端 Storage 找回遺失連結
+  // 進入缺失頁／切換戶別：還原本機佇列，並強制掃描本戶雲端 Storage
   useEffect(() => {
     let cancelled = false
+    let hideTimer: number | undefined
     void (async () => {
       try {
+        const unitId =
+          useProjectStore.getState().currentUnitId ||
+          useProjectStore.getState().units.find((u) => u.active)?.id
+        if (!unitId) {
+          if (!cancelled) setRecoverHint('請先選擇戶別後再檢查雲端照片')
+          return
+        }
+
+        const unitDefectCount = useProjectStore
+          .getState()
+          .defects.filter((d) => d.unitId === unitId && d.status !== 'voided').length
+        if (!cancelled) {
+          setRecoverHint(
+            unitDefectCount > 0
+              ? `正在檢查本戶雲端照片（${unitDefectCount} 筆）…`
+              : '此戶尚無缺失，無需找回照片',
+          )
+        }
+        if (unitDefectCount === 0) return
+
         await useProjectStore.getState().restorePendingMediaToMemory()
         if (cancelled) return
         await useProjectStore.getState().healStuckMediaSyncStates()
         if (cancelled) return
         void useProjectStore.getState().flushPendingMediaUploads()
 
-        const unitId =
-          useProjectStore.getState().currentUnitId ||
-          useProjectStore.getState().units.find((u) => u.active)?.id
-        if (!unitId) return
-
-        const missing = useProjectStore
-          .getState()
-          .defects.filter(
-            (d) =>
-              d.unitId === unitId &&
-              d.status !== 'voided' &&
-              !isUsableMediaUrl(d.planPhotoDataUrl) &&
-              !(d.photoDataUrls ?? []).some((p) => isUsableMediaUrl(p)),
-          )
-        if (missing.length === 0) return
-
-        if (!cancelled) setRecoverHint(`正在從雲端找回照片（${missing.length} 筆）…`)
         const result = await useProjectStore
           .getState()
-          .recoverMissingPhotosFromStorage(unitId)
+          .recoverMissingPhotosFromStorage(unitId, { refreshAll: true })
         if (cancelled) return
-        if (result.recovered > 0) {
-          setRecoverHint(`已從雲端找回 ${result.recovered} 筆照片`)
-          window.setTimeout(() => {
-            if (!cancelled) setRecoverHint(null)
-          }, 5000)
+
+        let message: string
+        if (!result.ok) {
+          message = result.error
+            ? `雲端照片檢查失敗：${result.error}`
+            : '雲端照片檢查失敗，請稍後再試'
+        } else if (result.recovered > 0) {
+          message = `已從雲端找回／更新 ${result.recovered} 筆照片`
         } else if (result.scanned > 0) {
-          setRecoverHint('雲端也找不到這些照片（可能當時尚未上傳成功）')
-          window.setTimeout(() => {
-            if (!cancelled) setRecoverHint(null)
-          }, 8000)
+          message =
+            '雲端 Storage 沒有找到本戶照片檔（可能當時尚未上傳成功）。若有開 Google 雲端硬碟，請到專案資料夾確認。'
         } else {
-          setRecoverHint(null)
+          message = '本戶照片連結看起來正常；若縮圖仍空白，請下拉重整或重新登入後再試'
         }
+        setRecoverHint(message)
+        hideTimer = window.setTimeout(() => {
+          if (!cancelled) setRecoverHint(null)
+        }, result.recovered > 0 ? 10_000 : 12_000)
       } catch (err) {
         console.warn('[DefectsPage] restore/recover media failed', err)
-        if (!cancelled) setRecoverHint(null)
+        if (!cancelled) {
+          setRecoverHint('雲端照片檢查失敗，請稍後再試')
+        }
       }
     })()
     return () => {
       cancelled = true
+      if (hideTimer) window.clearTimeout(hideTimer)
     }
   }, [currentUnitId])
 
@@ -160,12 +172,17 @@ export function DefectsPage() {
           />
           {recoverHint ? (
             <div
+              role="status"
               style={{
                 marginTop: 8,
-                fontSize: 12,
-                fontWeight: 600,
+                padding: '10px 12px',
+                borderRadius: 12,
+                background: 'rgba(47, 93, 76, 0.1)',
+                border: '1px solid rgba(47, 93, 76, 0.22)',
+                fontSize: 13,
+                fontWeight: 700,
                 color: 'var(--green-deep)',
-                lineHeight: 1.4,
+                lineHeight: 1.45,
               }}
             >
               {recoverHint}
