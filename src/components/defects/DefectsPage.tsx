@@ -25,12 +25,13 @@ export function DefectsPage() {
   const [quickStatus, setQuickStatus] = useState<QuickStatus>('all')
   const [unitOpen, setUnitOpen] = useState(false)
   const [selectedDefect, setSelectedDefect] = useState<Defect | null>(null)
+  const [recoverHint, setRecoverHint] = useState<string | null>(null)
 
   useEffect(() => {
     backfillActorNames()
   }, [backfillActorNames])
 
-  // 進入缺失頁：強制把 IndexedDB 佇列圖掛回畫面並補上傳
+  // 進入缺失頁／切換戶別：還原本機佇列，並掃描雲端 Storage 找回遺失連結
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -40,14 +41,50 @@ export function DefectsPage() {
         await useProjectStore.getState().healStuckMediaSyncStates()
         if (cancelled) return
         void useProjectStore.getState().flushPendingMediaUploads()
+
+        const unitId =
+          useProjectStore.getState().currentUnitId ||
+          useProjectStore.getState().units.find((u) => u.active)?.id
+        if (!unitId) return
+
+        const missing = useProjectStore
+          .getState()
+          .defects.filter(
+            (d) =>
+              d.unitId === unitId &&
+              d.status !== 'voided' &&
+              !isUsableMediaUrl(d.planPhotoDataUrl) &&
+              !(d.photoDataUrls ?? []).some((p) => isUsableMediaUrl(p)),
+          )
+        if (missing.length === 0) return
+
+        if (!cancelled) setRecoverHint(`正在從雲端找回照片（${missing.length} 筆）…`)
+        const result = await useProjectStore
+          .getState()
+          .recoverMissingPhotosFromStorage(unitId)
+        if (cancelled) return
+        if (result.recovered > 0) {
+          setRecoverHint(`已從雲端找回 ${result.recovered} 筆照片`)
+          window.setTimeout(() => {
+            if (!cancelled) setRecoverHint(null)
+          }, 5000)
+        } else if (result.scanned > 0) {
+          setRecoverHint('雲端也找不到這些照片（可能當時尚未上傳成功）')
+          window.setTimeout(() => {
+            if (!cancelled) setRecoverHint(null)
+          }, 8000)
+        } else {
+          setRecoverHint(null)
+        }
       } catch (err) {
-        console.warn('[DefectsPage] restore/flush media failed', err)
+        console.warn('[DefectsPage] restore/recover media failed', err)
+        if (!cancelled) setRecoverHint(null)
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [currentUnitId])
 
   const unit =
     units.find((u) => u.id === currentUnitId) ?? units.find((u) => u.active) ?? null
@@ -121,6 +158,19 @@ export function DefectsPage() {
             }
             style={{ width: '100%' }}
           />
+          {recoverHint ? (
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--green-deep)',
+                lineHeight: 1.4,
+              }}
+            >
+              {recoverHint}
+            </div>
+          ) : null}
         </div>
       )}
 

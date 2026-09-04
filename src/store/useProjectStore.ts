@@ -23,14 +23,14 @@ import {
   pullProjectState,
   pushProjectState,
 } from '../services/projectSync'
-import { uploadDefectImages, uploadSitePlanImage, uploadUnitPlanImage } from '../services/storageUpload'
+import { uploadDefectImages, uploadSitePlanImage, uploadUnitPlanImage, recoverDefectMediaMapFromStorage } from '../services/storageUpload'
 import {
   autoSyncDefectPhotosToDrive,
   deleteDefectPhotosFromDrive,
 } from '../services/driveSync'
 import { firebaseModeLabel } from '../lib/firebase'
 import { lightenProjectState, purgeBloatedInspectionStorage } from '../lib/mediaPersist'
-import { hasUploadableLocalMedia } from '../lib/defectMedia'
+import { hasUploadableLocalMedia, isUsableMediaUrl } from '../lib/defectMedia'
 import { statusLabel } from '../lib/progress'
 import { currentActorInfo, currentActorLabel } from '../lib/currentActor'
 import {
@@ -156,6 +156,16 @@ interface ProjectActions {
   healStuckMediaSyncStates: () => Promise<number>
   /** 補傳 IndexedDB 佇列中尚未上雲的照片 */
   flushPendingMediaUploads: () => Promise<{ ok: boolean; uploaded: number }>
+  /**
+   * 本機／Firestore 沒有可用圖時，掃描 Firebase Storage 同路徑檔案並寫回。
+   * @param unitId 若提供則只掃該戶（缺失頁用，較快）
+   */
+  recoverMissingPhotosFromStorage: (unitId?: string) => Promise<{
+    ok: boolean
+    scanned: number
+    recovered: number
+    error?: string
+  }>
   /** 立刻把作用中專案存本機並推上雲端 */
   flushSyncNow: () => Promise<{ ok: boolean }>
   /**
@@ -1818,6 +1828,88 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         } catch (err) {
           console.warn('[flushPendingMediaUploads] failed', err)
           return { ok: false, uploaded }
+        }
+      },
+
+      recoverMissingPhotosFromStorage: async (unitId) => {
+        const projectId = get().activeProjectId
+        if (!projectId) return { ok: false, scanned: 0, recovered: 0, error: '尚未選擇專案' }
+        if (!cloudReady()) {
+          return { ok: false, scanned: 0, recovered: 0, error: '尚未連上雲端' }
+        }
+
+        const candidates = get().defects.filter((d) => {
+          if (d.status === 'voided') return false
+          if (unitId && d.unitId !== unitId) return false
+          const hasPlan = isUsableMediaUrl(d.planPhotoDataUrl)
+          const hasPhotos = (d.photoDataUrls ?? []).some((p) => isUsableMediaUrl(p))
+          // 完全沒有可顯示圖才掃 Storage（避免對已有圖的缺失狂打 listAll）
+          return !hasPlan && !hasPhotos
+        })
+
+        if (candidates.length === 0) {
+          return { ok: true, scanned: 0, recovered: 0 }
+        }
+
+        try {
+          const found = await recoverDefectMediaMapFromStorage({
+            projectId,
+            defectIds: candidates.map((d) => d.id),
+            concurrency: 5,
+          })
+          if (found.size === 0) {
+            return { ok: true, scanned: candidates.length, recovered: 0 }
+          }
+
+          let recovered = 0
+          const nextDefects = get().defects.map((defect) => {
+            const media = found.get(defect.id)
+            if (!media) return defect
+
+            const planPhotoDataUrl =
+              preferMediaUrl(defect.planPhotoDataUrl, media.planUrl) ?? defect.planPhotoDataUrl
+            const photoDataUrls = mergePhotoLists(defect.photoDataUrls, media.photoUrls)
+            const planChanged =
+              isUsableMediaUrl(planPhotoDataUrl) &&
+              planPhotoDataUrl !== defect.planPhotoDataUrl
+            const photosChanged =
+              photoDataUrls.join('|') !== (defect.photoDataUrls ?? []).join('|') &&
+              photoDataUrls.some((p) => isUsableMediaUrl(p))
+            if (!planChanged && !photosChanged) return defect
+
+            recovered += 1
+            return {
+              ...defect,
+              planPhotoDataUrl,
+              photoDataUrls,
+              syncState: 'synced' as const,
+              updatedAt: new Date().toISOString(),
+            }
+          })
+
+          if (recovered > 0) {
+            set({ defects: nextDefects })
+            afterProjectChange(get, set, { syncCloud: false })
+            for (const d of get().defects) {
+              if (!found.has(d.id)) continue
+              if (!isUsableMediaUrl(d.planPhotoDataUrl) && !(d.photoDataUrls ?? []).some(isUsableMediaUrl)) {
+                continue
+              }
+              void syncDefect(projectId, d).catch((err) => {
+                console.warn('[recoverMissingPhotosFromStorage] sync failed', d.id, err)
+              })
+            }
+          }
+
+          return { ok: true, scanned: candidates.length, recovered }
+        } catch (err) {
+          console.warn('[recoverMissingPhotosFromStorage] failed', err)
+          return {
+            ok: false,
+            scanned: candidates.length,
+            recovered: 0,
+            error: err instanceof Error ? err.message : '掃描雲端失敗',
+          }
         }
       },
 
