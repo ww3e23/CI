@@ -73,11 +73,12 @@ interface ProjectActions {
     /** 自行指定編號（補缺號）；未傳則自動取最大號+1。不改既有缺失編號。 */
     defectNumber?: number
     /**
-     * 大圖寫入 IndexedDB：
-     * - await（預設）：存完再回傳，關表單較安全
-     * - background：先回傳，背景再穩存（連拍用不卡住下一張）
+     * 媒體穩存策略：
+     * - cloud-first（預設，有網）：先上傳 Firebase Storage，拿到 https 再寫缺失／回傳
+     * - await：先穩存 IndexedDB 再回傳，上傳可背景（離線後備）
+     * - background：先回傳再背景穩存（僅離線／明確要求時用）
      */
-    persistMedia?: 'await' | 'background'
+    persistMedia?: 'cloud-first' | 'await' | 'background'
   }) => Promise<Defect | null>
   updateDefectStatus: (defectId: string, status: DefectStatus) => void
   /** 修改缺失內容（區域／說明／大項／照片／編號） */
@@ -398,7 +399,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         planPhotoDataUrl,
         photoDataUrls = [],
         defectNumber: requestedNumber,
-        persistMedia = 'await',
+        persistMedia = 'cloud-first',
       }) => {
         const state = get()
         const unit = state.units.find((u) => u.id === unitId)
@@ -462,7 +463,6 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             ...state.activities,
           ].slice(0, 40),
         })
-        // 先寫本機就回傳，雲端上傳改背景做，避免使用者卡在儲存畫面
         afterProjectChange(get, set, { syncCloud: false })
 
         const projectId = get().activeProjectId
@@ -473,23 +473,77 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           Boolean(planPhotoDataUrl && /^https?:\/\//i.test(planPhotoDataUrl)) ||
           photoDataUrls.some((p) => /^https?:\/\//i.test(p))
 
-        // 大圖穩存 IndexedDB：詳細表單預設 await；連拍可 background，但必須寫完再 flush
-        if (projectId && hasLocalMedia) {
-          const persist = async () => {
-            try {
-              await savePendingDefectMedia({
-                defectId: defect.id,
-                projectId,
-                planPhotoDataUrl: planPhotoDataUrl?.startsWith('data:')
-                  ? planPhotoDataUrl
-                  : undefined,
-                photoDataUrls: photoDataUrls.filter((p) => p.startsWith('data:')),
-                updatedAt: new Date().toISOString(),
-              })
-            } catch (err) {
-              console.warn('[pendingMedia] save failed', err)
-            }
+        const persistToIdb = async () => {
+          if (!projectId || !hasLocalMedia) return
+          try {
+            await savePendingDefectMedia({
+              defectId: defect.id,
+              projectId,
+              planPhotoDataUrl: planPhotoDataUrl?.startsWith('data:')
+                ? planPhotoDataUrl
+                : undefined,
+              photoDataUrls: photoDataUrls.filter((p) => p.startsWith('data:')),
+              updatedAt: new Date().toISOString(),
+            })
+          } catch (err) {
+            console.warn('[pendingMedia] save failed', err)
           }
+        }
+
+        // 有網＋有本機圖：先上傳 Storage，拿到 https 再寫 Firestore（避免空白覆蓋／圖沒上雲）
+        if (
+          persistMedia === 'cloud-first' &&
+          cloudReady() &&
+          projectId &&
+          hasLocalMedia
+        ) {
+          set({
+            defects: get().defects.map((d) =>
+              d.id === defect.id ? { ...d, syncState: 'syncing' } : d,
+            ),
+          })
+          try {
+            // 先建缺失文件（不含 data URL，不會蓋掉雲端圖），Drive mirror 才找得到
+            await syncDefect(projectId, { ...defect, syncState: 'syncing' })
+            const { planUrl, photoUrls } = await uploadDefectImages({
+              projectId,
+              defectId: defect.id,
+              planPhotoDataUrl,
+              photoDataUrls,
+            })
+            const latest = get().defects.find((d) => d.id === defect.id)
+            if (!latest || latest.status === 'voided') {
+              return latest ?? defect
+            }
+            const synced: Defect = {
+              ...latest,
+              planPhotoDataUrl: planUrl ?? latest.planPhotoDataUrl,
+              photoDataUrls: photoUrls.length ? photoUrls : latest.photoDataUrls,
+              syncState: 'synced',
+              updatedAt: new Date().toISOString(),
+            }
+            await syncDefect(projectId, synced)
+            set({
+              defects: get().defects.map((d) => (d.id === synced.id ? synced : d)),
+            })
+            afterProjectChange(get, set, { syncCloud: false })
+            await clearPendingDefectMedia(defect.id).catch(() => undefined)
+            return synced
+          } catch (err) {
+            console.warn('[addDefect] cloud-first upload failed, fallback IDB', err)
+            await persistToIdb()
+            set({
+              defects: get().defects.map((d) =>
+                d.id === defect.id ? { ...d, syncState: 'failed' } : d,
+              ),
+            })
+            void get().flushPendingMediaUploads().catch(() => undefined)
+            return get().defects.find((d) => d.id === defect.id) ?? defect
+          }
+        }
+
+        // 離線／明確要求本機佇列：穩存 IndexedDB，有網再補傳
+        if (projectId && hasLocalMedia) {
           const startFlush = () =>
             get()
               .flushPendingMediaUploads()
@@ -510,11 +564,11 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           }
 
           if (persistMedia === 'background') {
-            void persist().then(() => {
+            void persistToIdb().then(() => {
               if (cloudReady()) startFlush()
             })
           } else {
-            await persist()
+            await persistToIdb()
             if (cloudReady()) void startFlush()
           }
         } else if (cloudReady() && projectId) {
@@ -523,51 +577,54 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               d.id === defect.id ? { ...d, syncState: 'syncing' } : d,
             ),
           })
-          // 無本機 data URL 也要立刻寫入雲端；若只有 http 預設圖，物化進 Storage 再同步 Drive
-          void syncDefect(projectId, { ...defect, syncState: 'synced' })
-            .then(async () => {
-              const latest = get().defects.find((d) => d.id === defect.id)
-              if (!latest || latest.status === 'voided') return
-              let synced = { ...latest, syncState: 'synced' as const }
-              if (hasRemoteMedia) {
-                try {
-                  const { planUrl, photoUrls } = await uploadDefectImages({
-                    projectId,
-                    defectId: defect.id,
-                    planPhotoDataUrl: latest.planPhotoDataUrl,
-                    photoDataUrls: latest.photoDataUrls,
-                  })
-                  const afterUpload = get().defects.find((d) => d.id === defect.id)
-                  if (!afterUpload || afterUpload.status === 'voided') return
-                  synced = {
-                    ...afterUpload,
-                    planPhotoDataUrl: planUrl ?? afterUpload.planPhotoDataUrl,
-                    photoDataUrls: photoUrls.length
-                      ? photoUrls
-                      : afterUpload.photoDataUrls,
-                    syncState: 'synced',
-                    updatedAt: new Date().toISOString(),
-                  }
-                  await syncDefect(projectId, synced)
-                } catch (err) {
-                  console.warn('[addDefect] materialize remote media failed', err)
+          // 無本機 data URL：立刻寫入雲端；若只有 http 預設圖，物化進 Storage
+          try {
+            await syncDefect(projectId, { ...defect, syncState: 'synced' })
+            const latest = get().defects.find((d) => d.id === defect.id)
+            if (!latest || latest.status === 'voided') {
+              return latest ?? defect
+            }
+            let synced = { ...latest, syncState: 'synced' as const }
+            if (hasRemoteMedia) {
+              try {
+                const { planUrl, photoUrls } = await uploadDefectImages({
+                  projectId,
+                  defectId: defect.id,
+                  planPhotoDataUrl: latest.planPhotoDataUrl,
+                  photoDataUrls: latest.photoDataUrls,
+                })
+                const afterUpload = get().defects.find((d) => d.id === defect.id)
+                if (!afterUpload || afterUpload.status === 'voided') {
+                  return afterUpload ?? synced
                 }
+                synced = {
+                  ...afterUpload,
+                  planPhotoDataUrl: planUrl ?? afterUpload.planPhotoDataUrl,
+                  photoDataUrls: photoUrls.length
+                    ? photoUrls
+                    : afterUpload.photoDataUrls,
+                  syncState: 'synced',
+                  updatedAt: new Date().toISOString(),
+                }
+                await syncDefect(projectId, synced)
+              } catch (err) {
+                console.warn('[addDefect] materialize remote media failed', err)
               }
-              set({
-                defects: get().defects.map((d) =>
-                  d.id === defect.id ? synced : d,
-                ),
-              })
-              scheduleCloudSync(get)
-              // Drive 由後端 onDefectWrittenAutoDrive 統一寫入，勿再 callable 以免競態重複檔
+            }
+            set({
+              defects: get().defects.map((d) =>
+                d.id === defect.id ? synced : d,
+              ),
             })
-            .catch(() => {
-              set({
-                defects: get().defects.map((d) =>
-                  d.id === defect.id ? { ...d, syncState: 'failed' } : d,
-                ),
-              })
+            scheduleCloudSync(get)
+            return synced
+          } catch {
+            set({
+              defects: get().defects.map((d) =>
+                d.id === defect.id ? { ...d, syncState: 'failed' } : d,
+              ),
             })
+          }
         }
 
         return get().defects.find((d) => d.id === defect.id) ?? defect
@@ -775,6 +832,65 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
         const hasLocalMedia =
           Boolean(next.planPhotoDataUrl?.startsWith('data:')) ||
           next.photoDataUrls.some((p) => p.startsWith('data:'))
+        const allowClearMedia =
+          patch.planPhotoDataUrl === null ||
+          (patch.photoDataUrls !== undefined &&
+            (patch.photoDataUrls?.length ?? 0) === 0)
+
+        if (projectId && cloudReady() && hasLocalMedia) {
+          set({
+            defects: get().defects.map((d) =>
+              d.id === next.id ? { ...d, syncState: 'syncing' } : d,
+            ),
+          })
+          try {
+            await syncDefect(projectId, { ...next, syncState: 'syncing' }, { allowClearMedia })
+            const { planUrl, photoUrls } = await uploadDefectImages({
+              projectId,
+              defectId: next.id,
+              planPhotoDataUrl: next.planPhotoDataUrl,
+              photoDataUrls: next.photoDataUrls,
+            })
+            const latest = get().defects.find((d) => d.id === next.id)
+            if (!latest || latest.status === 'voided') return { ok: true }
+            const synced: Defect = {
+              ...latest,
+              planPhotoDataUrl: planUrl ?? latest.planPhotoDataUrl,
+              photoDataUrls: photoUrls.length ? photoUrls : latest.photoDataUrls,
+              syncState: 'synced',
+              updatedAt: new Date().toISOString(),
+            }
+            await syncDefect(projectId, synced, { allowClearMedia })
+            set({
+              defects: get().defects.map((d) => (d.id === synced.id ? synced : d)),
+            })
+            afterProjectChange(get, set, { syncCloud: false })
+            await clearPendingDefectMedia(next.id).catch(() => undefined)
+            return { ok: true }
+          } catch (err) {
+            console.warn('[updateDefect] cloud-first upload failed, fallback IDB', err)
+            try {
+              await savePendingDefectMedia({
+                defectId: next.id,
+                projectId,
+                planPhotoDataUrl: next.planPhotoDataUrl?.startsWith('data:')
+                  ? next.planPhotoDataUrl
+                  : undefined,
+                photoDataUrls: next.photoDataUrls.filter((p) => p.startsWith('data:')),
+                updatedAt: next.updatedAt,
+              })
+            } catch (persistErr) {
+              console.warn('[updateDefect] pending media save failed', persistErr)
+            }
+            set({
+              defects: get().defects.map((d) =>
+                d.id === next.id ? { ...d, syncState: 'failed' } : d,
+              ),
+            })
+            void get().flushPendingMediaUploads().catch(() => undefined)
+            return { ok: true, error: '已本機更新，雲端上傳失敗，稍後會自動重試' }
+          }
+        }
 
         if (projectId && hasLocalMedia) {
           try {
@@ -798,29 +914,20 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               d.id === next.id ? { ...d, syncState: 'syncing' } : d,
             ),
           })
-          if (hasLocalMedia) {
-            void get().flushPendingMediaUploads()
-          } else {
-            try {
-              const synced = {
-                ...(get().defects.find((d) => d.id === next.id) ?? next),
-                syncState: 'synced' as const,
-              }
-              const allowClearMedia =
-                patch.planPhotoDataUrl === null ||
-                (patch.photoDataUrls !== undefined &&
-                  (patch.photoDataUrls?.length ?? 0) === 0)
-              await syncDefect(projectId, synced, { allowClearMedia })
-              set({
-                defects: get().defects.map((d) => (d.id === synced.id ? synced : d)),
-              })
-              afterProjectChange(get, set, { syncCloud: false })
-              scheduleCloudSync(get)
-              // 備註／大項／編號變更：Drive 觸發器會改名／搬移；勿再額外 callable
-            } catch (err) {
-              console.warn('[updateDefect] sync failed', err)
-              return { ok: true, error: '已本機更新，雲端同步失敗' }
+          try {
+            const synced = {
+              ...(get().defects.find((d) => d.id === next.id) ?? next),
+              syncState: 'synced' as const,
             }
+            await syncDefect(projectId, synced, { allowClearMedia })
+            set({
+              defects: get().defects.map((d) => (d.id === synced.id ? synced : d)),
+            })
+            afterProjectChange(get, set, { syncCloud: false })
+            scheduleCloudSync(get)
+          } catch (err) {
+            console.warn('[updateDefect] sync failed', err)
+            return { ok: true, error: '已本機更新，雲端同步失敗' }
           }
         }
 

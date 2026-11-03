@@ -196,8 +196,8 @@ export function BurstCaptureSheet({
             area: shotArea,
             description: '',
             photoDataUrls: [url],
-            // 先穩存 IndexedDB 再回傳，避免背景寫入競態導致重整後無圖
-            persistMedia: 'await',
+            // 有網先上傳 Storage，拿到 https 再算存檔完成
+            persistMedia: 'cloud-first',
           })
           if (!d) {
             setError('儲存失敗，請再試一次')
@@ -391,7 +391,7 @@ export function BurstCaptureSheet({
               </div>
               <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.85 }}>
                 {pendingNumber != null
-                  ? `正在存 #${pendingNumber}`
+                  ? `正在上傳雲端 #${pendingNumber}`
                   : lastSaved != null
                     ? `剛存 #${lastSaved}｜下一張 #${nextNumber}`
                     : '按快門連續拍，每張＝一筆缺失'}
@@ -500,7 +500,7 @@ export function BurstCaptureSheet({
         >
           <div>
             <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--terracotta)', letterSpacing: '0.04em' }}>
-              {pendingNumber != null ? '正在存成' : '下一張照片＝'}
+              {pendingNumber != null ? '正在上傳雲端' : '下一張照片＝'}
             </div>
             <div
               className="nums"
@@ -605,7 +605,7 @@ export function BurstCaptureSheet({
 
         <div className="sync-hint" style={{ marginTop: 8 }}>
           {busy
-            ? `背景處理中（佇列 ${queueLen}）${pendingNumber != null ? `｜正在存 #${pendingNumber}` : ''}`
+            ? `上傳中（佇列 ${queueLen}）${pendingNumber != null ? `｜#${pendingNumber}` : ''}`
             : cloudReady()
               ? `點「開啟連拍鏡頭」後可持續按快門；每張自動存成 #${nextNumber} 起`
               : `下一張會存成 #${nextNumber}（本機）`}

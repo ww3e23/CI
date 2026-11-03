@@ -183,7 +183,13 @@ export function AddDefectSheet({
 
     setSaving(true)
     setError('')
-    setSyncMsg(cloudReady() ? '正在同步…' : '正在儲存到本機…')
+    setSyncMsg(
+      cloudReady()
+        ? photos.length || (includePlan && planPhoto)
+          ? '正在上傳照片到雲端…'
+          : '正在同步至雲端…'
+        : '正在儲存到本機…',
+    )
 
     try {
       const n = manualNumberOn ? Math.floor(Number(manualNumberText)) : undefined
@@ -199,6 +205,7 @@ export function AddDefectSheet({
         planPhotoDataUrl: includePlan ? planPhoto : undefined,
         photoDataUrls: photos,
         defectNumber: n,
+        persistMedia: 'cloud-first',
       })
       setSaving(false)
       if (!d) {
@@ -210,10 +217,12 @@ export function AddDefectSheet({
         setSyncMsg('儲存失敗')
         return
       }
-      if (d.syncState === 'syncing' || d.syncState === 'pending') {
+      if (d.syncState === 'failed') {
+        setSyncMsg('已存本機，雲端上傳失敗，稍後會自動重試')
+      } else if (d.syncState === 'syncing' || d.syncState === 'pending') {
         setSyncMsg('已儲存，雲端同步中…')
       } else if (d.syncState === 'synced') {
-        setSyncMsg('已同步至雲端')
+        setSyncMsg('照片已上傳並同步至雲端')
       } else {
         setSyncMsg('已儲存')
       }
