@@ -196,20 +196,34 @@ export function BurstCaptureSheet({
             area: shotArea,
             description: '',
             photoDataUrls: [url],
-            // 有網先上傳 Storage，拿到 https 再算存檔完成
+            // 有網必須上傳成功才算存檔；失敗會整筆作廢並拋錯
             persistMedia: 'cloud-first',
           })
           if (!d) {
-            setError('儲存失敗，請再試一次')
+            setError('照片未上傳到雲端，這張沒存檔，請重拍')
+            continue
+          }
+          if (d.syncState !== 'synced' || !d.photoDataUrls?.[0]?.startsWith('http')) {
+            setError('照片未上傳到雲端，這張沒存檔，請重拍')
             continue
           }
           setLastSaved(d.defectNumber)
           setShots((prev) =>
-            [{ defectNumber: d.defectNumber, preview: url }, ...prev].slice(0, 24),
+            [
+              {
+                defectNumber: d.defectNumber,
+                preview: d.photoDataUrls[0] || url,
+              },
+              ...prev,
+            ].slice(0, 24),
           )
         } catch (err) {
           console.warn('[burst] save failed', err)
-          setError(err instanceof Error ? err.message : '拍照或儲存失敗')
+          setError(
+            err instanceof Error
+              ? err.message
+              : '照片未上傳到雲端，這張沒存檔，請重拍',
+          )
         } finally {
           setPendingNumber(null)
         }

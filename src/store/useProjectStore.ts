@@ -490,7 +490,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
           }
         }
 
-        // 有網＋有本機圖：先上傳 Storage，拿到 https 再寫 Firestore（避免空白覆蓋／圖沒上雲）
+        // 有網＋有本機圖：必須先上傳 Storage 拿到 https，否則整筆作廢（不當成已存）
         if (
           persistMedia === 'cloud-first' &&
           cloudReady() &&
@@ -503,13 +503,14 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             ),
           })
           try {
-            // 先建缺失文件（不含 data URL，不會蓋掉雲端圖），Drive mirror 才找得到
+            // 先建缺失文件（不含 data URL），Drive mirror 才找得到
             await syncDefect(projectId, { ...defect, syncState: 'syncing' })
             const { planUrl, photoUrls } = await uploadDefectImages({
               projectId,
               defectId: defect.id,
               planPhotoDataUrl,
               photoDataUrls,
+              requireHttps: true,
             })
             const latest = get().defects.find((d) => d.id === defect.id)
             if (!latest || latest.status === 'voided') {
@@ -522,6 +523,16 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               syncState: 'synced',
               updatedAt: new Date().toISOString(),
             }
+            const planOk =
+              !planPhotoDataUrl ||
+              Boolean(synced.planPhotoDataUrl?.startsWith('http'))
+            const photosOk =
+              photoDataUrls.length === 0 ||
+              (synced.photoDataUrls.length > 0 &&
+                synced.photoDataUrls.every((u) => u.startsWith('http')))
+            if (!planOk || !photosOk) {
+              throw new Error('照片未成功上傳到雲端')
+            }
             await syncDefect(projectId, synced)
             set({
               defects: get().defects.map((d) => (d.id === synced.id ? synced : d)),
@@ -530,15 +541,20 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             await clearPendingDefectMedia(defect.id).catch(() => undefined)
             return synced
           } catch (err) {
-            console.warn('[addDefect] cloud-first upload failed, fallback IDB', err)
-            await persistToIdb()
-            set({
-              defects: get().defects.map((d) =>
-                d.id === defect.id ? { ...d, syncState: 'failed' } : d,
-              ),
-            })
-            void get().flushPendingMediaUploads().catch(() => undefined)
-            return get().defects.find((d) => d.id === defect.id) ?? defect
+            console.warn('[addDefect] cloud-first upload failed, discard defect', err)
+            // 有網卻沒上傳成功：作廢這筆，避免「以為存好了、其實雲端沒圖」
+            try {
+              await get().deleteDefect(defect.id)
+            } catch (delErr) {
+              console.warn('[addDefect] rollback failed', delErr)
+              set({
+                defects: get().defects.filter((d) => d.id !== defect.id),
+              })
+              afterProjectChange(get, set, { syncCloud: false })
+            }
+            throw err instanceof Error
+              ? err
+              : new Error('照片未上傳到雲端，這筆沒有存檔，請重新拍攝')
           }
         }
 
@@ -850,6 +866,7 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               defectId: next.id,
               planPhotoDataUrl: next.planPhotoDataUrl,
               photoDataUrls: next.photoDataUrls,
+              requireHttps: true,
             })
             const latest = get().defects.find((d) => d.id === next.id)
             if (!latest || latest.status === 'voided') return { ok: true }
@@ -860,6 +877,14 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
               syncState: 'synced',
               updatedAt: new Date().toISOString(),
             }
+            if (
+              (next.planPhotoDataUrl?.startsWith('data:') &&
+                !synced.planPhotoDataUrl?.startsWith('http')) ||
+              (next.photoDataUrls.some((p) => p.startsWith('data:')) &&
+                !synced.photoDataUrls.every((u) => u.startsWith('http')))
+            ) {
+              throw new Error('照片未成功上傳到雲端')
+            }
             await syncDefect(projectId, synced, { allowClearMedia })
             set({
               defects: get().defects.map((d) => (d.id === synced.id ? synced : d)),
@@ -868,27 +893,21 @@ export const useProjectStore = create<ProjectState & BundleState & ProjectAction
             await clearPendingDefectMedia(next.id).catch(() => undefined)
             return { ok: true }
           } catch (err) {
-            console.warn('[updateDefect] cloud-first upload failed, fallback IDB', err)
-            try {
-              await savePendingDefectMedia({
-                defectId: next.id,
-                projectId,
-                planPhotoDataUrl: next.planPhotoDataUrl?.startsWith('data:')
-                  ? next.planPhotoDataUrl
-                  : undefined,
-                photoDataUrls: next.photoDataUrls.filter((p) => p.startsWith('data:')),
-                updatedAt: next.updatedAt,
-              })
-            } catch (persistErr) {
-              console.warn('[updateDefect] pending media save failed', persistErr)
-            }
+            console.warn('[updateDefect] cloud-first upload failed', err)
+            // 還原成修改前狀態，避免本機以為新圖已存
             set({
               defects: get().defects.map((d) =>
-                d.id === next.id ? { ...d, syncState: 'failed' } : d,
+                d.id === defect.id ? { ...defect, syncState: defect.syncState } : d,
               ),
             })
-            void get().flushPendingMediaUploads().catch(() => undefined)
-            return { ok: true, error: '已本機更新，雲端上傳失敗，稍後會自動重試' }
+            afterProjectChange(get, set, { syncCloud: false })
+            return {
+              ok: false,
+              error:
+                err instanceof Error
+                  ? err.message
+                  : '照片未上傳到雲端，修改未儲存，請檢查網路後再試',
+            }
           }
         }
 

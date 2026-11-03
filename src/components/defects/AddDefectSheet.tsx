@@ -217,14 +217,14 @@ export function AddDefectSheet({
         setSyncMsg('儲存失敗')
         return
       }
-      if (d.syncState === 'failed') {
-        setSyncMsg('已存本機，雲端上傳失敗，稍後會自動重試')
-      } else if (d.syncState === 'syncing' || d.syncState === 'pending') {
-        setSyncMsg('已儲存，雲端同步中…')
-      } else if (d.syncState === 'synced') {
+      if (d.syncState === 'synced') {
         setSyncMsg('照片已上傳並同步至雲端')
+      } else if (d.syncState === 'demo') {
+        setSyncMsg('已儲存到本機（示範／離線）')
       } else {
-        setSyncMsg('已儲存')
+        setError('照片未上傳到雲端，這筆沒有存檔，請檢查網路後再試')
+        setSyncMsg('上傳失敗，未存檔')
+        return
       }
       onClose()
     } catch (e) {

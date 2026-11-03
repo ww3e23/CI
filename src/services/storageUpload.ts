@@ -145,14 +145,20 @@ export async function uploadSitePlanImage(params: {
   return { url, path }
 }
 
-/** 平行上傳多張圖 */
+function isHttpsUrl(url?: string | null): boolean {
+  return Boolean(url && /^https?:\/\//i.test(url))
+}
+
+/** 平行上傳多張圖。requireHttps=true 時任一張沒拿到 http(s) 就拋錯（不給假成功）。 */
 export async function uploadDefectImages(params: {
   projectId: string
   defectId: string
   planPhotoDataUrl?: string
   photoDataUrls?: string[]
+  requireHttps?: boolean
 }): Promise<{ planUrl?: string; photoUrls: string[] }> {
   const photos = params.photoDataUrls ?? []
+  const requireHttps = Boolean(params.requireHttps)
   const tasks: Promise<{ slot: 'plan' | number; url: string }>[] = []
 
   if (params.planPhotoDataUrl) {
@@ -162,10 +168,16 @@ export async function uploadDefectImages(params: {
         defectId: params.defectId,
         kind: 'plan',
         dataUrl: params.planPhotoDataUrl,
-      }).then((up) => ({
-        slot: 'plan' as const,
-        url: up?.url ?? params.planPhotoDataUrl!,
-      })),
+      }).then((up) => {
+        const url = up?.url
+        if (requireHttps && !isHttpsUrl(url)) {
+          throw new Error('位置圖上傳雲端失敗，請檢查網路後再試')
+        }
+        return {
+          slot: 'plan' as const,
+          url: url ?? params.planPhotoDataUrl!,
+        }
+      }),
     )
   }
 
@@ -177,10 +189,16 @@ export async function uploadDefectImages(params: {
         kind: 'photo',
         index,
         dataUrl: src,
-      }).then((up) => ({
-        slot: index,
-        url: up?.url ?? src,
-      })),
+      }).then((up) => {
+        const url = up?.url
+        if (requireHttps && !isHttpsUrl(url)) {
+          throw new Error('現況照上傳雲端失敗，請檢查網路後再試')
+        }
+        return {
+          slot: index,
+          url: url ?? src,
+        }
+      }),
     )
   })
 
@@ -191,6 +209,16 @@ export async function uploadDefectImages(params: {
     if (r.slot === 'plan') planUrl = r.url
     else photoUrls[r.slot] = r.url
   }
+
+  if (requireHttps) {
+    if (params.planPhotoDataUrl && !isHttpsUrl(planUrl)) {
+      throw new Error('位置圖上傳雲端失敗，請檢查網路後再試')
+    }
+    if (photos.length > 0 && (!photoUrls.length || photoUrls.some((u) => !isHttpsUrl(u)))) {
+      throw new Error('現況照上傳雲端失敗，請檢查網路後再試')
+    }
+  }
+
   return { planUrl, photoUrls }
 }
 
